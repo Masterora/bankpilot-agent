@@ -1,0 +1,80 @@
+# 文件职责：编排 BankPilot 远程生产运行所需的容器与网络。
+# 主要内容：PostgreSQL 持久化、API 服务、Web 反向代理，以及健康检查与启动依赖。
+# 关键边界：Web 和数据库默认只绑定回环地址，API 仅在内网可见，密钥只由 `.env` 注入。
+name: bankpilot
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bankpilot}
+      POSTGRES_USER: ${POSTGRES_USER:-bankpilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    ports:
+      # 默认只允许远程主机本地或 SSH 隧道访问，不直接暴露到公网。
+      - "${POSTGRES_BIND_IP:-127.0.0.1}:${POSTGRES_HOST_PORT:-55433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [internal]
+
+  api:
+    build:
+      context: ../api
+    restart: unless-stopped
+    environment:
+      BANKPILOT_ENV: production
+      BANKPILOT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bankpilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bankpilot}
+      BANKPILOT_SESSION_SECRET: ${BANKPILOT_SESSION_SECRET:?BANKPILOT_SESSION_SECRET is required}
+      BANKPILOT_SESSION_TTL_SECONDS: ${BANKPILOT_SESSION_TTL_SECONDS:-28800}
+      BANKPILOT_SESSION_COOKIE_SECURE: ${BANKPILOT_SESSION_COOKIE_SECURE:-false}
+      BANKPILOT_CORS_ORIGINS: ${PUBLIC_WEB_ORIGIN:-http://localhost:8380}
+      MODEL_PROVIDER: openrouter
+      MODEL_ID: ${MODEL_ID:?MODEL_ID is required}
+      MODEL_BASE_URL: https://openrouter.ai/api/v1
+      MODEL_TIMEOUT_SECONDS: ${MODEL_TIMEOUT_SECONDS:-30}
+      MODEL_MAX_RETRIES: ${MODEL_MAX_RETRIES:-1}
+      MODEL_MAX_TOKENS: ${MODEL_MAX_TOKENS:-1600}
+      MODEL_REASONING_EFFORT: ${MODEL_REASONING_EFFORT:-low}
+      MODEL_REQUIRE_PARAMETERS: "true"
+      MODEL_DATA_COLLECTION: deny
+      # 密钥由远程 .env 注入，镜像与仓库中均不保存明文。
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/readyz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [internal]
+
+  web:
+    build:
+      context: ../web
+    restart: unless-stopped
+    ports:
+      - "${WEB_BIND_IP:-127.0.0.1}:${WEB_PORT:-8380}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres-data:

@@ -1,0 +1,9 @@
+# 文件职责：为 BankPilot K3s 资源创建独立命名空间。
+# 主要内容：声明 `bankpilot` Namespace 与项目归属标签。
+# 关键边界：业务资源统一放入该命名空间，集群级网络配置除外。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bankpilot
+  labels:
+    app.kubernetes.io/part-of: bankpilot
