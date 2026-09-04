@@ -1,6 +1,6 @@
 # 文件职责：在 K3s 中部署 BankPilot API 及其集群内 Service。
 # 主要内容：单副本 Deployment、ConfigMap/Secret 注入、健康检查、资源限额与安全上下文。
-# 关键边界：v0.1 后台 Run 与 API 同进程，因此保持单副本且不向集群外直接暴露。
+# 关键边界：后台 Run 与 API 同进程，因此保持单副本且不向集群外直接暴露。
 apiVersion: v1
 kind: Service
 metadata:
@@ -20,7 +20,7 @@ metadata:
   name: api
   namespace: bankpilot
 spec:
-  # 后台 Run 仍在 API 进程内执行，v0.1 保持单副本，避免伪装成可水平扩展。
+  # 后台 Run 在 API 进程内执行，保持单副本，避免伪装成可水平扩展。
   replicas: 1
   strategy:
     type: Recreate
@@ -40,7 +40,7 @@ spec:
             value: "1"
       containers:
         - name: api
-          image: bankpilot-api:0.1.0-k8s.1
+          image: bankpilot-api:0.2.0
           imagePullPolicy: Never
           ports:
             - name: http

@@ -1,9 +1,9 @@
 """
-文件职责：定义账单查询 Agent 的 LangGraph 状态与节点流程。
+文件职责：定义账单查询与确定性分析 Agent 的 LangGraph 状态与节点流程。
 
 主要内容：
 - `AgentState`：携带运行 ID、用户 ID、模型计划、交易和最终结果。
-- `ReadOnlyBillWorkflow`：按 plan、execute、respond/reject 节点组装工作流。
+- `ReadOnlyBillWorkflow`：按 plan、execute、analyze、respond/reject 节点组装工作流。
 - `after_plan`：允许应用层在执行前持久化模型计划。
 
 关键边界：只有 `query_transactions` 能进入执行节点，不支持的意图直接终止。
@@ -16,7 +16,14 @@ from uuid import UUID
 
 from langgraph.graph import END, START, StateGraph
 
-from bankpilot.domain.contracts import ModelPlan, RunResult, SupportedAction, TransactionResult
+from bankpilot.domain.bill_analysis import analyze_bill
+from bankpilot.domain.contracts import (
+    BillAnalysis,
+    ModelPlan,
+    RunResult,
+    SupportedAction,
+    TransactionResult,
+)
 from bankpilot.errors import ActionNotAllowedError
 from bankpilot.ports import BankingGateway, ModelGateway
 
@@ -30,11 +37,12 @@ class AgentState(TypedDict):
     today: date
     plan: NotRequired[ModelPlan]
     transactions: NotRequired[TransactionResult]
+    analysis: NotRequired[BillAnalysis]
     result: NotRequired[RunResult]
 
 
 class ReadOnlyBillWorkflow:
-    """通过显式操作白名单执行 v0.1 的唯一能力。"""
+    """通过显式操作白名单执行只读查询，并在本地完成确定性分析。"""
 
     def __init__(
         self,
@@ -49,6 +57,7 @@ class ReadOnlyBillWorkflow:
         graph = StateGraph(AgentState)
         graph.add_node("plan", self._plan)
         graph.add_node("execute", self._execute)
+        graph.add_node("analyze", self._analyze)
         graph.add_node("respond", self._respond)
         graph.add_node("reject", self._reject)
         graph.add_edge(START, "plan")
@@ -57,7 +66,8 @@ class ReadOnlyBillWorkflow:
             self._route_after_plan,
             {"execute": "execute", "reject": "reject"},
         )
-        graph.add_edge("execute", "respond")
+        graph.add_edge("execute", "analyze")
+        graph.add_edge("analyze", "respond")
         graph.add_edge("respond", END)
         graph.add_edge("reject", END)
         self.graph = graph.compile()
@@ -90,13 +100,18 @@ class ReadOnlyBillWorkflow:
         """在访问银行数据前再次强制检查工具白名单。"""
         decision = state["plan"].decision
         if not isinstance(decision, SupportedAction) or decision.tool != "query_transactions":
-            raise ActionNotAllowedError("Only query_transactions is allowed in v0.1")
+            raise ActionNotAllowedError("Only query_transactions is allowed")
         transactions = await self.banking_gateway.query_transactions(
             user_id=state["user_id"],
             start_date=decision.arguments.start_date,
             end_date=decision.arguments.end_date,
         )
         return {"transactions": transactions}
+
+    @staticmethod
+    async def _analyze(state: AgentState) -> dict[str, BillAnalysis]:
+        """分类后的账单只能由确定性代码汇总与判定异常。"""
+        return {"analysis": analyze_bill(state["transactions"].items)}
 
     @staticmethod
     async def _respond(state: AgentState) -> dict[str, RunResult]:
@@ -106,7 +121,13 @@ class ReadOnlyBillWorkflow:
             f"已查询 {transactions.start_date.isoformat()} 至 "
             f"{transactions.end_date.isoformat()} 的账单，共 {count} 笔。"
         )
-        return {"result": RunResult(message=message, transactions=transactions)}
+        return {
+            "result": RunResult(
+                message=message,
+                transactions=transactions,
+                analysis=state["analysis"],
+            )
+        }
 
     @staticmethod
     async def _reject(state: AgentState) -> dict[str, RunResult]:

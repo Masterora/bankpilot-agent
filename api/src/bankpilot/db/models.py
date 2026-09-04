@@ -1,8 +1,9 @@
 """
-文件职责：定义 BankPilot v0.1 的 SQLAlchemy ORM 持久化模型。
+文件职责：定义 BankPilot 身份、账务、分析修正与 Agent 运行的 ORM 模型。
 
 主要内容：
 - 身份与账务：`UserRecord`、`SessionRecord`、`AccountRecord`、`TransactionRecord`。
+- 分析修正：`TransactionCategoryOverrideRecord` 保存用户确认的交易分类。
 - Agent 运行：`RunRecord` 保存状态、计划、结果、错误和模型信息。
 - 审计记录：`AuditEventRecord` 按运行保存有序事件。
 
@@ -74,6 +75,21 @@ class TransactionRecord(Base):
     account: Mapped[AccountRecord] = relationship(back_populates="transactions")
 
     __table_args__ = (Index("ix_transactions_account_occurred", "account_id", "occurred_at"),)
+
+
+class TransactionCategoryOverrideRecord(Base):
+    """独立保存用户分类修正，避免覆盖银行侧原始交易数据。"""
+
+    __tablename__ = "transaction_category_overrides"
+
+    transaction_id: Mapped[UUID] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(String(32))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class RunRecord(Base):

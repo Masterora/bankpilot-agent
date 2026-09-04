@@ -4,12 +4,12 @@
  * 主要内容：
  * - `ApiError`：保留 HTTP 状态码和服务端错误信息。
  * - `request`：统一注入 Cookie 凭证、JSON 请求头和错误处理。
- * - `api`：提供登录、退出、会话检查、创建运行与查询运行方法。
+ * - `api`：提供认证、运行、SSE 事件订阅与分类修正方法。
  *
  * 关键边界：会话由浏览器 Cookie 自动携带，本文件不保存密码或令牌。
  */
 
-import type { Run, User } from './types'
+import type { Run, RunEvent, TransactionCategory, User } from './types'
 
 export class ApiError extends Error {
   constructor(
@@ -49,4 +49,20 @@ export const api = {
       body: JSON.stringify({ message }),
     }),
   getRun: (runId: string) => request<Run>(`/api/v1/runs/${runId}`),
+  correctCategory: (runId: string, transactionId: string, category: TransactionCategory) =>
+    request<Run>(`/api/v1/runs/${runId}/transactions/${transactionId}/category`, {
+      method: 'POST',
+      body: JSON.stringify({ category }),
+    }),
+  watchRunEvents: (
+    runId: string,
+    onEvent: (event: RunEvent) => void,
+    onError: () => void,
+  ) => {
+    // EventSource 自动携带同源 Cookie，并使用 Last-Event-ID 恢复断开的事件流。
+    const source = new EventSource(`/api/v1/runs/${runId}/events`)
+    source.onmessage = (message) => onEvent(JSON.parse(message.data) as RunEvent)
+    source.onerror = onError
+    return source
+  },
 }

@@ -21,7 +21,7 @@ class FakeModelGateway:
         if "转账" in user_message:
             decision = UnsupportedIntent(
                 kind="unsupported",
-                user_message="当前版本仅支持账单查询。",
+                user_message="可用银行工具仅包含只读账单查询。",
             )
         else:
             decision = SupportedAction(

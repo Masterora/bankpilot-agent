@@ -1,12 +1,13 @@
 """
-文件职责：定义工作流、适配器与应用层共用的领域契约。
+文件职责：定义工作流、账单分析、适配器与应用层共用的领域契约。
 
 主要内容：
 - `RunStatus`：Agent 运行的持久化状态集。
 - `TransactionQuery`：受限的交易日期范围。
 - `SupportedAction` / `UnsupportedIntent`：模型规划决策的可辨别联合。
 - `ModelPlan`：模型决策、供应商、耗时和 Token 用量。
-- `TransactionResult` / `RunResult`：工具与工作流的结果结构。
+- `TransactionCategory`：稳定的账单分类代码。
+- `TransactionResult` / `BillAnalysis` / `RunResult`：查询、统计与工作流结果结构。
 
 关键边界：模型只能产生白名单动作或不支持意图；交易查询最长 366 天。
 """
@@ -27,6 +28,27 @@ class RunStatus(StrEnum):
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     UNKNOWN = "UNKNOWN"
+
+
+class TransactionCategory(StrEnum):
+    INCOME = "income"
+    GROCERIES = "groceries"
+    DINING = "dining"
+    TRANSPORT = "transport"
+    SHOPPING = "shopping"
+    HOUSING = "housing"
+    UTILITIES = "utilities"
+    ENTERTAINMENT = "entertainment"
+    HEALTHCARE = "healthcare"
+    EDUCATION = "education"
+    TRAVEL = "travel"
+    TRANSFER = "transfer"
+    OTHER = "other"
+
+
+class CategorySource(StrEnum):
+    RULE = "rule"
+    USER = "user"
 
 
 class TransactionQuery(BaseModel):
@@ -90,6 +112,9 @@ class TransactionItem(BaseModel):
     amount: Decimal
     currency: str
     account_name: str
+    category: TransactionCategory = TransactionCategory.OTHER
+    category_source: CategorySource = CategorySource.RULE
+    category_rule_id: str = "category_other_v1"
 
 
 class TransactionResult(BaseModel):
@@ -98,6 +123,35 @@ class TransactionResult(BaseModel):
     items: list[TransactionItem]
 
 
+class CurrencySummary(BaseModel):
+    currency: str
+    income: Decimal
+    expense: Decimal
+    net: Decimal
+    transaction_count: int
+
+
+class CategorySummary(BaseModel):
+    category: TransactionCategory
+    currency: str
+    amount: Decimal
+    transaction_count: int
+
+
+class BillAnomaly(BaseModel):
+    rule_id: Literal["large_outflow_v1", "possible_duplicate_v1"]
+    severity: Literal["notice", "warning"]
+    transaction_ids: list[UUID]
+    facts: dict[str, str]
+
+
+class BillAnalysis(BaseModel):
+    currency_summaries: list[CurrencySummary] = Field(default_factory=list)
+    category_summaries: list[CategorySummary] = Field(default_factory=list)
+    anomalies: list[BillAnomaly] = Field(default_factory=list)
+
+
 class RunResult(BaseModel):
     message: str
     transactions: TransactionResult
+    analysis: BillAnalysis = Field(default_factory=BillAnalysis)

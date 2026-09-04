@@ -43,6 +43,8 @@ cd /opt/bankpilot-agent
 | Docker Compose | 回环端口 + SSH 隧道 | Compose 内网 | 回环端口 + SSH 隧道 |
 | K3s | Traefik Ingress | ClusterIP | 无头 ClusterIP |
 
+K3s 的外部入口依赖集群已安装 `traefik` IngressClass。未安装时工作负载仍可正常运行，但 Web 仅在集群内可达；可安装 Ingress 控制器，或仅在验收时使用 `kubectl port-forward`。
+
 K3s 中需要外部查库时，先在远程主机将 PostgreSQL 临时转发到回环端口，再建立 SSH 隧道；不将数据库 Service 改为 NodePort。
 
 ```bash

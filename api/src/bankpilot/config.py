@@ -63,9 +63,9 @@ class Settings(BaseSettings):
 
     @field_validator("model_provider")
     @classmethod
-    def only_openrouter_for_v01(cls, value: str) -> str:
+    def only_openrouter(cls, value: str) -> str:
         if value != "openrouter":
-            raise ValueError("v0.1 only ships the OpenRouter adapter")
+            raise ValueError("MODEL_PROVIDER must be openrouter")
         return value
 
     @field_validator("model_id")

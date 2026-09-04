@@ -89,7 +89,7 @@ class OpenRouterModelGateway:
                     "role": "system",
                     "content": (
                         "你是 BankPilot 的只读账单规划器。"
-                        "当前版本只允许查询账单。今天是 "
+                        "可用银行工具仅包含只读账单查询。今天是 "
                         f"{today.isoformat()}。"
                         "若用户明确要求查询某个日期范围内的交易，返回 kind=action；"
                         "否则返回 kind=unsupported，并用简短中文说明当前仅支持账单查询。"

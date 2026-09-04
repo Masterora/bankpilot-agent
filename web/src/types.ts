@@ -1,9 +1,9 @@
 /**
- * 文件职责：定义 Web 层消费的 BankPilot v1 API 类型。
+ * 文件职责：定义 Web 层消费的 BankPilot v1 查询、分析、事件流与修正类型。
  *
  * 主要内容：
  * - `User`：当前登录用户。
- * - `Transaction` / `RunResult`：交易与运行结果。
+ * - `Transaction` / `BillAnalysis` / `RunResult`：分类交易、统计和异常结果。
  * - `RunEvent`：审计时间线事件。
  * - `Run`：包含状态、结果、错误与事件的完整运行快照。
  *
@@ -15,6 +15,21 @@ export interface User {
   email: string
 }
 
+export type TransactionCategory =
+  | 'income'
+  | 'groceries'
+  | 'dining'
+  | 'transport'
+  | 'shopping'
+  | 'housing'
+  | 'utilities'
+  | 'entertainment'
+  | 'healthcare'
+  | 'education'
+  | 'travel'
+  | 'transfer'
+  | 'other'
+
 export interface Transaction {
   id: string
   occurred_at: string
@@ -23,6 +38,37 @@ export interface Transaction {
   amount: string
   currency: string
   account_name: string
+  category: TransactionCategory
+  category_source: 'rule' | 'user'
+  category_rule_id: string
+}
+
+export interface CurrencySummary {
+  currency: string
+  income: string
+  expense: string
+  net: string
+  transaction_count: number
+}
+
+export interface CategorySummary {
+  category: TransactionCategory
+  currency: string
+  amount: string
+  transaction_count: number
+}
+
+export interface BillAnomaly {
+  rule_id: 'large_outflow_v1' | 'possible_duplicate_v1'
+  severity: 'notice' | 'warning'
+  transaction_ids: string[]
+  facts: Record<string, string>
+}
+
+export interface BillAnalysis {
+  currency_summaries: CurrencySummary[]
+  category_summaries: CategorySummary[]
+  anomalies: BillAnomaly[]
 }
 
 export interface RunResult {
@@ -32,6 +78,7 @@ export interface RunResult {
     end_date: string
     items: Transaction[]
   }
+  analysis: BillAnalysis
 }
 
 export interface RunEvent {

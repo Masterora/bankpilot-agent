@@ -4,11 +4,11 @@
  * 主要内容：
  * - `App`：恢复会话、管理语言，并在登录页与工作台之间切换。
  * - `Login`：提交账号密码并处理认证错误。
- * - `Workspace`：创建 Agent 运行、轮询终态、处理退出。
- * - `RunPanel`：展示交易结果、状态与审计时间线。
+ * - `Workspace`：创建 Agent 运行、订阅 SSE、修正分类并处理退出。
+ * - `RunPanel`：展示确定性统计、异常、交易分类与审计时间线。
  * - `LanguageSwitch`：切换中英文界面。
  *
- * 关键边界：前端不读取会话令牌；轮询仅持续到 SUCCEEDED、FAILED 或 UNKNOWN。
+ * 关键边界：前端不读取会话令牌；事件按序号去重，分类修正由服务端重算统计。
  */
 
 import { FormEvent, useEffect, useRef, useState } from 'react'
@@ -17,7 +17,7 @@ import { ApiError, api } from './api'
 import { formatDate, formatMoney } from './format'
 import { isPresetQuery, messages, storedLocale } from './i18n'
 import type { Locale, Messages } from './i18n'
-import type { Run, User } from './types'
+import type { Run, TransactionCategory, User } from './types'
 
 const terminalStatuses = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN'])
 
@@ -115,52 +115,46 @@ function Login({ copy, locale, onLocaleChange, onLogin }: LoginProps) {
 
   return (
     <main className="login-shell">
-      <section className="login-intro">
-        <div className="brand"><Logo /> BankPilot</div>
-        <div className="intro-copy">
-          <p className="eyebrow">{copy.loginEyebrow}</p>
-          <h1>{copy.loginTitle}</h1>
-          <p>{copy.loginDescription}</p>
-        </div>
-        <p className="security-note">{copy.securityNote}</p>
-      </section>
-      <section className="login-panel">
-        <div className="login-panel-actions">
+      <form className="login-card" onSubmit={submit}>
+        <div className="login-card-header">
+          <div className="brand"><Logo /> BankPilot</div>
           <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
         </div>
-        <form className="login-card" onSubmit={submit}>
-          <div>
-            <p className="eyebrow">{copy.secureAccess}</p>
-            <h2>{copy.loginHeading}</h2>
-            <p className="muted">{copy.loginHint}</p>
-          </div>
-          <label>
-            {copy.email}
-            <input
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-            />
-          </label>
-          <label>
-            {copy.password}
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              minLength={8}
-              required
-            />
-          </label>
-          {error && <p className="error" role="alert">{error}</p>}
-          <button className="primary" disabled={submitting}>
-            {submitting ? copy.loggingIn : copy.login}
-          </button>
-        </form>
-      </section>
+        <div className="login-heading">
+          <h1>{copy.loginHeading}</h1>
+          <p>{copy.loginHint}</p>
+        </div>
+        <label>
+          {copy.email}
+          <input
+            type="email"
+            autoComplete="username"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
+        </label>
+        <label>
+          {copy.password}
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            minLength={8}
+            required
+          />
+        </label>
+        {error && <p className="error" role="alert">{error}</p>}
+        <button
+          aria-label={submitting ? copy.loggingIn : copy.login}
+          className="primary"
+          disabled={submitting}
+        >
+          {submitting && <span className="button-spinner" aria-hidden="true" />}
+          <span>{copy.login}</span>
+        </button>
+      </form>
     </main>
   )
 }
@@ -175,30 +169,68 @@ function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspacePr
   const [run, setRun] = useState<Run | null>(null)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const pollTimer = useRef<number | null>(null)
+  const [correctingId, setCorrectingId] = useState<string | null>(null)
+  const eventSource = useRef<EventSource | null>(null)
+  const finishingRunId = useRef<string | null>(null)
 
   useEffect(() => {
     setMessage((current) => (isPresetQuery(current) ? copy.defaultQuery : current))
   }, [copy])
 
   useEffect(() => () => {
-    if (pollTimer.current) window.clearTimeout(pollTimer.current)
+    eventSource.current?.close()
   }, [])
 
-  async function poll(runId: string) {
-    // 仅轮询到持久化终态出现，随后立即释放定时器。
+  async function finishRun(runId: string) {
+    if (finishingRunId.current === runId) return
+    finishingRunId.current = runId
+    eventSource.current?.close()
+    eventSource.current = null
     try {
-      const current = await api.getRun(runId)
-      setRun(current)
-      if (!terminalStatuses.has(current.status)) {
-        pollTimer.current = window.setTimeout(() => void poll(runId), 700)
-      } else {
-        setSubmitting(false)
-      }
+      setRun(await api.getRun(runId))
     } catch {
       setError(copy.queryStatusFailed)
+    } finally {
+      finishingRunId.current = null
       setSubmitting(false)
     }
+  }
+
+  function watchRun(runId: string) {
+    eventSource.current?.close()
+    eventSource.current = api.watchRunEvents(
+      runId,
+      (event) => {
+        setRun((current) => {
+          if (!current || current.events.some((item) => item.sequence === event.sequence)) {
+            return current
+          }
+          return {
+            ...current,
+            events: [...current.events, event].sort((a, b) => a.sequence - b.sequence),
+          }
+        })
+        if (event.event_type === 'run.completed' || event.event_type === 'run.failed') {
+          void finishRun(runId)
+        }
+      },
+      () => {
+        // 网络断线交给 EventSource 自动重连；若会话或接口失效，则结束等待并提示。
+        if (finishingRunId.current === runId) return
+        void api.getRun(runId).then((current) => {
+          setRun(current)
+          if (terminalStatuses.has(current.status)) {
+            eventSource.current?.close()
+            eventSource.current = null
+            setSubmitting(false)
+          }
+        }).catch(() => {
+          eventSource.current?.close()
+          setError(copy.queryStatusFailed)
+          setSubmitting(false)
+        })
+      },
+    )
   }
 
   async function submit(event: FormEvent) {
@@ -210,10 +242,27 @@ function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspacePr
     try {
       const created = await api.createRun(message.trim())
       setRun(created)
-      await poll(created.id)
+      if (terminalStatuses.has(created.status)) {
+        setSubmitting(false)
+      } else {
+        watchRun(created.id)
+      }
     } catch {
       setError(copy.createRunFailed)
       setSubmitting(false)
+    }
+  }
+
+  async function correctCategory(transactionId: string, category: TransactionCategory) {
+    if (!run) return
+    setError('')
+    setCorrectingId(transactionId)
+    try {
+      setRun(await api.correctCategory(run.id, transactionId, category))
+    } catch {
+      setError(copy.categoryUpdateFailed)
+    } finally {
+      setCorrectingId(null)
     }
   }
 
@@ -239,15 +288,20 @@ function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspacePr
         <p className="eyebrow">{copy.workspaceEyebrow}</p>
         <h1>{copy.workspaceTitle}</h1>
         <p>{copy.workspaceDescription}</p>
-        <form className="prompt" onSubmit={submit}>
+        <form aria-busy={submitting} className="prompt" onSubmit={submit}>
           <input
             aria-label={copy.queryInputLabel}
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             maxLength={1000}
           />
-          <button className="primary" disabled={submitting}>
-            {submitting ? copy.querying : copy.startQuery}
+          <button
+            aria-label={submitting ? copy.querying : copy.startQuery}
+            className="primary"
+            disabled={submitting}
+          >
+            {submitting && <span className="button-spinner" aria-hidden="true" />}
+            <span>{copy.startQuery}</span>
           </button>
         </form>
         <div className="suggestions">
@@ -257,12 +311,30 @@ function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspacePr
         </div>
         {error && <p className="error" role="alert">{error}</p>}
       </section>
-      <RunPanel copy={copy} locale={locale} run={run} />
+      <RunPanel
+        copy={copy}
+        correctingId={correctingId}
+        locale={locale}
+        onCategoryChange={correctCategory}
+        run={run}
+      />
     </main>
   )
 }
 
-function RunPanel({ copy, locale, run }: { copy: Messages; locale: Locale; run: Run | null }) {
+function RunPanel({
+  copy,
+  correctingId,
+  locale,
+  onCategoryChange,
+  run,
+}: {
+  copy: Messages
+  correctingId: string | null
+  locale: Locale
+  onCategoryChange: (transactionId: string, category: TransactionCategory) => void
+  run: Run | null
+}) {
   if (!run) {
     return <section className="empty-state"><span>⌁</span><p>{copy.emptyResult}</p></section>
   }
@@ -275,13 +347,14 @@ function RunPanel({ copy, locale, run }: { copy: Messages; locale: Locale; run: 
       )
     : statusLabel(run.status, copy)
   return (
-    <section className="results-grid">
+    <section className="results-grid" aria-live="polite">
       <article className="result-card">
         <div className="result-heading">
           <div><p className="eyebrow">{copy.resultEyebrow}</p><h2>{resultMessage}</h2></div>
           <Status copy={copy} status={run.status} />
         </div>
         {run.error_message && <p className="error">{run.error_code}: {run.error_message}</p>}
+        {run.result && <AnalysisPanel copy={copy} locale={locale} run={run} />}
         {transactions.length > 0 && (
           <div className="transaction-list">
             {transactions.map((item) => (
@@ -290,6 +363,18 @@ function RunPanel({ copy, locale, run }: { copy: Messages; locale: Locale; run: 
                 <div className="transaction-copy">
                   <strong>{item.merchant}</strong>
                   <span>{item.description} · {formatDate(item.occurred_at, locale)}</span>
+                  <select
+                    aria-label={`${copy.categoryLabel}: ${item.merchant}`}
+                    disabled={correctingId === item.id}
+                    value={item.category}
+                    onChange={(event) =>
+                      onCategoryChange(item.id, event.target.value as TransactionCategory)
+                    }
+                  >
+                    {Object.entries(copy.categoryLabels).map(([category, label]) => (
+                      <option key={category} value={category}>{label}</option>
+                    ))}
+                  </select>
                 </div>
                 <strong className={Number(item.amount) >= 0 ? 'income' : ''}>
                   {formatMoney(item.amount, item.currency, locale)}
@@ -311,8 +396,77 @@ function RunPanel({ copy, locale, run }: { copy: Messages; locale: Locale; run: 
   )
 }
 
+function AnalysisPanel({ copy, locale, run }: { copy: Messages; locale: Locale; run: Run }) {
+  const analysis = run.result?.analysis
+  if (!analysis) return null
+  return (
+    <div className="analysis-panel">
+      <p className="eyebrow">{copy.analysisEyebrow}</p>
+      <div className="summary-grid">
+        {analysis.currency_summaries.map((summary) => (
+          <div className="currency-summary" key={summary.currency}>
+            <span>{summary.currency}</span>
+            <dl>
+              <div><dt>{copy.incomeLabel}</dt><dd className="income">{formatMoney(summary.income, summary.currency, locale)}</dd></div>
+              <div><dt>{copy.expenseLabel}</dt><dd>{formatMoney(summary.expense, summary.currency, locale)}</dd></div>
+              <div><dt>{copy.netLabel}</dt><dd>{formatMoney(summary.net, summary.currency, locale)}</dd></div>
+            </dl>
+          </div>
+        ))}
+      </div>
+      <div className="analysis-columns">
+        <section>
+          <h3>{copy.categoryBreakdown}</h3>
+          <div className="category-bars">
+            {analysis.category_summaries.map((summary) => (
+              <div className="category-row" key={`${summary.currency}-${summary.category}`}>
+                <span>{copy.categoryLabels[summary.category]}</span>
+                <i
+                  style={{
+                    width: `${categoryWidth(
+                      summary.amount,
+                      analysis.category_summaries
+                        .filter((item) => item.currency === summary.currency)
+                        .map((item) => item.amount),
+                    )}%`,
+                  }}
+                />
+                <strong>{formatMoney(summary.amount, summary.currency, locale)}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section>
+          <h3>{copy.anomalyHeading}</h3>
+          {analysis.anomalies.length === 0 ? (
+            <p className="muted">{copy.noAnomalies}</p>
+          ) : (
+            <ul className="anomaly-list">
+              {analysis.anomalies.map((anomaly, index) => (
+                <li className={`anomaly-${anomaly.severity}`} key={`${anomaly.rule_id}-${index}`}>
+                  <span>!</span><p>{copy.anomalyDescription(anomaly)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function categoryWidth(amount: string, amounts: string[]) {
+  const maximum = Math.max(...amounts.map(Number), 1)
+  return Math.max(5, Math.round((Number(amount) / maximum) * 100))
+}
+
 function Status({ copy, status }: { copy: Messages; status: Run['status'] }) {
-  return <span className={`status status-${status.toLowerCase()}`}>{statusLabel(status, copy)}</span>
+  return (
+    <span className={`status status-${status.toLowerCase()}`}>
+      <i aria-hidden="true" />
+      {statusLabel(status, copy)}
+    </span>
+  )
 }
 
 function statusLabel(status: Run['status'], copy: Messages) {

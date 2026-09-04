@@ -8,8 +8,8 @@ set -Eeuo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 ENV_FILE=${ENV_FILE:-"$ROOT_DIR/deploy/.env"}
 KUBECTL=(sudo k3s kubectl)
-API_IMAGE=bankpilot-api:0.1.0-k8s.1
-WEB_IMAGE=bankpilot-web:0.1.0
+API_IMAGE=bankpilot-api:0.2.0
+WEB_IMAGE=bankpilot-web:0.2.0
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "missing $ENV_FILE; copy deploy/.env.example and fill all required values" >&2
@@ -64,4 +64,8 @@ echo "[5/5] wait for database, API, and Web rollouts"
 "${KUBECTL[@]}" -n bankpilot rollout status deployment/web --timeout=180s
 
 "${KUBECTL[@]}" -n bankpilot get pods,svc,ingress,pvc -o wide
-echo "Web is exposed through the K3s Traefik Ingress on the remote host."
+if "${KUBECTL[@]}" get ingressclass traefik >/dev/null 2>&1; then
+  echo "Web is exposed through the K3s Traefik Ingress on the remote host."
+else
+  echo "Traefik is not installed; workloads are healthy but Web remains cluster-internal."
+fi

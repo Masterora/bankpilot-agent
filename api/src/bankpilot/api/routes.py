@@ -1,15 +1,19 @@
 """
-文件职责：定义 BankPilot v1 的 HTTP 路由与请求编排。
+文件职责：定义 BankPilot v1 的认证、Agent、事件流与账单分类修正路由。
 
 主要内容：
 - 系统接口：`healthz` 和数据库 `readyz`。
 - 认证接口：登录、退出与当前用户查询。
-- 运行接口：创建异步 Agent 运行，按 ID 读取状态与审计事件。
+- 运行接口：创建异步 Agent 运行，按 ID 读取状态，并通过 SSE 增量订阅事件。
+- 分析接口：在运行归属范围内修正交易分类并重新计算确定性分析。
 - `_run_response`：组装运行记录和时间线响应。
 
-关键边界：运行查询必须同时匹配 `run_id` 和当前 `user_id`；会话 Cookie 使用 HttpOnly。
+关键边界：运行和交易必须同时匹配当前用户；SSE 序号用于断线续传与去重。
 """
 
+import asyncio
+from collections.abc import AsyncIterator
+from typing import cast
 from uuid import UUID
 
 from fastapi import (
@@ -18,12 +22,14 @@ from fastapi import (
     Cookie,
     Depends,
     HTTPException,
+    Query,
     Request,
     Response,
     status,
 )
+from fastapi.responses import StreamingResponse
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bankpilot.api.dependencies import (
     SESSION_COOKIE,
@@ -33,6 +39,7 @@ from bankpilot.api.dependencies import (
 )
 from bankpilot.api.schemas import (
     AuditEventResponse,
+    CorrectCategoryRequest,
     CreateRunRequest,
     HealthResponse,
     LoginRequest,
@@ -41,7 +48,19 @@ from bankpilot.api.schemas import (
 )
 from bankpilot.config import Settings
 from bankpilot.db.models import RunRecord, UserRecord
-from bankpilot.db.repositories import RunRepository, SessionRepository, UserRepository
+from bankpilot.db.repositories import (
+    RunRepository,
+    SessionRepository,
+    TransactionRepository,
+    UserRepository,
+)
+from bankpilot.domain.bill_analysis import analyze_bill
+from bankpilot.domain.contracts import (
+    CategorySource,
+    RunResult,
+    RunStatus,
+    TransactionResult,
+)
 from bankpilot.security import (
     DUMMY_PASSWORD_HASH,
     create_session_token,
@@ -155,6 +174,133 @@ async def get_run(
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
     return await _run_response(repository, run)
+
+
+@router.get("/runs/{run_id}/events", tags=["runs"])
+async def stream_run_events(
+    run_id: UUID,
+    request: Request,
+    after: int = Query(default=0, ge=0),
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> StreamingResponse:
+    """按审计序号输出 SSE；浏览器重连时不会重复已确认事件。"""
+    repository = RunRepository(session)
+    run = await repository.get_for_user(run_id=run_id, user_id=user.id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+
+    cursor = after
+    last_event_id = request.headers.get("last-event-id")
+    if last_event_id is not None:
+        try:
+            cursor = int(last_event_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Last-Event-ID"
+            ) from exc
+        if cursor < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Last-Event-ID"
+            )
+
+    session_factory = cast(
+        async_sessionmaker[AsyncSession], request.app.state.session_factory
+    )
+
+    async def generate() -> AsyncIterator[str]:
+        """每次轮询使用短会话，确保能够看到后台任务刚提交的事件。"""
+        current_sequence = cursor
+        idle_cycles = 0
+        yield "retry: 1000\n\n"
+        while not await request.is_disconnected():
+            async with session_factory() as stream_session:
+                stream_repository = RunRepository(stream_session)
+                current_run = await stream_repository.get_for_user(
+                    run_id=run_id, user_id=user.id
+                )
+                if current_run is None:
+                    return
+                events = await stream_repository.events_after(run_id, current_sequence)
+            for event in events:
+                payload = AuditEventResponse(
+                    sequence=event.sequence,
+                    event_type=event.event_type,
+                    payload=event.payload,
+                    occurred_at=event.occurred_at,
+                )
+                yield f"id: {event.sequence}\ndata: {payload.model_dump_json()}\n\n"
+                current_sequence = event.sequence
+            if current_run.status in {
+                RunStatus.SUCCEEDED.value,
+                RunStatus.FAILED.value,
+                RunStatus.UNKNOWN.value,
+            }:
+                return
+            idle_cycles += 1
+            if idle_cycles % 60 == 0:
+                yield ": keep-alive\n\n"
+            await asyncio.sleep(0.25)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post(
+    "/runs/{run_id}/transactions/{transaction_id}/category",
+    response_model=RunResponse,
+    tags=["analysis"],
+)
+async def correct_transaction_category(
+    run_id: UUID,
+    transaction_id: UUID,
+    payload: CorrectCategoryRequest,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> RunResponse:
+    """保存用户分类修正，并重新生成该次运行的确定性统计。"""
+    runs = RunRepository(session)
+    run = await runs.get_for_user(run_id=run_id, user_id=user.id)
+    if run is None or run.status != RunStatus.SUCCEEDED.value or run.result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+
+    transactions = TransactionResult.model_validate(run.result.get("transactions"))
+    item = next((entry for entry in transactions.items if entry.id == transaction_id), None)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    transaction = await TransactionRepository(session).set_category_override(
+        user_id=user.id,
+        transaction_id=transaction_id,
+        category=payload.category.value,
+    )
+    if transaction is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+
+    previous_category = item.category
+    item.category = payload.category
+    item.category_source = CategorySource.USER
+    item.category_rule_id = "category_user_override_v1"
+    result = RunResult(
+        message=str(run.result.get("message", "")),
+        transactions=transactions,
+        analysis=analyze_bill(transactions.items),
+    )
+    await runs.update_result(run_id, result.model_dump(mode="json"))
+    await runs.add_event(
+        run_id,
+        "transaction.category_corrected",
+        {
+            "transaction_id": str(transaction_id),
+            "previous_category": previous_category.value,
+            "category": payload.category.value,
+        },
+    )
+    await session.commit()
+    await session.refresh(run)
+    return await _run_response(runs, run)
 
 
 async def _run_response(repository: RunRepository, run: RunRecord) -> RunResponse:

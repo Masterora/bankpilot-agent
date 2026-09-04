@@ -37,7 +37,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: bankpilot-web:0.1.0
+          image: bankpilot-web:0.2.0
           imagePullPolicy: Never
           ports:
             - name: http

@@ -2,7 +2,7 @@
 文件职责：编排单次 Agent 运行的持久化状态、工作流执行与异常收敛。
 
 主要内容：
-- `process`：领取 CREATED 运行，进入 PLANNING，执行工作流并写入终态。
+- `process`：领取 CREATED 运行，执行查询与确定性分析并写入终态。
 - `_record_plan`：持久化模型决策与模型元数据，合法动作才进入 EXECUTING。
 - `_fail`：将预期与非预期异常统一收敛为失败记录。
 - `reconcile_interrupted`：应用启动时处理遗留非终态运行。
@@ -70,6 +70,14 @@ class RunProcessor:
                     run_id,
                     "tool.completed",
                     {"tool": "query_transactions", "status": "SUCCEEDED"},
+                )
+                await repository.add_event(
+                    run_id,
+                    "analysis.completed",
+                    {
+                        "anomaly_count": len(result.analysis.anomalies),
+                        "category_count": len(result.analysis.category_summaries),
+                    },
                 )
                 await repository.succeed(run_id, result.model_dump(mode="json"))
         except BankPilotError as exc:

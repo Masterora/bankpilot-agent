@@ -3,14 +3,14 @@
  *
  * 主要内容：
  * - `Messages`：约束每种语言必须实现的界面文案。
- * - `zhCN` / `enUS`：登录、工作台、状态、事件和结果文案。
+ * - `zhCN` / `enUS`：登录、工作台、统计、异常、分类和事件文案。
  * - `storedLocale`：读取持久化语言，异常值回退为中文。
  * - `isPresetQuery`：识别可随语言切换的预设查询。
  *
  * 关键边界：切换语言只替换预设查询，不覆盖用户自行输入的文本。
  */
 
-import type { Run } from './types'
+import type { BillAnomaly, Run, TransactionCategory } from './types'
 
 export type Locale = 'zh-CN' | 'en-US'
 
@@ -19,11 +19,6 @@ export interface Messages {
   switchToChinese: string
   switchToEnglish: string
   checkingSession: string
-  loginEyebrow: string
-  loginTitle: string
-  loginDescription: string
-  securityNote: string
-  secureAccess: string
   loginHeading: string
   loginHint: string
   email: string
@@ -46,6 +41,17 @@ export interface Messages {
   emptyResult: string
   resultEyebrow: string
   timelineEyebrow: string
+  analysisEyebrow: string
+  incomeLabel: string
+  expenseLabel: string
+  netLabel: string
+  categoryBreakdown: string
+  anomalyHeading: string
+  noAnomalies: string
+  categoryLabel: string
+  categoryUpdateFailed: string
+  categoryLabels: Record<TransactionCategory, string>
+  anomalyDescription: (anomaly: BillAnomaly) => string
   statuses: Record<Run['status'], string>
   events: Record<string, string>
   resultSummary: (startDate: string, endDate: string, count: number) => string
@@ -56,22 +62,17 @@ const zhCN: Messages = {
   switchToChinese: '切换为中文',
   switchToEnglish: 'Switch to English',
   checkingSession: '正在检查会话',
-  loginEyebrow: 'BANKING, WITH INTENT',
-  loginTitle: '说出目标，\n清楚完成每一步。',
-  loginDescription: 'Agent 理解你的银行意图，确定性程序负责数据、权限与执行边界。',
-  securityNote: '本地银行数据 · 可追溯运行记录 · 严格工具白名单',
-  secureAccess: '安全访问',
   loginHeading: '登录 BankPilot',
-  loginHint: '使用本地账户继续。',
+  loginHint: '使用本地账户访问账单分析。',
   email: '邮箱',
   password: '密码',
   login: '登录',
   loggingIn: '正在登录…',
   loginFailed: '登录失败，请稍后重试',
   invalidCredentials: '邮箱或密码错误',
-  workspaceEyebrow: '只读账单工作台',
-  workspaceTitle: '今天想查什么？',
-  workspaceDescription: '使用自然语言指定时间范围，BankPilot 会规划并查询你的本地账单。',
+  workspaceEyebrow: '账单分析',
+  workspaceTitle: '查询账单',
+  workspaceDescription: '输入时间范围，查看分类、统计和异常。',
   queryInputLabel: '账单查询',
   defaultQuery: '查询本月账单',
   suggestions: ['查询本月账单', '查看最近 7 天的交易', '查询上个月的账单'],
@@ -83,6 +84,34 @@ const zhCN: Messages = {
   emptyResult: '查询结果会显示在这里',
   resultEyebrow: '运行结果',
   timelineEyebrow: '操作记录',
+  analysisEyebrow: '确定性统计',
+  incomeLabel: '收入',
+  expenseLabel: '支出',
+  netLabel: '净额',
+  categoryBreakdown: '分类构成',
+  anomalyHeading: '异常提示',
+  noAnomalies: '未命中异常规则',
+  categoryLabel: '交易分类',
+  categoryUpdateFailed: '分类修正失败，请重试',
+  categoryLabels: {
+    income: '收入',
+    groceries: '日用百货',
+    dining: '餐饮',
+    transport: '交通',
+    shopping: '购物',
+    housing: '住房',
+    utilities: '生活缴费',
+    entertainment: '娱乐',
+    healthcare: '医疗',
+    education: '教育',
+    travel: '旅行',
+    transfer: '转账',
+    other: '其他',
+  },
+  anomalyDescription: (anomaly) =>
+    anomaly.rule_id === 'large_outflow_v1'
+      ? `单笔支出 ${anomaly.facts.amount} ${anomaly.facts.currency}，达到规则阈值 ${anomaly.facts.threshold}。`
+      : `${anomaly.facts.merchant} 在 ${anomaly.facts.window_minutes} 分钟内出现相同扣款 ${anomaly.facts.amount} ${anomaly.facts.currency}。`,
   statuses: {
     CREATED: '已创建',
     PLANNING: '正在理解',
@@ -96,6 +125,8 @@ const zhCN: Messages = {
     'run.planning': '理解查询范围',
     'tool.started': '开始查询账单',
     'tool.completed': '账单查询完成',
+    'analysis.completed': '账单分析完成',
+    'transaction.category_corrected': '交易分类已修正',
     'run.completed': '结果已确认',
     'run.failed': '任务未完成',
   },
@@ -108,24 +139,17 @@ const enUS: Messages = {
   switchToChinese: '切换为中文',
   switchToEnglish: 'Switch to English',
   checkingSession: 'Checking your session',
-  loginEyebrow: 'BANKING, WITH INTENT',
-  loginTitle: 'State your goal.\nSee every step clearly.',
-  loginDescription:
-    'The Agent understands your banking intent while deterministic code controls data, permissions, and execution.',
-  securityNote: 'Local banking data · Traceable runs · Strict tool allowlist',
-  secureAccess: 'SECURE ACCESS',
   loginHeading: 'Sign in to BankPilot',
-  loginHint: 'Continue with your local account.',
+  loginHint: 'Use your local account to access bill analysis.',
   email: 'Email',
   password: 'Password',
   login: 'Sign in',
   loggingIn: 'Signing in…',
   loginFailed: 'Sign-in failed. Please try again.',
   invalidCredentials: 'Incorrect email or password',
-  workspaceEyebrow: 'READ-ONLY BILLING WORKSPACE',
-  workspaceTitle: 'What would you like to check?',
-  workspaceDescription:
-    'Describe a date range in natural language. BankPilot will plan and query your local transactions.',
+  workspaceEyebrow: 'BILL ANALYSIS',
+  workspaceTitle: 'Query transactions',
+  workspaceDescription: 'Enter a date range to see categories, totals, and anomalies.',
   queryInputLabel: 'Transaction query',
   defaultQuery: 'Show my transactions this month',
   suggestions: [
@@ -141,6 +165,34 @@ const enUS: Messages = {
   emptyResult: 'Your query results will appear here',
   resultEyebrow: 'RUN RESULT',
   timelineEyebrow: 'ACTIVITY',
+  analysisEyebrow: 'DETERMINISTIC SUMMARY',
+  incomeLabel: 'Income',
+  expenseLabel: 'Expense',
+  netLabel: 'Net',
+  categoryBreakdown: 'Category mix',
+  anomalyHeading: 'Anomaly signals',
+  noAnomalies: 'No anomaly rules matched',
+  categoryLabel: 'Transaction category',
+  categoryUpdateFailed: 'Unable to update the category. Please retry.',
+  categoryLabels: {
+    income: 'Income',
+    groceries: 'Groceries',
+    dining: 'Dining',
+    transport: 'Transport',
+    shopping: 'Shopping',
+    housing: 'Housing',
+    utilities: 'Utilities',
+    entertainment: 'Entertainment',
+    healthcare: 'Healthcare',
+    education: 'Education',
+    travel: 'Travel',
+    transfer: 'Transfer',
+    other: 'Other',
+  },
+  anomalyDescription: (anomaly) =>
+    anomaly.rule_id === 'large_outflow_v1'
+      ? `A ${anomaly.facts.amount} ${anomaly.facts.currency} expense met the ${anomaly.facts.threshold} rule threshold.`
+      : `${anomaly.facts.merchant} posted the same ${anomaly.facts.amount} ${anomaly.facts.currency} charge within ${anomaly.facts.window_minutes} minutes.`,
   statuses: {
     CREATED: 'Created',
     PLANNING: 'Planning',
@@ -154,6 +206,8 @@ const enUS: Messages = {
     'run.planning': 'Interpreted date range',
     'tool.started': 'Started transaction query',
     'tool.completed': 'Transaction query completed',
+    'analysis.completed': 'Bill analysis completed',
+    'transaction.category_corrected': 'Transaction category corrected',
     'run.completed': 'Result confirmed',
     'run.failed': 'Run did not complete',
   },

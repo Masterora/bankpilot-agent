@@ -4,8 +4,8 @@
 主要内容：
 - `UserRepository`：用户查询与创建。
 - `SessionRepository`：创建、解析和删除可过期会话。
-- `RunRepository`：运行创建、状态迁移、计划/结果记录、中断修复与审计事件。
-- `TransactionRepository`：按用户账户和 UTC 时间范围查询交易。
+- `RunRepository`：运行创建、状态迁移、计划/结果记录、中断修复与增量事件读取。
+- `TransactionRepository`：查询交易并保存不覆盖原始数据的用户分类修正。
 
 关键边界：带用户归属的读取必须在 SQL 条件中同时限定资源 ID 与用户 ID。
 """
@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.db.models import (
@@ -22,6 +22,7 @@ from bankpilot.db.models import (
     AuditEventRecord,
     RunRecord,
     SessionRecord,
+    TransactionCategoryOverrideRecord,
     TransactionRecord,
     UserRecord,
 )
@@ -126,6 +127,12 @@ class RunRepository:
         )
         await self.add_event(run_id, "run.completed", {"status": RunStatus.SUCCEEDED.value})
 
+    async def update_result(self, run_id: UUID, result: dict[str, Any]) -> None:
+        """更新已完成运行的派生分析结果，不改变运行终态。"""
+        await self.session.execute(
+            update(RunRecord).where(RunRecord.id == run_id).values(result=result)
+        )
+
     async def fail(self, run_id: UUID, *, code: str, message: str) -> None:
         await self.session.execute(
             update(RunRecord)
@@ -183,6 +190,15 @@ class RunRepository:
         )
         return list(result)
 
+    async def events_after(self, run_id: UUID, sequence: int) -> list[AuditEventRecord]:
+        """按单调序号读取尚未发送的事件，供 SSE 断线续传。"""
+        result = await self.session.scalars(
+            select(AuditEventRecord)
+            .where(AuditEventRecord.run_id == run_id, AuditEventRecord.sequence > sequence)
+            .order_by(AuditEventRecord.sequence)
+        )
+        return list(result)
+
 
 class TransactionRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -190,13 +206,24 @@ class TransactionRepository:
 
     async def query_for_user(
         self, *, user_id: UUID, start_date: date, end_date: date
-    ) -> list[tuple[TransactionRecord, str]]:
+    ) -> list[tuple[TransactionRecord, str, str | None]]:
         """通过用户所属账户查询交易，时间范围使用 UTC 左闭右开区间。"""
         start = datetime.combine(start_date, datetime.min.time(), tzinfo=UTC)
         end = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
         rows = await self.session.execute(
-            select(TransactionRecord, AccountRecord.name)
+            select(
+                TransactionRecord,
+                AccountRecord.name,
+                TransactionCategoryOverrideRecord.category,
+            )
             .join(AccountRecord, TransactionRecord.account_id == AccountRecord.id)
+            .outerjoin(
+                TransactionCategoryOverrideRecord,
+                and_(
+                    TransactionCategoryOverrideRecord.transaction_id == TransactionRecord.id,
+                    TransactionCategoryOverrideRecord.user_id == user_id,
+                ),
+            )
             .where(
                 AccountRecord.user_id == user_id,
                 TransactionRecord.occurred_at >= start,
@@ -205,3 +232,32 @@ class TransactionRepository:
             .order_by(TransactionRecord.occurred_at.desc())
         )
         return list(rows.tuples())
+
+    async def set_category_override(
+        self, *, user_id: UUID, transaction_id: UUID, category: str
+    ) -> TransactionRecord | None:
+        """仅允许交易所属用户写入分类修正，并保留银行原始记录。"""
+        transaction = cast(
+            TransactionRecord | None,
+            await self.session.scalar(
+                select(TransactionRecord)
+                .join(AccountRecord, TransactionRecord.account_id == AccountRecord.id)
+                .where(TransactionRecord.id == transaction_id, AccountRecord.user_id == user_id)
+            ),
+        )
+        if transaction is None:
+            return None
+
+        existing = await self.session.get(TransactionCategoryOverrideRecord, transaction_id)
+        if existing is None:
+            self.session.add(
+                TransactionCategoryOverrideRecord(
+                    transaction_id=transaction_id,
+                    user_id=user_id,
+                    category=category,
+                )
+            )
+        else:
+            existing.category = category
+        await self.session.flush()
+        return transaction

@@ -1,5 +1,5 @@
 """
-文件职责：创建或回滚 BankPilot v0.1 初始数据库结构。
+文件职责：创建或回滚 BankPilot 基础数据库结构。
 
 主要内容：
 - `upgrade`：创建 users、accounts、sessions、transactions、runs 和 audit_events 表及索引。
@@ -23,7 +23,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """创建完整的 v0.1 持久化结构与归属查询索引。"""
+    """创建基础持久化结构与归属查询索引。"""
     op.create_table(
         "users",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -120,7 +120,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """按依赖关系逆序删除 v0.1 数据表。"""
+    """按依赖关系逆序删除基础数据表。"""
     op.drop_table("audit_events")
     op.drop_table("runs")
     op.drop_table("transactions")

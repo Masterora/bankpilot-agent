@@ -62,7 +62,7 @@ def create_app(
 
     app = FastAPI(
         title="BankPilot Agent API",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -70,7 +70,7 @@ def create_app(
         allow_origins=resolved_settings.cors_origin_list,
         allow_credentials=True,
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "Last-Event-ID"],
     )
     app.include_router(router)
     return app
