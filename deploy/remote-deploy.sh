@@ -39,7 +39,8 @@ sudo rsync -a --delete --exclude='deploy/.env' "$staging_dir/" "$DEPLOY_PATH/"
 cd "$DEPLOY_PATH/deploy"
 sudo docker compose --env-file .env build api web
 sudo docker compose --env-file .env run --rm api uv run alembic upgrade head
-sudo docker compose --env-file .env up -d --remove-orphans api web
+# Compose 在启用镜像 provenance 时可能无法仅凭镜像摘要识别新构建；发布必须重建运行容器。
+sudo docker compose --env-file .env up -d --remove-orphans --force-recreate api web
 
 sudo docker compose --env-file .env exec -T api \
   python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/readyz', timeout=5)"
