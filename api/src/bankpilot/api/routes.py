@@ -1,9 +1,10 @@
 """
-文件职责：定义 BankPilot v1 的认证、Agent、事件流与账单分类修正路由。
+文件职责：定义 BankPilot v1 的认证、卡片、Agent、事件流与账单分类修正路由。
 
 主要内容：
 - 系统接口：`healthz` 和数据库 `readyz`。
-- 认证接口：登录、退出与当前用户查询。
+- 认证接口：注册、登录、退出与当前用户查询。
+- 卡片接口：读取当前用户所属账户下的卡片。
 - 运行接口：创建异步 Agent 运行，按 ID 读取状态，并通过 SSE 增量订阅事件。
 - 分析接口：在运行归属范围内修正交易分类并重新计算确定性分析。
 - `_run_response`：组装运行记录和时间线响应。
@@ -29,6 +30,7 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bankpilot.api.dependencies import (
@@ -39,16 +41,20 @@ from bankpilot.api.dependencies import (
 )
 from bankpilot.api.schemas import (
     AuditEventResponse,
+    CardListResponse,
+    CardResponse,
     CorrectCategoryRequest,
     CreateRunRequest,
     HealthResponse,
     LoginRequest,
+    RegisterRequest,
     RunResponse,
     UserResponse,
 )
 from bankpilot.config import Settings
 from bankpilot.db.models import RunRecord, UserRecord
 from bankpilot.db.repositories import (
+    CardRepository,
     RunRepository,
     SessionRepository,
     TransactionRepository,
@@ -64,11 +70,27 @@ from bankpilot.domain.contracts import (
 from bankpilot.security import (
     DUMMY_PASSWORD_HASH,
     create_session_token,
+    hash_password,
     hash_session_token,
     verify_password,
 )
 
 router = APIRouter(prefix="/api/v1")
+
+
+def _set_session_cookie(
+    response: Response, *, token: str, settings: Settings
+) -> None:
+    """统一设置注册和登录会话，确保 Cookie 安全属性不会漂移。"""
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=settings.session_ttl_seconds,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        path="/",
+    )
 
 
 @router.get("/healthz", response_model=HealthResponse, tags=["system"])
@@ -80,6 +102,51 @@ async def healthz() -> HealthResponse:
 async def readyz(session: AsyncSession = Depends(get_db_session)) -> HealthResponse:
     await session.execute(text("SELECT 1"))
     return HealthResponse(status="ready")
+
+
+@router.post(
+    "/auth/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["auth"],
+)
+async def register(
+    payload: RegisterRequest,
+    response: Response,
+    settings: Settings = Depends(get_app_settings),
+    session: AsyncSession = Depends(get_db_session),
+) -> UserResponse:
+    """创建唯一用户并直接建立会话，原始密码和会话令牌均不入库。"""
+    try:
+        async with session.begin():
+            users = UserRepository(session)
+            if await users.by_email(str(payload.email)) is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email already registered",
+                )
+
+            # Argon2 密码哈希移到线程，避免阻塞异步 HTTP 处理。
+            password_hash = await asyncio.to_thread(hash_password, payload.password)
+            user = await users.add(email=str(payload.email), password_hash=password_hash)
+            token = create_session_token()
+            token_hash = hash_session_token(
+                token, settings.session_secret.get_secret_value()
+            )
+            await SessionRepository(session).create(
+                user_id=user.id,
+                token_hash=token_hash,
+                ttl_seconds=settings.session_ttl_seconds,
+            )
+    except IntegrityError as exc:
+        # 并发注册可能同时通过预查，最终仍由数据库唯一索引裁决。
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        ) from exc
+
+    _set_session_cookie(response, token=token, settings=settings)
+    return UserResponse(id=user.id, email=user.email)
 
 
 @router.post("/auth/login", response_model=UserResponse, tags=["auth"])
@@ -107,15 +174,7 @@ async def login(
             token_hash=token_hash,
             ttl_seconds=settings.session_ttl_seconds,
         )
-    response.set_cookie(
-        SESSION_COOKIE,
-        token,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        path="/",
-    )
+    _set_session_cookie(response, token=token, settings=settings)
     return UserResponse(id=user.id, email=user.email)
 
 
@@ -142,6 +201,28 @@ async def logout(
 @router.get("/auth/me", response_model=UserResponse, tags=["auth"])
 async def me(user: UserRecord = Depends(get_current_user)) -> UserResponse:
     return UserResponse(id=user.id, email=user.email)
+
+
+@router.get("/cards", response_model=CardListResponse, tags=["cards"])
+async def list_cards(
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> CardListResponse:
+    """返回当前用户的卡片摘要，不向前端暴露完整卡号。"""
+    rows = await CardRepository(session).list_for_user(user.id)
+    return CardListResponse(
+        items=[
+            CardResponse(
+                id=card.id,
+                account_id=card.account_id,
+                account_name=account_name,
+                display_name=card.display_name,
+                last_four=card.last_four,
+                status=card.status,
+            )
+            for card, account_name in rows
+        ]
+    )
 
 
 @router.post(

@@ -1,8 +1,9 @@
 """
-文件职责：定义工作流、账单分析、适配器与应用层共用的领域契约。
+文件职责：定义工作流、卡片、账单分析、适配器与应用层共用的领域契约。
 
 主要内容：
 - `RunStatus`：Agent 运行的持久化状态集。
+- `CardStatus`：卡片可被展示和后续状态操作使用的稳定状态集。
 - `TransactionQuery`：受限的交易日期范围。
 - `SupportedAction` / `UnsupportedIntent`：模型规划决策的可辨别联合。
 - `ModelPlan`：模型决策、供应商、耗时和 Token 用量。
@@ -28,6 +29,11 @@ class RunStatus(StrEnum):
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     UNKNOWN = "UNKNOWN"
+
+
+class CardStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    LOCKED = "LOCKED"
 
 
 class TransactionCategory(StrEnum):

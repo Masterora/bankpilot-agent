@@ -1,10 +1,12 @@
 /**
- * 文件职责：组装 BankPilot Web 的登录页、账单工作台与运行结果界面。
+ * 文件职责：组装 BankPilot Web 的登录页与完整产品工作区。
  *
  * 主要内容：
  * - `App`：恢复会话、管理语言，并在登录页与工作台之间切换。
- * - `Login`：提交账号密码并处理认证错误。
- * - `Workspace`：创建 Agent 运行、订阅 SSE、修正分类并处理退出。
+ * - `Login`：在同一认证界面完成注册或登录，并处理字段与服务端错误。
+ * - `Workspace`：组装总览、Agent、导入、核查、周期扣款、预算和审计导航。
+ * - 产品页：已接入的卡片、核查与审计展示真实状态，其他模块使用无数据空态。
+ * - `CardPanel`：以脱敏尾号展示当前用户所属卡片。
  * - `RunPanel`：展示确定性统计、异常、交易分类与审计时间线。
  * - `LanguageSwitch`：切换中英文界面。
  *
@@ -16,10 +18,19 @@ import { FormEvent, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from './api'
 import { formatDate, formatMoney } from './format'
 import { isPresetQuery, messages, storedLocale } from './i18n'
-import type { Locale, Messages } from './i18n'
-import type { Run, TransactionCategory, User } from './types'
+import type { Locale, Messages, ProductPage } from './i18n'
+import type { Card, Run, TransactionCategory, User } from './types'
 
 const terminalStatuses = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN'])
+const productPages: ProductPage[] = [
+  'overview',
+  'agent',
+  'import',
+  'review',
+  'recurring',
+  'budgets',
+  'audit',
+]
 
 export default function App() {
   // 语言是本地界面偏好；认证状态仍由服务端通过 HttpOnly Cookie 管理。
@@ -91,23 +102,42 @@ interface LoginProps extends LanguageProps {
 }
 
 function Login({ copy, locale, onLocaleChange, onLogin }: LoginProps) {
+  const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordConfirmation, setPasswordConfirmation] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  function changeMode(nextMode: 'login' | 'register') {
+    setMode(nextMode)
+    setError('')
+    setPassword('')
+    setPasswordConfirmation('')
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError('')
+    if (mode === 'register' && password !== passwordConfirmation) {
+      setError(copy.passwordMismatch)
+      return
+    }
     setSubmitting(true)
     try {
-      onLogin(await api.login(email, password))
-    } catch (reason) {
-      setError(
-        reason instanceof ApiError && reason.status === 401
-          ? copy.invalidCredentials
-          : copy.loginFailed,
+      onLogin(
+        mode === 'register'
+          ? await api.register(email, password)
+          : await api.login(email, password),
       )
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 401) {
+        setError(copy.invalidCredentials)
+      } else if (mode === 'register' && reason instanceof ApiError && reason.status === 409) {
+        setError(copy.emailAlreadyRegistered)
+      } else {
+        setError(mode === 'register' ? copy.registerFailed : copy.loginFailed)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -122,7 +152,23 @@ function Login({ copy, locale, onLocaleChange, onLogin }: LoginProps) {
         </div>
         <div className="login-heading">
           <h1>{copy.loginHeading}</h1>
-          <p>{copy.loginHint}</p>
+          <p>{mode === 'register' ? copy.registerHint : copy.loginHint}</p>
+        </div>
+        <div className="auth-mode-switch" role="group" aria-label={copy.loginHeading}>
+          <button
+            type="button"
+            aria-pressed={mode === 'login'}
+            onClick={() => changeMode('login')}
+          >
+            {copy.login}
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === 'register'}
+            onClick={() => changeMode('register')}
+          >
+            {copy.register}
+          </button>
         </div>
         <label>
           {copy.email}
@@ -138,21 +184,41 @@ function Login({ copy, locale, onLocaleChange, onLogin }: LoginProps) {
           {copy.password}
           <input
             type="password"
-            autoComplete="current-password"
+            aria-label={copy.password}
+            autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            minLength={8}
+            minLength={mode === 'register' ? 12 : 8}
             required
           />
+          {mode === 'register' && <span className="field-hint">{copy.passwordRequirement}</span>}
         </label>
+        {mode === 'register' && (
+          <label>
+            {copy.confirmPassword}
+            <input
+              type="password"
+              aria-label={copy.confirmPassword}
+              autoComplete="new-password"
+              value={passwordConfirmation}
+              onChange={(event) => setPasswordConfirmation(event.target.value)}
+              minLength={12}
+              required
+            />
+          </label>
+        )}
         {error && <p className="error" role="alert">{error}</p>}
         <button
-          aria-label={submitting ? copy.loggingIn : copy.login}
+          aria-label={
+            submitting
+              ? mode === 'register' ? copy.registering : copy.loggingIn
+              : mode === 'register' ? copy.register : copy.login
+          }
           className="primary"
           disabled={submitting}
         >
           {submitting && <span className="button-spinner" aria-hidden="true" />}
-          <span>{copy.login}</span>
+          <span>{mode === 'register' ? copy.register : copy.login}</span>
         </button>
       </form>
     </main>
@@ -165,7 +231,11 @@ interface WorkspaceProps extends LanguageProps {
 }
 
 function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspaceProps) {
+  const [activePage, setActivePage] = useState<ProductPage>('overview')
   const [message, setMessage] = useState(copy.defaultQuery)
+  const [cards, setCards] = useState<Card[]>([])
+  const [cardsLoading, setCardsLoading] = useState(true)
+  const [cardsFailed, setCardsFailed] = useState(false)
   const [run, setRun] = useState<Run | null>(null)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -176,6 +246,23 @@ function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspacePr
   useEffect(() => {
     setMessage((current) => (isPresetQuery(current) ? copy.defaultQuery : current))
   }, [copy])
+
+  useEffect(() => {
+    let active = true
+    api.listCards()
+      .then((response) => {
+        if (active) setCards(response.items)
+      })
+      .catch(() => {
+        if (active) setCardsFailed(true)
+      })
+      .finally(() => {
+        if (active) setCardsLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => () => {
     eventSource.current?.close()
@@ -273,26 +360,187 @@ function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspacePr
   }
 
   return (
-    <main className="workspace-shell">
-      <header>
-        <div className="brand"><Logo /> BankPilot</div>
-        <div className="header-actions">
-          <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
-          <div className="account-chip">
-            <span>{user.email}</span>
-            <button onClick={logout}>{copy.logout}</button>
-          </div>
+    <div className="product-shell">
+      <aside className="product-sidebar">
+        <div className="sidebar-brand brand"><Logo /> BankPilot</div>
+        <p className="sidebar-label">{copy.navigationLabel}</p>
+        <nav className="product-nav" aria-label={copy.navigationLabel}>
+          {productPages.map((page) => (
+            <button
+              type="button"
+              className={activePage === page ? 'active' : undefined}
+              aria-current={activePage === page ? 'page' : undefined}
+              key={page}
+              onClick={() => setActivePage(page)}
+            >
+              <NavigationIcon kind={page} />
+              <span>{copy.productPages[page].navigation}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-account">
+          <span>{user.email}</span>
+          <button onClick={logout}>{copy.logout}</button>
         </div>
-      </header>
-      <section className="hero">
-        <p className="eyebrow">{copy.workspaceEyebrow}</p>
-        <h1>{copy.workspaceTitle}</h1>
-        <p>{copy.workspaceDescription}</p>
-        <form aria-busy={submitting} className="prompt" onSubmit={submit}>
+      </aside>
+
+      <main className="workspace-shell">
+        <header className="workspace-topbar">
+          <div className="topbar-brand brand"><Logo /> BankPilot</div>
+          <div className="topbar-context">
+            <strong>{copy.productPages[activePage].navigation}</strong>
+            <span><i aria-hidden="true" />{copy.readOnlyScope}</span>
+          </div>
+          <div className="header-actions">
+            <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
+            <div className="account-chip">
+              <span>{user.email}</span>
+              <button onClick={logout}>{copy.logout}</button>
+            </div>
+          </div>
+        </header>
+
+        <div className="workspace-content">
+          {activePage === 'overview' && (
+            <OverviewPage
+              cards={cards}
+              cardsFailed={cardsFailed}
+              cardsLoading={cardsLoading}
+              copy={copy}
+              onNavigate={setActivePage}
+              run={run}
+            />
+          )}
+          {activePage === 'agent' && (
+            <AgentPage
+              copy={copy}
+              correctingId={correctingId}
+              error={error}
+              locale={locale}
+              message={message}
+              onCategoryChange={correctCategory}
+              onMessageChange={setMessage}
+              onSubmit={submit}
+              run={run}
+              submitting={submitting}
+            />
+          )}
+          {activePage === 'review' && (
+            <ReviewPage
+              copy={copy}
+              correctingId={correctingId}
+              locale={locale}
+              onCategoryChange={correctCategory}
+              run={run}
+            />
+          )}
+          {activePage === 'audit' && <AuditPage copy={copy} run={run} />}
+          {(activePage === 'import' || activePage === 'recurring' || activePage === 'budgets') && (
+            <EmptyProductPage copy={copy} page={activePage} />
+          )}
+        </div>
+      </main>
+    </div>
+  )
+}
+
+function PageHeader({ copy, page }: { copy: Messages; page: ProductPage }) {
+  const content = copy.productPages[page]
+  return (
+    <header className="page-header">
+      <p className="eyebrow">{content.eyebrow}</p>
+      <h1>{content.title}</h1>
+      <p>{content.description}</p>
+    </header>
+  )
+}
+
+function OverviewPage({
+  cards,
+  cardsFailed,
+  cardsLoading,
+  copy,
+  onNavigate,
+  run,
+}: {
+  cards: Card[]
+  cardsFailed: boolean
+  cardsLoading: boolean
+  copy: Messages
+  onNavigate: (page: ProductPage) => void
+  run: Run | null
+}) {
+  const transactionCount = run?.result?.transactions.items.length ?? 0
+  const signalCount = run?.result?.analysis.anomalies.length ?? 0
+  return (
+    <section className="product-page">
+      <PageHeader copy={copy} page="overview" />
+      <div className="overview-metrics">
+        <Metric label={copy.linkedCardsMetric} value={cardsLoading ? '—' : String(cards.length)} />
+        <Metric label={copy.transactionsMetric} value={String(transactionCount)} />
+        <Metric label={copy.reviewSignalsMetric} value={String(signalCount)} />
+        <Metric
+          label={copy.latestRunMetric}
+          value={run ? copy.statuses[run.status] : copy.noRunStatus}
+        />
+      </div>
+      <section className="quick-tasks">
+        <div>
+          <p className="eyebrow">Agent</p>
+          <h2>{copy.quickTasksHeading}</h2>
+        </div>
+        <div className="quick-task-actions">
+          <button type="button" onClick={() => onNavigate('agent')}>
+            <NavigationIcon kind="agent" />
+            <span>{copy.openAgent}</span>
+          </button>
+          <button type="button" onClick={() => onNavigate('review')}>
+            <NavigationIcon kind="review" />
+            <span>{copy.openReview}</span>
+          </button>
+        </div>
+      </section>
+      <CardPanel cards={cards} copy={copy} failed={cardsFailed} loading={cardsLoading} />
+    </section>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return <article className="overview-metric"><span>{label}</span><strong>{value}</strong></article>
+}
+
+function AgentPage({
+  copy,
+  correctingId,
+  error,
+  locale,
+  message,
+  onCategoryChange,
+  onMessageChange,
+  onSubmit,
+  run,
+  submitting,
+}: {
+  copy: Messages
+  correctingId: string | null
+  error: string
+  locale: Locale
+  message: string
+  onCategoryChange: (transactionId: string, category: TransactionCategory) => void
+  onMessageChange: (message: string) => void
+  onSubmit: (event: FormEvent) => void
+  run: Run | null
+  submitting: boolean
+}) {
+  return (
+    <section className="product-page">
+      <PageHeader copy={copy} page="agent" />
+      <section className="agent-command">
+        <form aria-busy={submitting} className="prompt" onSubmit={onSubmit}>
           <input
             aria-label={copy.queryInputLabel}
             value={message}
-            onChange={(event) => setMessage(event.target.value)}
+            onChange={(event) => onMessageChange(event.target.value)}
             maxLength={1000}
           />
           <button
@@ -306,7 +554,7 @@ function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspacePr
         </form>
         <div className="suggestions">
           {copy.suggestions.map((item) => (
-            <button key={item} onClick={() => setMessage(item)}>{item}</button>
+            <button type="button" key={item} onClick={() => onMessageChange(item)}>{item}</button>
           ))}
         </div>
         {error && <p className="error" role="alert">{error}</p>}
@@ -315,10 +563,129 @@ function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspacePr
         copy={copy}
         correctingId={correctingId}
         locale={locale}
-        onCategoryChange={correctCategory}
+        onCategoryChange={onCategoryChange}
         run={run}
       />
-    </main>
+    </section>
+  )
+}
+
+function ReviewPage({
+  copy,
+  correctingId,
+  locale,
+  onCategoryChange,
+  run,
+}: {
+  copy: Messages
+  correctingId: string | null
+  locale: Locale
+  onCategoryChange: (transactionId: string, category: TransactionCategory) => void
+  run: Run | null
+}) {
+  return (
+    <section className="product-page">
+      <PageHeader copy={copy} page="review" />
+      <RunPanel
+        copy={copy}
+        correctingId={correctingId}
+        locale={locale}
+        onCategoryChange={onCategoryChange}
+        run={run}
+      />
+    </section>
+  )
+}
+
+function EmptyProductPage({ copy, page }: { copy: Messages; page: ProductPage }) {
+  return (
+    <section className="product-page">
+      <PageHeader copy={copy} page={page} />
+      <section className="module-empty"><NavigationIcon kind={page} /><p>{copy.productPages[page].empty}</p></section>
+    </section>
+  )
+}
+
+function AuditPage({ copy, run }: { copy: Messages; run: Run | null }) {
+  const boundaries = [
+    [copy.sourceDataBoundary, copy.sourceDataBoundaryDetail],
+    [copy.modelBoundary, copy.modelBoundaryDetail],
+    [copy.accountBoundary, copy.accountBoundaryDetail],
+    [copy.secretBoundary, copy.secretBoundaryDetail],
+  ]
+  return (
+    <section className="product-page">
+      <PageHeader copy={copy} page="audit" />
+      <div className="audit-grid">
+        <article className="audit-panel">
+          <p className="eyebrow">{copy.auditBoundaryHeading}</p>
+          <div className="boundary-list">
+            {boundaries.map(([title, detail]) => (
+              <div className="boundary-item" key={title}>
+                <span aria-hidden="true" />
+                <div><strong>{title}</strong><p>{detail}</p></div>
+              </div>
+            ))}
+          </div>
+        </article>
+        <article className="audit-panel">
+          <p className="eyebrow">{copy.auditEventsHeading}</p>
+          {run?.events.length ? (
+            <ol className="audit-events">
+              {run.events.map((event) => (
+                <li key={event.sequence}><span />{eventLabel(event.event_type, copy)}</li>
+              ))}
+            </ol>
+          ) : <p className="module-empty-copy">{copy.productPages.audit.empty}</p>}
+        </article>
+      </div>
+    </section>
+  )
+}
+
+function CardPanel({
+  cards,
+  copy,
+  failed,
+  loading,
+}: {
+  cards: Card[]
+  copy: Messages
+  failed: boolean
+  loading: boolean
+}) {
+  return (
+    <section className="cards-section" aria-live="polite">
+      <div className="cards-heading">
+        <p className="eyebrow">{copy.cardsEyebrow}</p>
+        <h2>{copy.cardsHeading}</h2>
+      </div>
+      {loading ? (
+        <p className="cards-message">{copy.cardsLoading}</p>
+      ) : failed ? (
+        <p className="error" role="alert">{copy.cardsLoadFailed}</p>
+      ) : cards.length === 0 ? (
+        <p className="cards-message">{copy.cardsEmpty}</p>
+      ) : (
+        <div className="card-list">
+          {cards.map((card) => (
+            <article className="bank-card" key={card.id}>
+              <div className="bank-card-header">
+                <strong>{card.display_name}</strong>
+                <span className={`card-status card-status-${card.status.toLowerCase()}`}>
+                  {copy.cardStatuses[card.status]}
+                </span>
+              </div>
+              <p><span>••••</span> {card.last_four}</p>
+              <div className="bank-card-footer">
+                <span>{card.account_name}</span>
+                <span>{copy.cardEnding} {card.last_four}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -336,7 +703,7 @@ function RunPanel({
   run: Run | null
 }) {
   if (!run) {
-    return <section className="empty-state"><span>⌁</span><p>{copy.emptyResult}</p></section>
+    return <section className="empty-state"><p>{copy.emptyResult}</p></section>
   }
   const transactions = run.result?.transactions.items ?? []
   const resultMessage = run.result
@@ -479,6 +846,19 @@ function eventLabel(event: string, copy: Messages) {
 
 function Logo() {
   return <span className="logo" aria-hidden="true"><i /><i /><i /></span>
+}
+
+function NavigationIcon({ kind }: { kind: ProductPage }) {
+  const paths = {
+    overview: <><path d="m4 11 8-7 8 7v9h-5v-6H9v6H4Z" /></>,
+    agent: <><path d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5Z" /><path d="m18.5 16 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7Z" /></>,
+    import: <><path d="M12 16V3m-5 5 5-5 5 5" /><path d="M4 15v5h16v-5" /></>,
+    review: <><path d="M5 20V10m7 10V4m7 16v-7" /><path d="M3 20h18" /></>,
+    recurring: <><path d="m17 3 4 4-4 4" /><path d="M3 12V9a2 2 0 0 1 2-2h16" /><path d="m7 21-4-4 4-4" /><path d="M21 12v3a2 2 0 0 1-2 2H3" /></>,
+    budgets: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></>,
+    audit: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" /><path d="m9 12 2 2 4-4" /></>,
+  }
+  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">{paths[kind]}</svg>
 }
 
 function LoadingScreen({ label }: { label: string }) {

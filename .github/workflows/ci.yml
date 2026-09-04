@@ -1,6 +1,6 @@
-# 文件职责：定义 BankPilot 推送与合并请求的持续集成门禁。
-# 主要内容：API 作业执行 Ruff、Mypy 和 Pytest；Web 作业执行 ESLint、Vitest 和生产构建。
-# 关键边界：API 与 Web 独立安装锁定依赖，任一作业失败都不得通过门禁。
+# 文件职责：定义 BankPilot 的持续集成门禁与 main 分支生产发布。
+# 主要内容：API/Web 独立验证；验证通过后经 Tailscale 将发布包部署到 Cloudflare Tunnel 的远程源站。
+# 关键边界：Pull Request 只验证；只有 main 推送可部署；访问凭据全部来自 GitHub Secrets。
 name: CI
 
 on:
@@ -40,3 +40,75 @@ jobs:
       - run: npm run lint
       - run: npm test -- --run
       - run: npm run build
+
+  deploy:
+    name: Deploy production origin
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [api, web]
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: bankpilot-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ vars.DEPLOY_HOST }}
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          install -m 600 /dev/null ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Package release
+        run: |
+          tar \
+            --exclude='.git' \
+            --exclude='.env' \
+            --exclude='.venv' \
+            --exclude='node_modules' \
+            --exclude='dist' \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            --exclude='.mypy_cache' \
+            --exclude='.ruff_cache' \
+            -czf bankpilot-release.tgz .
+
+      - name: Deploy remote origin
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PATH"
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9._:-]+$ ]]
+          [[ "$DEPLOY_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
+          [[ "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
+          test "$DEPLOY_PATH" != "/"
+          remote_archive="/tmp/bankpilot-release-${GITHUB_SHA}.tgz"
+          scp bankpilot-release.tgz "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_archive}"
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "DEPLOY_PATH='${DEPLOY_PATH}' RELEASE_ARCHIVE='${remote_archive}' bash -s" \
+            < deploy/remote-deploy.sh
+
+      - name: Verify Cloudflare endpoint
+        if: ${{ vars.PUBLIC_URL != '' }}
+        env:
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+        run: curl --fail --silent --show-error --retry 6 --retry-all-errors "${PUBLIC_URL%/}/api/v1/readyz"

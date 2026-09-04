@@ -1,8 +1,9 @@
 /**
- * 文件职责：定义 Web 层消费的 BankPilot v1 查询、分析、事件流与修正类型。
+ * 文件职责：定义 Web 层消费的 BankPilot v1 卡片、查询、分析、事件流与修正类型。
  *
  * 主要内容：
  * - `User`：当前登录用户。
+ * - `Card` / `CardList`：当前用户可见的卡片摘要与列表。
  * - `Transaction` / `BillAnalysis` / `RunResult`：分类交易、统计和异常结果。
  * - `RunEvent`：审计时间线事件。
  * - `Run`：包含状态、结果、错误与事件的完整运行快照。
@@ -13,6 +14,19 @@
 export interface User {
   id: string
   email: string
+}
+
+export interface Card {
+  id: string
+  account_id: string
+  account_name: string
+  display_name: string
+  last_four: string
+  status: 'ACTIVE' | 'LOCKED'
+}
+
+export interface CardList {
+  items: Card[]
 }
 
 export type TransactionCategory =

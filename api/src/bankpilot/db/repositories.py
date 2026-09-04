@@ -5,6 +5,7 @@
 - `UserRepository`：用户查询与创建。
 - `SessionRepository`：创建、解析和删除可过期会话。
 - `RunRepository`：运行创建、状态迁移、计划/结果记录、中断修复与增量事件读取。
+- `CardRepository`：按当前用户所属账户读取卡片。
 - `TransactionRepository`：查询交易并保存不覆盖原始数据的用户分类修正。
 
 关键边界：带用户归属的读取必须在 SQL 条件中同时限定资源 ID 与用户 ID。
@@ -20,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bankpilot.db.models import (
     AccountRecord,
     AuditEventRecord,
+    CardRecord,
     RunRecord,
     SessionRecord,
     TransactionCategoryOverrideRecord,
@@ -78,6 +80,21 @@ class SessionRepository:
         await self.session.execute(
             delete(SessionRecord).where(SessionRecord.token_hash == token_hash)
         )
+
+
+class CardRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def list_for_user(self, user_id: UUID) -> list[tuple[CardRecord, str]]:
+        """通过账户归属筛选卡片，避免依赖应用层二次过滤。"""
+        rows = await self.session.execute(
+            select(CardRecord, AccountRecord.name)
+            .join(AccountRecord, CardRecord.account_id == AccountRecord.id)
+            .where(AccountRecord.user_id == user_id)
+            .order_by(CardRecord.created_at, CardRecord.id)
+        )
+        return list(rows.tuples())
 
 
 class RunRepository:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 文件职责：在远程 K3s 节点上构建、导入并部署 BankPilot。
-# 主要内容：校验配置、构建镜像、导入 containerd、动态创建 Secret、应用资源并等待就绪。
+# 主要内容：校验配置、构建镜像、导入 containerd、动态创建 Secret、应用资源、重启工作负载并等待就绪。
 # 关键边界：敏感值只从受保护的 `.env` 读取，不生成或保存含明文密钥的 YAML。
 set -Eeuo pipefail
 
@@ -55,8 +55,10 @@ database_url="postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgre
   --dry-run=client -o yaml | "${KUBECTL[@]}" apply -f -
 unset database_url
 
-echo "[4/5] apply declarative Kubernetes resources"
+echo "[4/5] apply resources and restart workloads for the refreshed local images"
 "${KUBECTL[@]}" apply -k "$ROOT_DIR/deploy/k8s"
+# 本地固定标签不会改变 Deployment 模板，导入新镜像后必须显式重启 Pod。
+"${KUBECTL[@]}" -n bankpilot rollout restart deployment/api deployment/web
 
 echo "[5/5] wait for database, API, and Web rollouts"
 "${KUBECTL[@]}" -n bankpilot rollout status statefulset/postgres --timeout=180s

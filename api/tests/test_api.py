@@ -1,14 +1,93 @@
 """
 文件职责：验证认证与 Agent 运行 HTTP 主链路。
-主要内容：覆盖登录查账、确定性分析、SSE 续传、分类修正、用户隔离与越权拒绝。
+主要内容：覆盖注册、登录、卡片列表、账单分析、SSE 续传、分类修正、用户隔离与越权拒绝。
 关键边界：测试通过 ASGI 内存传输运行，不依赖外部网络。
 """
 
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
 from fastapi import FastAPI
+
+
+@pytest.mark.asyncio
+async def test_register_creates_authenticated_user(app_context: tuple[Any, Any]) -> None:
+    app, _ = app_context
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="https://test") as client:
+            response = await client.post(
+                "/api/v1/auth/register",
+                json={"email": "NEW.User@example.com", "password": "new-user-password"},
+            )
+
+            assert response.status_code == 201
+            assert response.json()["email"] == "new.user@example.com"
+            assert "bankpilot_session=" in response.headers["set-cookie"]
+            assert "HttpOnly" in response.headers["set-cookie"]
+            current_user = await client.get("/api/v1/auth/me")
+            assert current_user.status_code == 200
+            assert current_user.json()["email"] == "new.user@example.com"
+
+
+@pytest.mark.asyncio
+async def test_register_rejects_duplicate_and_weak_password(
+    app_context: tuple[Any, Any],
+) -> None:
+    app, _ = app_context
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            duplicate = await client.post(
+                "/api/v1/auth/register",
+                json={"email": "OWNER@example.com", "password": "another-password"},
+            )
+            weak = await client.post(
+                "/api/v1/auth/register",
+                json={"email": "new@example.com", "password": "too-short"},
+            )
+
+            assert duplicate.status_code == 409
+            assert duplicate.json()["detail"] == "Email already registered"
+            assert weak.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_authenticated_user_lists_only_own_cards(app_context: tuple[Any, Any]) -> None:
+    app, _ = app_context
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/api/v1/auth/login",
+                json={"email": "owner@example.com", "password": "owner-password"},
+            )
+
+            response = await client.get("/api/v1/cards")
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert len(payload["items"]) == 1
+            card = payload["items"][0]
+            assert UUID(card["id"])
+            assert UUID(card["account_id"])
+            assert card["account_name"] == "日常账户"
+            assert card["display_name"] == "日常卡"
+            assert card["last_four"] == "1024"
+            assert card["status"] == "ACTIVE"
+            assert "9001" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_card_list_is_rejected(app_context: tuple[Any, Any]) -> None:
+    app, _ = app_context
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/v1/cards")
+            assert response.status_code == 401
 
 
 @pytest.mark.asyncio

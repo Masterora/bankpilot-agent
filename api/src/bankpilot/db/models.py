@@ -1,8 +1,8 @@
 """
-文件职责：定义 BankPilot 身份、账务、分析修正与 Agent 运行的 ORM 模型。
+文件职责：定义 BankPilot 身份、账户、卡片、账务分析与 Agent 运行的 ORM 模型。
 
 主要内容：
-- 身份与账务：`UserRecord`、`SessionRecord`、`AccountRecord`、`TransactionRecord`。
+- 身份与账务：`UserRecord`、`SessionRecord`、`AccountRecord`、`CardRecord`、`TransactionRecord`。
 - 分析修正：`TransactionCategoryOverrideRecord` 保存用户确认的交易分类。
 - Agent 运行：`RunRecord` 保存状态、计划、结果、错误和模型信息。
 - 审计记录：`AuditEventRecord` 按运行保存有序事件。
@@ -15,11 +15,22 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Numeric, String, Text, Uuid, func
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bankpilot.db.base import Base
-from bankpilot.domain.contracts import RunStatus
+from bankpilot.domain.contracts import CardStatus, RunStatus
 
 
 class UserRecord(Base):
@@ -56,6 +67,30 @@ class AccountRecord(Base):
 
     transactions: Mapped[list["TransactionRecord"]] = relationship(
         back_populates="account", cascade="all, delete-orphan"
+    )
+    cards: Mapped[list["CardRecord"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
+
+
+class CardRecord(Base):
+    """保存本地银行适配器可识别的卡片，以及后续操作所需的稳定标识。"""
+
+    __tablename__ = "cards"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"))
+    display_name: Mapped[str] = mapped_column(String(100))
+    last_four: Mapped[str] = mapped_column(String(4))
+    status: Mapped[str] = mapped_column(String(16), default=CardStatus.ACTIVE.value)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    account: Mapped[AccountRecord] = relationship(back_populates="cards")
+
+    __table_args__ = (
+        CheckConstraint("length(last_four) = 4", name="ck_cards_last_four_length"),
+        CheckConstraint("status IN ('ACTIVE', 'LOCKED')", name="ck_cards_status"),
+        Index("ix_cards_account_created", "account_id", "created_at"),
     )
 
 

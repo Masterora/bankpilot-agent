@@ -1,6 +1,6 @@
 """
 文件职责：提供 API 测试共用的隔离应用环境。
-主要内容：`app_context` 创建临时 SQLite、两个用户、所属账户和一笔交易，并注入假模型网关。
+主要内容：`app_context` 创建临时 SQLite、两个用户、各自账户与卡片和一笔交易，并注入假模型网关。
 关键边界：每个测试使用独立临时数据库，不访问真实模型或生产数据。
 """
 
@@ -20,9 +20,10 @@ from sqlalchemy.ext.asyncio import (
 from bankpilot.api.app import create_app
 from bankpilot.config import Settings
 from bankpilot.db.base import Base
-from bankpilot.db.models import AccountRecord, TransactionRecord
+from bankpilot.db.models import AccountRecord, CardRecord, TransactionRecord
 from bankpilot.db.repositories import UserRepository
 from bankpilot.db.session import create_session_factory
+from bankpilot.domain.contracts import CardStatus
 from bankpilot.security import hash_password
 from tests.fakes.model_gateway import FakeModelGateway
 
@@ -41,19 +42,36 @@ async def app_context(
         owner = await users.add(
             email="owner@example.com", password_hash=hash_password("owner-password")
         )
-        await users.add(email="other@example.com", password_hash=hash_password("other-password"))
+        other = await users.add(
+            email="other@example.com", password_hash=hash_password("other-password")
+        )
         account = AccountRecord(user_id=owner.id, name="日常账户", currency="CNY")
-        session.add(account)
+        other_account = AccountRecord(user_id=other.id, name="其他账户", currency="CNY")
+        session.add_all([account, other_account])
         await session.flush()
-        session.add(
-            TransactionRecord(
-                account_id=account.id,
-                occurred_at=datetime.now(UTC),
-                merchant="社区超市",
-                description="日用品",
-                amount=Decimal("-128.50"),
-                currency="CNY",
-            )
+        session.add_all(
+            [
+                CardRecord(
+                    account_id=account.id,
+                    display_name="日常卡",
+                    last_four="1024",
+                    status=CardStatus.ACTIVE.value,
+                ),
+                CardRecord(
+                    account_id=other_account.id,
+                    display_name="其他卡",
+                    last_four="9001",
+                    status=CardStatus.LOCKED.value,
+                ),
+                TransactionRecord(
+                    account_id=account.id,
+                    occurred_at=datetime.now(UTC),
+                    merchant="社区超市",
+                    description="日用品",
+                    amount=Decimal("-128.50"),
+                    currency="CNY",
+                ),
+            ]
         )
 
     settings = Settings(

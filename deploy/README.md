@@ -1,84 +1,87 @@
-# 远程部署
+# 生产部署
+
+BankPilot 由 GitHub Actions 更新远程 Docker Compose 源站，Cloudflare Tunnel 提供 HTTPS 公网入口。API 与 PostgreSQL 不直接暴露到公网。
 
 ```mermaid
 flowchart LR
-    U[浏览器] -->|SSH 隧道| W[远程主机<br/>Web :WEB_PORT]
-    W --> A[API :8000]
+    G[main 推送] --> CI[GitHub Actions]
+    CI -->|Tailscale + SSH| H[远程主机]
+    H --> W[Web]
+    W --> A[API]
     A --> P[(PostgreSQL)]
-    A --> O[OpenRouter]
-    D[数据库客户端] -->|SSH 隧道| P
-    PUBLIC[公网] -.不直接暴露 API 与数据库.-> W
+    C[Cloudflare] --> T[bankpilot Tunnel]
+    T --> W
 ```
 
-## 安全边界
+## 自动发布
 
-| 项目 | 约束 |
+`.github/workflows/ci.yml` 在 Pull Request 中只执行质量门禁；仅 `main` 推送且 API、Web 全部通过后执行生产发布。
+
+```mermaid
+flowchart LR
+    P[Push main] --> Q{API + Web 通过}
+    Q --> TS[Tailscale 临时节点]
+    TS --> S[SSH 上传发布包]
+    S --> M[迁移与 Compose 重建]
+    M --> H[容器健康检查]
+    H --> C[Cloudflare 公网检查]
+```
+
+GitHub `production` Environment 需要以下配置：
+
+| 类型 | 名称 | 内容 |
+| --- | --- | --- |
+| Secret | `TS_OAUTH_CLIENT_ID` | Tailscale OAuth Client ID |
+| Secret | `TS_OAUTH_SECRET` | 仅允许 `tag:ci` 的 OAuth Client Secret |
+| Secret | `DEPLOY_SSH_KEY` | 仅用于发布用户的 SSH 私钥 |
+| Secret | `DEPLOY_KNOWN_HOSTS` | 已核验的远程 SSH host key |
+| Variable | `DEPLOY_HOST` | 远程主机 Tailscale IP 或 MagicDNS 名称 |
+| Variable | `DEPLOY_USER` | 发布用户 |
+| Variable | `DEPLOY_PATH` | 绝对路径，例如 `/opt/bankpilot-agent` |
+| Variable | `PUBLIC_URL` | Cloudflare HTTPS 入口，例如 `https://master-orange.com` |
+
+Tailscale ACL 只应允许 `tag:ci` 访问发布主机的 SSH 端口。远程用户需允许 CI 非交互执行 `rsync` 和 Docker Compose。
+
+`deploy/remote-deploy.sh` 会删除远程旧源码并同步 `main` 最新内容，但始终保留权限为 `600` 的 `deploy/.env`。发布包与临时目录在执行结束后删除，不保留历史版本副本。
+
+## Cloudflare Tunnel
+
+Cloudflare 仅作为公网边缘和反向隧道，不承载 FastAPI 或 PostgreSQL。
+
+| 项目 | 配置 |
 | --- | --- |
-| Web | 默认绑定远程主机 `127.0.0.1`，通过 SSH 隧道访问 |
-| API | 只在 Compose 内网开放，由 Web 反向代理 |
-| PostgreSQL | 默认绑定 `127.0.0.1`，只接受主机本地或 SSH 隧道连接 |
-| Session Cookie | SSH 隧道 HTTP 使用 `HttpOnly`、`SameSite=Lax`；启用 HTTPS 后将 `BANKPILOT_SESSION_COOKIE_SECURE` 改为 `true` |
-| OpenRouter Key | 只写入远程 `/opt/bankpilot-agent/deploy/.env`，权限 `600` |
-| 模型 | 使用明确 `MODEL_ID`，禁止 `openrouter/auto` |
+| Tunnel | 独立的 `bankpilot` Tunnel |
+| Published application | 产品根域名 |
+| Service URL | `http://<tailscale-ip>:8380` |
+| DNS | 根域 CNAME 指向 `<tunnel-id>.cfargotunnel.com` 并启用代理 |
+| 其他子域 | 保留独立服务的 Tunnel 记录 |
 
-## 远程主机执行
+Tunnel Token 只保存在远程 `cloudflared` 运行环境，不进入代码、GitHub 制品或日志。Tunnel 为一次性基础设施，日常发布只更新远程源站。
 
-```bash
-cd /opt/bankpilot-agent/deploy
-cp .env.example .env
-chmod 600 .env
-docker compose --env-file .env up -d --build
-docker compose --env-file .env ps
+## 远程配置
+
+`deploy/.env` 只在远程主机维护，不由 CI 上传：
+
+```dotenv
+WEB_BIND_IP=<tailscale-ip>
+WEB_PORT=8380
+PUBLIC_WEB_ORIGIN=https://master-orange.com
+BANKPILOT_SESSION_COOKIE_SECURE=true
 ```
 
-K3s 部署使用同一份受保护的 `.env`：
+`POSTGRES_PASSWORD`、`BANKPILOT_SESSION_SECRET` 和 `OPENROUTER_API_KEY` 也只存在该文件。生产服务中 Web 仅反向代理 API，PostgreSQL 只绑定回环地址。
+
+## 数据库访问
+
+数据库客户端通过 SSH 隧道访问，不开放公网端口：
 
 ```bash
-cd /opt/bankpilot-agent
-./deploy/k8s/deploy.sh
+ssh -N -L 55433:127.0.0.1:55433 <user>@<tailscale-host>
 ```
-
-| 部署方式 | Web 入口 | API | PostgreSQL |
-| --- | --- | --- | --- |
-| Docker Compose | 回环端口 + SSH 隧道 | Compose 内网 | 回环端口 + SSH 隧道 |
-| K3s | Traefik Ingress | ClusterIP | 无头 ClusterIP |
-
-K3s 的外部入口依赖集群已安装 `traefik` IngressClass。未安装时工作负载仍可正常运行，但 Web 仅在集群内可达；可安装 Ingress 控制器，或仅在验收时使用 `kubectl port-forward`。
-
-K3s 中需要外部查库时，先在远程主机将 PostgreSQL 临时转发到回环端口，再建立 SSH 隧道；不将数据库 Service 改为 NodePort。
-
-```bash
-sudo k3s kubectl -n bankpilot port-forward \
-  --address 127.0.0.1 service/postgres 55433:5432
-```
-
-首次启动后创建本地银行账户：
-
-```bash
-docker compose --env-file .env exec api uv run bankpilot seed
-```
-
-在应用电脑建立 SSH 隧道：
-
-```bash
-ssh -N \
-  -L 8380:127.0.0.1:8380 \
-  -L 55433:127.0.0.1:55433 \
-  <user>@<remote-host>
-```
-
-浏览器访问 `http://localhost:8380`。密钥和密码不得提交到 Git。
-
-## 外部数据库客户端
-
-连接参数：
 
 | 字段 | 值 |
 | --- | --- |
 | Host | `127.0.0.1` |
-| Port | `POSTGRES_HOST_PORT` |
-| Database | `POSTGRES_DB` |
-| Username | `bankpilot_client` |
-| SSL | 当前关闭，运输链路由 SSH 隧道加密 |
-
-客户端账号只授予业务表和序列的数据读写权限，不授予建表、迁移或删除 Schema 的权限。
+| Port | `55433` |
+| Database | `bankpilot` |
+| Username | 只具有必要业务权限的客户端账号 |

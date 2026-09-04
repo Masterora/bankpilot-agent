@@ -4,12 +4,12 @@
  * 主要内容：
  * - `ApiError`：保留 HTTP 状态码和服务端错误信息。
  * - `request`：统一注入 Cookie 凭证、JSON 请求头和错误处理。
- * - `api`：提供认证、运行、SSE 事件订阅与分类修正方法。
+ * - `api`：提供注册、认证、卡片列表、运行、SSE 事件订阅与分类修正方法。
  *
  * 关键边界：会话由浏览器 Cookie 自动携带，本文件不保存密码或令牌。
  */
 
-import type { Run, RunEvent, TransactionCategory, User } from './types'
+import type { CardList, Run, RunEvent, TransactionCategory, User } from './types'
 
 export class ApiError extends Error {
   constructor(
@@ -36,6 +36,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  register: (email: string, password: string) =>
+    request<User>('/api/v1/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
   login: (email: string, password: string) =>
     request<User>('/api/v1/auth/login', {
       method: 'POST',
@@ -43,6 +48,7 @@ export const api = {
     }),
   me: () => request<User>('/api/v1/auth/me'),
   logout: () => request<void>('/api/v1/auth/logout', { method: 'POST' }),
+  listCards: () => request<CardList>('/api/v1/cards'),
   createRun: (message: string) =>
     request<Run>('/api/v1/runs', {
       method: 'POST',
