@@ -76,6 +76,7 @@ jobs:
 
       - name: Package release
         run: |
+          release_archive="${RUNNER_TEMP}/bankpilot-release.tgz"
           tar \
             --exclude='.git' \
             --exclude='.env' \
@@ -86,7 +87,7 @@ jobs:
             --exclude='.pytest_cache' \
             --exclude='.mypy_cache' \
             --exclude='.ruff_cache' \
-            -czf bankpilot-release.tgz .
+            -czf "$release_archive" .
 
       - name: Deploy remote origin
         env:
@@ -102,7 +103,8 @@ jobs:
           [[ "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]
           test "$DEPLOY_PATH" != "/"
           remote_archive="/tmp/bankpilot-release-${GITHUB_SHA}.tgz"
-          scp bankpilot-release.tgz "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_archive}"
+          scp "${RUNNER_TEMP}/bankpilot-release.tgz" \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${remote_archive}"
           ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "DEPLOY_PATH='${DEPLOY_PATH}' RELEASE_ARCHIVE='${remote_archive}' bash -s" \
             < deploy/remote-deploy.sh
