@@ -38,7 +38,9 @@ sudo rsync -a --delete --exclude='deploy/.env' "$staging_dir/" "$DEPLOY_PATH/"
 
 cd "$DEPLOY_PATH/deploy"
 sudo docker compose --env-file .env build api web
-sudo docker compose --env-file .env run --rm api uv run alembic upgrade head
+# 远程脚本由 SSH 标准输入传入；迁移容器不得继续读取并吞掉后续发布命令。
+sudo docker compose --env-file .env run --rm --no-TTY --interactive=false \
+  api uv run alembic upgrade head
 # Compose 在启用镜像 provenance 时可能无法仅凭镜像摘要识别新构建；发布必须重建运行容器。
 sudo docker compose --env-file .env up -d --remove-orphans --force-recreate api web
 
