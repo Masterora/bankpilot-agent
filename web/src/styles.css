@@ -65,23 +65,9 @@ select:focus-visible {
 .logo {
   width: 32px;
   height: 32px;
-  display: inline-flex;
-  align-items: end;
-  gap: 3px;
-  padding: 7px;
-  border-radius: 7px;
-  background: var(--accent);
-}
-.logo i {
   display: block;
-  width: 3px;
-  border-radius: 3px;
-  background: var(--accent-ink);
-  transform: rotate(14deg);
+  flex: 0 0 auto;
 }
-.logo i:nth-child(1) { height: 7px; }
-.logo i:nth-child(2) { height: 11px; }
-.logo i:nth-child(3) { height: 16px; }
 .eyebrow {
   margin: 0 0 8px;
   color: var(--accent);

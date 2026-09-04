@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 文件职责：在 GitHub Actions 已连接的 Tailscale 节点上发布 BankPilot 远程源站。
-# 主要内容：校验发布目标、解压临时制品、同步最新版源码、执行迁移、重建 Compose 服务并验证健康。
+# 文件职责：接收 CI 发布制品并更新 BankPilot 远程 Docker Compose 服务。
+# 主要内容：校验目标、解压制品、同步源码、执行迁移、重建服务并验证健康。
 # 关键边界：保留远程 deploy/.env；发布包和临时目录执行后删除；脚本不读取或输出任何密钥。
 set -Eeuo pipefail
 

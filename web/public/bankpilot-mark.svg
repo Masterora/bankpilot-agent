@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  文件职责：提供 BankPilot 浏览器标签与书签使用的品牌图标。
+  主要内容：品牌强调色圆角底与三段上升航向，表达持续分析、方向判断和稳健推进。
+  关键边界：图标不依赖外部字体、图片或脚本，可由浏览器直接缓存和渲染。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">BankPilot</title>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#C7D6A5"/>
+  <path d="M18 44 21 34M30 44l4-16M42 44l6-25" fill="none" stroke="#12160F" stroke-width="7" stroke-linecap="round"/>
+</svg>

@@ -845,7 +845,8 @@ function eventLabel(event: string, copy: Messages) {
 }
 
 function Logo() {
-  return <span className="logo" aria-hidden="true"><i /><i /><i /></span>
+  // 页面品牌标识与浏览器 favicon 复用同一资产，避免不同入口出现两套视觉语言。
+  return <img className="logo" src="/bankpilot-mark.svg?v=2" alt="" aria-hidden="true" />
 }
 
 function NavigationIcon({ kind }: { kind: ProductPage }) {

@@ -137,7 +137,6 @@ flowchart TB
 | [当前交付状态](docs/CURRENT_STATE.md) | 已交付能力、验证证据和差距 |
 | [产品路线图](docs/ROADMAP.md) | 后续用户闭环、Agent 工具和发布门禁 |
 | [运行手册](docs/RUNBOOK.md) | 当前系统的开发、配置、API 和验证方式 |
-| [远程部署](deploy/README.md) | GitHub Actions、Tailscale、Compose、Cloudflare Tunnel 和数据库访问 |
 
 ## License
 

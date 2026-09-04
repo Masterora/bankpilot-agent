@@ -61,12 +61,9 @@ flowchart LR
 | --- | --- |
 | API | Ruff、Mypy 通过；Pytest 31 个用例通过 |
 | Web | ESLint、Vitest 4 个用例与 Vite 生产构建通过 |
-| 数据库 | 本地迁移往返通过；远程 Compose 与 K3s 均为 `20260904_0003` |
+| 数据库 | 迁移与仓储自动测试通过；当前迁移版本为 `20260904_0003` |
 | 真实浏览器 | 登录、中文深色界面、卡片空态、SSE 查询、图表、分类修正和 390px 布局通过 |
 | OpenRouter | 真实规划请求成功，并记录 Provider、模型、请求 ID、延迟和 Token 用量 |
-| 远程运行 | Compose 的 Web、API、PostgreSQL 健康；K3s 工作负载健康 |
-
-远程用户入口由 Docker Compose 提供，并通过 Tailscale 私有网络访问。K3s 集群未安装 Traefik，Web 保持集群内可达，不作为当前用户入口。
 
 ## 当前边界
 

@@ -21,6 +21,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
+  <link rel="icon" type="image/svg+xml" href="../web/public/bankpilot-mark.svg?v=2">
   <title>BankPilot · 财务核查</title>
   <style>
     :root {
@@ -56,8 +57,8 @@
 
     .sidebar{position:fixed;inset:0 auto 0 0;z-index:40;width:var(--sidebar-width);display:flex;flex-direction:column;padding:24px 14px;border-right:1px solid var(--line);background:rgba(9,11,10,.97)}
     .brand{display:flex;align-items:center;gap:10px;padding:0 8px 30px;font-size:16px;font-weight:680;letter-spacing:-.02em}
-    .logo,.orb{display:grid;place-items:center;color:var(--accent-ink);background:var(--accent)}
-    .logo{width:32px;height:32px;border-radius:10px}
+    .logo{width:32px;height:32px;display:block;flex:0 0 auto}
+    .orb{display:grid;place-items:center;color:var(--accent-ink);background:var(--accent)}
     .nav-label{margin:8px 11px;color:var(--subtle);font-size:11px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
     nav{display:grid;gap:4px}
     .nav-item{width:100%;display:flex;align-items:center;gap:11px;padding:11px;border:0;border-radius:8px;color:#9ca39d;background:transparent;text-align:left;transition:background .16s,color .16s}
@@ -147,7 +148,7 @@
 <body>
   <div class="app">
     <aside class="sidebar" id="sidebar" aria-label="主导航">
-      <div class="brand"><span class="logo"><svg class="icon"><use href="#spark"></use></svg></span>BankPilot</div>
+      <div class="brand"><img class="logo" src="../web/public/bankpilot-mark.svg?v=2" alt="">BankPilot</div>
       <p class="nav-label" data-zh="工作区" data-en="Workspace">工作区</p>
       <nav>
         <button class="nav-item active" data-page="home"><svg class="icon"><use href="#home"></use></svg><span data-zh="总览" data-en="Overview">总览</span></button>

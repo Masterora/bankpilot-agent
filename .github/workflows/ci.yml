@@ -1,6 +1,6 @@
-# 文件职责：定义 BankPilot 的持续集成门禁与 main 分支生产发布。
-# 主要内容：API/Web 独立验证；验证通过后经 Tailscale 将发布包部署到 Cloudflare Tunnel 的远程源站。
-# 关键边界：Pull Request 只验证；只有 main 推送可部署；访问凭据全部来自 GitHub Secrets。
+# 文件职责：定义 BankPilot 的持续集成门禁与 main 分支自动发布。
+# 主要内容：API/Web 独立验证；通过后经私有网络与 SSH 更新远程 Docker Compose 服务。
+# 关键边界：Pull Request 只验证；只有 main 推送可部署；地址与访问凭据全部来自 GitHub Environment。
 name: CI
 
 on:
@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Connect to Tailscale
+      - name: Connect private network
         uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
@@ -109,7 +109,7 @@ jobs:
             "DEPLOY_PATH='${DEPLOY_PATH}' RELEASE_ARCHIVE='${remote_archive}' bash -s" \
             < deploy/remote-deploy.sh
 
-      - name: Verify Cloudflare endpoint
+      - name: Verify public endpoint
         if: ${{ vars.PUBLIC_URL != '' }}
         env:
           PUBLIC_URL: ${{ vars.PUBLIC_URL }}
