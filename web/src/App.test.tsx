@@ -1,6 +1,6 @@
 /**
- * 文件职责：验证应用注册、主题、语言、卡片列表以及账单分析与分类修正界面。
- * 主要内容：替换 localStorage 与 fetch，覆盖注册登录、未登录偏好和已登录卡片、账单分析流程。
+ * 文件职责：验证应用注册、主题、语言、账单导入以及账单分析与分类修正界面。
+ * 主要内容：替换 localStorage 与 fetch，覆盖认证、导入字段映射、卡片和确定性分析流程。
  * 关键边界：测试不访问真实 API，每次执行后清理全局替身。
  */
 
@@ -61,6 +61,8 @@ describe('App language and theme', () => {
         return jsonResponse({ id: 'user-new', email: 'new@example.com' }, 201)
       }
       if (path === '/api/v1/cards') return jsonResponse({ items: [] })
+      if (path === '/api/v1/imports/preview') return jsonResponse({ total_rows: 1, error_rows: 0, rows: [] })
+      if (path === '/api/v1/imports') return jsonResponse({ items: [] })
       return jsonResponse({ detail: 'Not found' }, 404)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -116,6 +118,7 @@ describe('App language and theme', () => {
           ],
         })
       }
+      if (path === '/api/v1/imports') return jsonResponse({ items: [] })
       if (path === '/api/v1/runs' && init?.method === 'POST') return jsonResponse(run, 202)
       if (path.endsWith('/category') && init?.method === 'POST') return jsonResponse(corrected)
       return jsonResponse({ detail: 'Not found' }, 404)
@@ -130,21 +133,23 @@ describe('App language and theme', () => {
     for (const navigation of [
       'Agent 工作台',
       '账单导入',
-      '账单核查',
+      '交易账本',
       '周期扣款',
       '预算监控',
       '数据与审计',
     ]) {
       expect(screen.getByRole('button', { name: navigation })).toBeInTheDocument()
     }
-    expect(await screen.findByText('日常卡')).toBeInTheDocument()
-    expect(screen.getByText('尾号 1024')).toBeInTheDocument()
-    expect(screen.getByText('有效')).toBeInTheDocument()
+    expect(screen.queryByText('有效')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '周期扣款' }))
+    expect(screen.getByText('暂无周期扣款记录')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '预算监控' }))
+    expect(screen.getByText('暂无预算记录')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '账单导入' }))
     expect(screen.getByRole('heading', { name: '账单导入' })).toBeInTheDocument()
     expect(screen.getByText('暂无导入批次')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '数据与审计' }))
-    expect(screen.getByText('自托管 PostgreSQL · 不进入模型上下文')).toBeInTheDocument()
+    expect(screen.getByText('原文件不保存 · 标准交易进入自托管 PostgreSQL')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Agent 工作台' }))
     expect(screen.getByRole('heading', { name: 'Agent 工作台' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '开始' }))
@@ -162,6 +167,88 @@ describe('App language and theme', () => {
       expect.objectContaining({ body: JSON.stringify({ category: 'dining' }), method: 'POST' }),
     )
   })
+
+  it('maps a CSV statement and renders the persisted import report', async () => {
+    const content = '交易日期,交易对方,金额,说明\n2026-09-01,社区超市,-88.50,日用品\n'
+    const batch = {
+      id: 'import-1',
+      account_id: 'account-imported',
+      account_name: '日常账户',
+      currency: 'CNY',
+      file_name: 'statement.csv',
+      status: 'COMPLETED',
+      total_rows: 1,
+      imported_rows: 1,
+      duplicate_rows: 0,
+      error_rows: 0,
+      start_date: '2026-09-01',
+      end_date: '2026-09-01',
+      field_mapping: {
+        occurred_at: '交易日期',
+        merchant: '交易对方',
+        amount: '金额',
+        description: '说明',
+      },
+      errors: [],
+      created_at: '2026-09-04T08:00:00Z',
+    }
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path === '/api/v1/auth/me') {
+        return jsonResponse({ id: 'user-1', email: 'owner@example.com' })
+      }
+      if (path === '/api/v1/cards') return jsonResponse({ items: [] })
+      if (path === '/api/v1/imports' && init?.method === 'POST') {
+        return jsonResponse(batch, 201)
+      }
+      if (path === '/api/v1/imports/preview') return jsonResponse({ total_rows: 1, error_rows: 0, rows: [] })
+      if (path === '/api/v1/imports') return jsonResponse({ items: [] })
+      return jsonResponse({ detail: 'Not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    await screen.findByRole('heading', { name: '财务总览' })
+    fireEvent.click(screen.getByRole('button', { name: '账单导入' }))
+    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(fileInput).not.toBeNull()
+    const statementFile = {
+      name: 'statement.csv',
+      size: content.length,
+      text: vi.fn().mockResolvedValue(content),
+    } as unknown as File
+    fireEvent.change(fileInput!, { target: { files: [statementFile] } })
+    fireEvent.change(screen.getByLabelText('账户名称'), { target: { value: '日常账户' } })
+
+    expect(await screen.findByDisplayValue('交易日期')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Agent 工作台' }))
+    expect(screen.getByRole('heading', { name: 'Agent 工作台' })).toHaveFocus()
+    const prompt = screen.getByRole('textbox', { name: '核查任务' })
+    fireEvent.change(prompt, { target: { value: '  ' } })
+    expect(screen.getByRole('button', { name: '开始' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '账单导入' }))
+    expect(screen.getByLabelText('账户名称')).toHaveValue('日常账户')
+    expect(screen.getByDisplayValue('交易日期')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '预览账单' }))
+    fireEvent.click(await screen.findByRole('button', { name: '确认导入' }))
+
+    expect(await screen.findByRole('heading', { name: '导入报告' })).toBeInTheDocument()
+    expect(screen.getAllByText('已完成')).not.toHaveLength(0)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/imports',
+      expect.objectContaining({
+        body: JSON.stringify({
+          file_name: 'statement.csv',
+          content,
+          account_name: '日常账户',
+          currency: 'CNY',
+          mapping: batch.field_mapping,
+        }),
+        method: 'POST',
+      }),
+    )
+  })
 })
 
 function buildRun(category: 'groceries' | 'dining'): Run {
@@ -177,6 +264,7 @@ function buildRun(category: 'groceries' | 'dining'): Run {
         items: [
           {
             id: 'transaction-1',
+            booking_date: '2026-09-02',
             occurred_at: '2026-09-02T08:00:00Z',
             merchant: '社区超市',
             description: '日用品',

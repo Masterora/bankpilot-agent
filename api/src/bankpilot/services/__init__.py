@@ -1,5 +1,5 @@
 """
 包职责：组织跨领域与基础设施的应用编排服务。
-主要内容：`run_processor` 驱动 Agent 运行状态和工作流执行。
+主要内容：`run_processor` 驱动 Agent 运行，`statement_import` 编排账单导入事务。
 关键边界：应用服务组合端口，不内联外部供应商调用。
 """

@@ -34,7 +34,8 @@ services:
       BANKPILOT_SESSION_SECRET: ${BANKPILOT_SESSION_SECRET:?BANKPILOT_SESSION_SECRET is required}
       BANKPILOT_SESSION_TTL_SECONDS: ${BANKPILOT_SESSION_TTL_SECONDS:-28800}
       BANKPILOT_SESSION_COOKIE_SECURE: ${BANKPILOT_SESSION_COOKIE_SECURE:-false}
-      BANKPILOT_CORS_ORIGINS: ${PUBLIC_WEB_ORIGIN:-http://localhost:8380}
+      # 远程页面与本地 React 均通过 Tailscale 入口访问同一 API。
+      BANKPILOT_CORS_ORIGINS: ${PUBLIC_WEB_ORIGIN:?PUBLIC_WEB_ORIGIN is required},http://localhost:5173,http://127.0.0.1:5173
       MODEL_PROVIDER: openrouter
       MODEL_ID: ${MODEL_ID:?MODEL_ID is required}
       MODEL_BASE_URL: https://openrouter.ai/api/v1
@@ -61,7 +62,8 @@ services:
       context: ../web
     restart: unless-stopped
     ports:
-      - "${WEB_BIND_IP:-127.0.0.1}:${WEB_PORT:-8380}:8080"
+      # 必须显式绑定远程主机的 Tailscale 地址，避免意外暴露到公网网卡。
+      - "${WEB_BIND_IP:?WEB_BIND_IP is required}:${WEB_PORT:-8380}:8080"
     depends_on:
       api:
         condition: service_healthy

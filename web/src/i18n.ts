@@ -3,7 +3,7 @@
  *
  * 主要内容：
  * - `Messages`：约束每种语言必须实现的界面文案。
- * - `zhCN` / `enUS`：注册、登录、卡片、工作台、统计、异常、分类和事件文案。
+ * - `zhCN` / `enUS`：注册、登录、卡片、账单导入、统计、异常、分类和事件文案。
  * - `storedLocale`：读取持久化语言，异常值回退为中文。
  * - `isPresetQuery`：识别可随语言切换的预设查询。
  *
@@ -11,16 +11,11 @@
  */
 
 import type { BillAnomaly, Card, Run, TransactionCategory } from './types'
+import type { ProductPage } from './app/pages'
+
+export type { ProductPage } from './app/pages'
 
 export type Locale = 'zh-CN' | 'en-US'
-export type ProductPage =
-  | 'overview'
-  | 'agent'
-  | 'import'
-  | 'review'
-  | 'recurring'
-  | 'budgets'
-  | 'audit'
 
 export interface ProductPageCopy {
   navigation: string
@@ -28,6 +23,51 @@ export interface ProductPageCopy {
   title: string
   description: string
   empty: string
+}
+
+export interface ImportCopy {
+  chooseFile: string
+  fileRequirements: string
+  csvOnly: string
+  fileTooLarge: string
+  missingHeader: string
+  fileReadFailed: string
+  accountName: string
+  accountPlaceholder: string
+  currency: string
+  currencyPlaceholder: string
+  mappingEyebrow: string
+  mappingHeading: string
+  columns: string
+  pending: string
+  mappingEmpty: string
+  occurredAt: string
+  merchant: string
+  amount: string
+  description: string
+  selectColumn: string
+  notMapped: string
+  duplicateMapping: string
+  commit: string
+  importing: string
+  importFailed: string
+  conflict: string
+  reportEyebrow: string
+  reportHeading: string
+  totalRows: string
+  importedRows: string
+  duplicateRows: string
+  errorRows: string
+  row: string
+  historyEyebrow: string
+  historyHeading: string
+  loading: string
+  loadFailed: string
+  file: string
+  period: string
+  status: string
+  statuses: Record<'COMPLETED' | 'COMPLETED_WITH_DUPLICATES' | 'REJECTED' | 'REVOKED', string>
+  errorCodes: Record<string, string>
 }
 
 export interface Messages {
@@ -60,6 +100,7 @@ export interface Messages {
   cardStatuses: Record<Card['status'], string>
   navigationLabel: string
   readOnlyScope: string
+  localDataScope: string
   productPages: Record<ProductPage, ProductPageCopy>
   linkedCardsMetric: string
   transactionsMetric: string
@@ -80,6 +121,7 @@ export interface Messages {
   secretBoundary: string
   secretBoundaryDetail: string
   queryInputLabel: string
+  queryShortcut: string
   defaultQuery: string
   suggestions: readonly string[]
   querying: string
@@ -99,6 +141,7 @@ export interface Messages {
   noAnomalies: string
   categoryLabel: string
   categoryUpdateFailed: string
+  imports: ImportCopy
   categoryLabels: Record<TransactionCategory, string>
   anomalyDescription: (anomaly: BillAnomaly) => string
   statuses: Record<Run['status'], string>
@@ -136,6 +179,7 @@ const zhCN: Messages = {
   cardStatuses: { ACTIVE: '有效', LOCKED: '锁定' },
   navigationLabel: '工作区',
   readOnlyScope: '只读执行',
+  localDataScope: '本地数据写入',
   productPages: {
     overview: {
       navigation: '财务总览',
@@ -153,32 +197,20 @@ const zhCN: Messages = {
     },
     import: {
       navigation: '账单导入',
-      eyebrow: '本地数据入口',
+      eyebrow: '账单文件',
       title: '账单导入',
       description: '文件校验 · 字段映射 · 归一化',
       empty: '暂无导入批次',
     },
     review: {
-      navigation: '账单核查',
+      navigation: '交易账本',
       eyebrow: '确定性分析',
-      title: '账单核查',
+      title: '交易账本',
       description: '收支统计 · 异常信号 · 交易证据',
       empty: '暂无核查结果',
     },
-    recurring: {
-      navigation: '周期扣款',
-      eyebrow: '周期信号',
-      title: '周期扣款',
-      description: '扣款周期 · 金额变化 · 预计日期',
-      empty: '暂无周期扣款记录',
-    },
-    budgets: {
-      navigation: '预算监控',
-      eyebrow: '预算偏差',
-      title: '预算监控',
-      description: '已入账支出 · 阈值信号 · 确认变更',
-      empty: '暂无预算记录',
-    },
+    recurring: { navigation: '周期扣款', eyebrow: '周期信号', title: '周期扣款', description: '扣款周期 · 金额变化 · 预计日期', empty: '暂无周期扣款记录' },
+    budgets: { navigation: '预算监控', eyebrow: '预算偏差', title: '预算监控', description: '已入账支出 · 阈值信号 · 确认变更', empty: '暂无预算记录' },
     audit: {
       navigation: '数据与审计',
       eyebrow: '系统治理',
@@ -198,14 +230,15 @@ const zhCN: Messages = {
   auditBoundaryHeading: '数据边界',
   auditEventsHeading: 'Agent 审计',
   sourceDataBoundary: '原始账单',
-  sourceDataBoundaryDetail: '自托管 PostgreSQL · 不进入模型上下文',
+  sourceDataBoundaryDetail: '原文件不保存 · 标准交易进入自托管 PostgreSQL',
   modelBoundary: 'OpenRouter',
   modelBoundaryDetail: '仅接收任务与规划所需信息',
   accountBoundary: '账户信息',
-  accountBoundaryDetail: '名称与脱敏尾号',
+  accountBoundaryDetail: '账本账户名称与币种',
   secretBoundary: '模型密钥',
   secretBoundaryDetail: '服务端环境注入 · 不进入代码与镜像',
   queryInputLabel: '核查任务',
+  queryShortcut: '⌘ / Ctrl + Enter 提交',
   defaultQuery: '核查本月交易',
   suggestions: ['核查本月交易', '核查近 7 天交易', '核查上月交易'],
   querying: '运行中…',
@@ -225,6 +258,63 @@ const zhCN: Messages = {
   noAnomalies: '未发现异常信号',
   categoryLabel: '交易分类',
   categoryUpdateFailed: '分类修正失败',
+  imports: {
+    chooseFile: '选择 CSV 账单',
+    fileRequirements: 'CSV · 最大 10 MB · 原文件不保存',
+    csvOnly: '仅支持 CSV 文件',
+    fileTooLarge: '文件超过 10 MB 限制',
+    missingHeader: '未识别到 CSV 表头',
+    fileReadFailed: '文件读取失败',
+    accountName: '账户名称',
+    accountPlaceholder: '例如：日常账户',
+    currency: '币种',
+    currencyPlaceholder: '例如：CNY',
+    mappingEyebrow: '标准字段',
+    mappingHeading: '字段映射',
+    columns: '列',
+    pending: '等待文件',
+    mappingEmpty: '选择文件后配置字段映射',
+    occurredAt: '交易日期',
+    merchant: '交易对方',
+    amount: '带符号金额',
+    description: '说明',
+    selectColumn: '选择源列',
+    notMapped: '不映射',
+    duplicateMapping: '每个标准字段必须对应不同源列',
+    commit: '校验并导入',
+    importing: '正在校验',
+    importFailed: '账单导入失败',
+    conflict: '检测到并发导入，请重新提交同一文件',
+    reportEyebrow: '批次结果',
+    reportHeading: '导入报告',
+    totalRows: '总行数',
+    importedRows: '已写入',
+    duplicateRows: '重复',
+    errorRows: '失败',
+    row: '第',
+    historyEyebrow: '导入记录',
+    historyHeading: '导入历史',
+    loading: '正在读取导入历史',
+    loadFailed: '导入历史读取失败',
+    file: '文件',
+    period: '交易期间',
+    status: '状态',
+    statuses: {
+      COMPLETED: '已完成',
+      COMPLETED_WITH_DUPLICATES: '已去重',
+      REJECTED: '已拒绝',
+      REVOKED: '已撤销',
+    },
+    errorCodes: {
+      EMPTY_FILE: '文件为空',
+      INVALID_ENCODING: '文件编码无效，请使用 UTF-8',
+      DUPLICATE_HEADER: '表头包含重复列',
+      MISSING_COLUMN: '缺少已映射的源列',
+      NO_DATA_ROWS: '文件中没有交易记录',
+      TOO_MANY_ROWS: '交易行数超过 5,000 行',
+      INVALID_ROW: '该行字段格式无效',
+    },
+  },
   categoryLabels: {
     income: '收入',
     groceries: '日用百货',
@@ -295,6 +385,7 @@ const enUS: Messages = {
   cardStatuses: { ACTIVE: 'Active', LOCKED: 'Locked' },
   navigationLabel: 'Workspace',
   readOnlyScope: 'Read-only execution',
+  localDataScope: 'Local data write',
   productPages: {
     overview: {
       navigation: 'Overview',
@@ -324,20 +415,8 @@ const enUS: Messages = {
       description: 'Cash flow · Review signals · Transaction evidence',
       empty: 'No review result',
     },
-    recurring: {
-      navigation: 'Recurring charges',
-      eyebrow: 'RECURRING SIGNALS',
-      title: 'Recurring charges',
-      description: 'Cadence · Amount changes · Expected dates',
-      empty: 'No recurring charge records',
-    },
-    budgets: {
-      navigation: 'Budget monitoring',
-      eyebrow: 'BUDGET VARIANCE',
-      title: 'Budget monitoring',
-      description: 'Posted spend · Threshold signals · Confirmed changes',
-      empty: 'No budget records',
-    },
+    recurring: { navigation: 'Recurring charges', eyebrow: 'RECURRING SIGNALS', title: 'Recurring charges', description: 'Cadence · Amount changes · Expected dates', empty: 'No recurring charge records' },
+    budgets: { navigation: 'Budget monitoring', eyebrow: 'BUDGET VARIANCE', title: 'Budget monitoring', description: 'Posted spend · Threshold signals · Confirmed changes', empty: 'No budget records' },
     audit: {
       navigation: 'Data & audit',
       eyebrow: 'SYSTEM GOVERNANCE',
@@ -357,14 +436,15 @@ const enUS: Messages = {
   auditBoundaryHeading: 'Data boundaries',
   auditEventsHeading: 'Agent audit',
   sourceDataBoundary: 'Source statements',
-  sourceDataBoundaryDetail: 'Self-hosted PostgreSQL · Outside model context',
+  sourceDataBoundaryDetail: 'Source file discarded · Normalized records are self-hosted',
   modelBoundary: 'OpenRouter',
   modelBoundaryDetail: 'Receives task and planning context only',
   accountBoundary: 'Account data',
-  accountBoundaryDetail: 'Name and masked suffix only',
+  accountBoundaryDetail: 'Ledger account name and currency',
   secretBoundary: 'Model secret',
   secretBoundaryDetail: 'Server environment only · Excluded from code and images',
   queryInputLabel: 'Review task',
+  queryShortcut: '⌘ / Ctrl + Enter to submit',
   defaultQuery: 'Review transactions this month',
   suggestions: [
     'Review transactions this month',
@@ -388,6 +468,63 @@ const enUS: Messages = {
   noAnomalies: 'No anomaly rules matched',
   categoryLabel: 'Transaction category',
   categoryUpdateFailed: 'Unable to update category',
+  imports: {
+    chooseFile: 'Choose CSV statement',
+    fileRequirements: 'CSV · 10 MB maximum · Source file not retained',
+    csvOnly: 'Only CSV files are supported',
+    fileTooLarge: 'File exceeds the 10 MB limit',
+    missingHeader: 'CSV header could not be detected',
+    fileReadFailed: 'Unable to read the file',
+    accountName: 'Account name',
+    accountPlaceholder: 'e.g. Daily account',
+    currency: 'Currency',
+    currencyPlaceholder: 'e.g. USD',
+    mappingEyebrow: 'STANDARD FIELDS',
+    mappingHeading: 'Field mapping',
+    columns: 'columns',
+    pending: 'Awaiting file',
+    mappingEmpty: 'Choose a file to configure field mapping',
+    occurredAt: 'Transaction date',
+    merchant: 'Merchant',
+    amount: 'Signed amount',
+    description: 'Description',
+    selectColumn: 'Select source column',
+    notMapped: 'Not mapped',
+    duplicateMapping: 'Each standard field must use a different source column',
+    commit: 'Validate and import',
+    importing: 'Validating',
+    importFailed: 'Statement import failed',
+    conflict: 'A concurrent import was detected; submit the same file again',
+    reportEyebrow: 'BATCH RESULT',
+    reportHeading: 'Import report',
+    totalRows: 'Total rows',
+    importedRows: 'Imported',
+    duplicateRows: 'Duplicates',
+    errorRows: 'Failed',
+    row: 'Row',
+    historyEyebrow: 'LOCAL BATCHES',
+    historyHeading: 'Import history',
+    loading: 'Loading import history',
+    loadFailed: 'Unable to load import history',
+    file: 'File',
+    period: 'Period',
+    status: 'Status',
+    statuses: {
+      COMPLETED: 'Completed',
+      COMPLETED_WITH_DUPLICATES: 'Deduplicated',
+      REJECTED: 'Rejected',
+      REVOKED: 'Revoked',
+    },
+    errorCodes: {
+      EMPTY_FILE: 'The file is empty',
+      INVALID_ENCODING: 'Invalid encoding; use UTF-8',
+      DUPLICATE_HEADER: 'The header contains duplicate columns',
+      MISSING_COLUMN: 'A mapped source column is missing',
+      NO_DATA_ROWS: 'The file contains no transactions',
+      TOO_MANY_ROWS: 'The file exceeds 5,000 transaction rows',
+      INVALID_ROW: 'The row contains an invalid field',
+    },
+  },
   categoryLabels: {
     income: 'Income',
     groceries: 'Groceries',

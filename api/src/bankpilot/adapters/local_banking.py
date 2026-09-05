@@ -54,6 +54,7 @@ class LocalBankingGateway:
         )
         return TransactionItem(
             id=transaction.id,
+            booking_date=transaction.booking_date,
             occurred_at=transaction.occurred_at,
             merchant=transaction.merchant,
             description=transaction.description,

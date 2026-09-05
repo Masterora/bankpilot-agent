@@ -6,10 +6,15 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { formatMoney } from './format'
+import { formatDate, formatMoney } from './format'
 
 describe('formatMoney', () => {
   it('formats CNY amounts deterministically', () => {
     expect(formatMoney('-128.50', 'CNY', 'zh-CN')).toContain('128.50')
+  })
+
+  it('formats a booking date without shifting it across time zones', () => {
+    expect(formatDate('2026-09-01', 'en-US')).toContain('2026')
+    expect(formatDate('2026-09-01', 'en-US')).toContain('Sep')
   })
 })

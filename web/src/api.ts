@@ -4,12 +4,20 @@
  * 主要内容：
  * - `ApiError`：保留 HTTP 状态码和服务端错误信息。
  * - `request`：统一注入 Cookie 凭证、JSON 请求头和错误处理。
- * - `api`：提供注册、认证、卡片列表、运行、SSE 事件订阅与分类修正方法。
+ * - `api`：提供注册、认证、卡片、账单导入、运行、SSE 与分类修正方法。
  *
  * 关键边界：会话由浏览器 Cookie 自动携带，本文件不保存密码或令牌。
  */
 
-import type { CardList, Run, RunEvent, TransactionCategory, User } from './types'
+import type {
+  ImportBatch,
+  ImportBatchList,
+  ImportStatementPayload,
+  Run,
+  RunEvent,
+  TransactionCategory,
+  User,
+} from './types'
 
 export class ApiError extends Error {
   constructor(
@@ -48,7 +56,17 @@ export const api = {
     }),
   me: () => request<User>('/api/v1/auth/me'),
   logout: () => request<void>('/api/v1/auth/logout', { method: 'POST' }),
-  listCards: () => request<CardList>('/api/v1/cards'),
+  listAccounts: () => request<{ items: { id: string; name: string; currency: string }[] }>('/api/v1/accounts'),
+  ledger: (start: string, end: string) => request<import('./types').RunResult['transactions']>(`/api/v1/transactions?start_date=${start}&end_date=${end}`),
+  correctLedgerCategory: (id: string, category: TransactionCategory) => request<void>(`/api/v1/transactions/${id}/category`, { method: 'POST', body: JSON.stringify({ category }) }),
+  listImports: () => request<ImportBatchList>('/api/v1/imports'),
+  revokeImport: (id: string) => request<void>(`/api/v1/imports/${id}/revoke`, { method: 'POST' }),
+  previewImport: (payload: ImportStatementPayload) => request<{ total_rows: number; error_rows: number; rows: { row_number: number; date: string; merchant: string; amount: string }[] }>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify(payload) }),
+  importStatement: (payload: ImportStatementPayload) =>
+    request<ImportBatch>('/api/v1/imports', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   createRun: (message: string) =>
     request<Run>('/api/v1/runs', {
       method: 'POST',

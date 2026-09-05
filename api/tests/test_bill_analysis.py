@@ -112,9 +112,11 @@ def _item(
     occurred_at: datetime | None = None,
     transaction_id: UUID | None = None,
 ) -> TransactionItem:
+    resolved_occurred_at = occurred_at or datetime(2026, 9, 3, tzinfo=UTC)
     return TransactionItem(
         id=transaction_id or uuid4(),
-        occurred_at=occurred_at or datetime(2026, 9, 3, tzinfo=UTC),
+        booking_date=resolved_occurred_at.date(),
+        occurred_at=resolved_occurred_at,
         merchant=merchant,
         description="测试记录",
         amount=Decimal(amount),

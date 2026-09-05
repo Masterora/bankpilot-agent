@@ -4,6 +4,8 @@
 主要内容：
 - `UserRepository`：用户查询与创建。
 - `SessionRepository`：创建、解析和删除可过期会话。
+- `AccountRepository`：按用户复用或创建导入账户。
+- `ImportRepository`：保存并读取账单导入报告。
 - `RunRepository`：运行创建、状态迁移、计划/结果记录、中断修复与增量事件读取。
 - `CardRepository`：按当前用户所属账户读取卡片。
 - `TransactionRepository`：查询交易并保存不覆盖原始数据的用户分类修正。
@@ -22,6 +24,7 @@ from bankpilot.db.models import (
     AccountRecord,
     AuditEventRecord,
     CardRecord,
+    ImportBatchRecord,
     RunRecord,
     SessionRecord,
     TransactionCategoryOverrideRecord,
@@ -29,6 +32,7 @@ from bankpilot.db.models import (
     UserRecord,
 )
 from bankpilot.domain.contracts import RunStatus
+from bankpilot.domain.statement_import import ParsedStatementRow
 
 
 class UserRepository:
@@ -80,6 +84,85 @@ class SessionRepository:
         await self.session.execute(
             delete(SessionRecord).where(SessionRecord.token_hash == token_hash)
         )
+
+
+class AccountRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_or_create(
+        self, *, user_id: UUID, name: str, currency: str
+    ) -> AccountRecord:
+        """账户名称和币种在用户范围内稳定复用，避免每次导入产生新账户。"""
+        existing = cast(
+            AccountRecord | None,
+            await self.session.scalar(
+                select(AccountRecord).where(
+                    AccountRecord.user_id == user_id,
+                    AccountRecord.name == name,
+                    AccountRecord.currency == currency,
+                )
+            ),
+        )
+        if existing is not None:
+            return existing
+        account = AccountRecord(user_id=user_id, name=name, currency=currency)
+        self.session.add(account)
+        await self.session.flush()
+        return account
+
+
+class ImportRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def add(
+        self,
+        *,
+        user_id: UUID,
+        account_id: UUID | None,
+        account_name: str,
+        currency: str,
+        file_name: str,
+        file_hash: str,
+        status: str,
+        total_rows: int,
+        imported_rows: int,
+        duplicate_rows: int,
+        error_rows: int,
+        start_date: date | None,
+        end_date: date | None,
+        field_mapping: dict[str, str | None],
+        errors: list[dict[str, Any]],
+    ) -> ImportBatchRecord:
+        batch = ImportBatchRecord(
+            user_id=user_id,
+            account_id=account_id,
+            account_name=account_name,
+            currency=currency,
+            file_name=file_name,
+            file_hash=file_hash,
+            status=status,
+            total_rows=total_rows,
+            imported_rows=imported_rows,
+            duplicate_rows=duplicate_rows,
+            error_rows=error_rows,
+            start_date=start_date,
+            end_date=end_date,
+            field_mapping=field_mapping,
+            errors=errors,
+        )
+        self.session.add(batch)
+        await self.session.flush()
+        return batch
+
+    async def list_for_user(self, user_id: UUID) -> list[ImportBatchRecord]:
+        records = await self.session.scalars(
+            select(ImportBatchRecord)
+            .where(ImportBatchRecord.user_id == user_id)
+            .order_by(ImportBatchRecord.created_at.desc(), ImportBatchRecord.id.desc())
+        )
+        return list(records)
 
 
 class CardRepository:
@@ -225,8 +308,6 @@ class TransactionRepository:
         self, *, user_id: UUID, start_date: date, end_date: date
     ) -> list[tuple[TransactionRecord, str, str | None]]:
         """通过用户所属账户查询交易，时间范围使用 UTC 左闭右开区间。"""
-        start = datetime.combine(start_date, datetime.min.time(), tzinfo=UTC)
-        end = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
         rows = await self.session.execute(
             select(
                 TransactionRecord,
@@ -243,8 +324,8 @@ class TransactionRepository:
             )
             .where(
                 AccountRecord.user_id == user_id,
-                TransactionRecord.occurred_at >= start,
-                TransactionRecord.occurred_at < end,
+                TransactionRecord.booking_date >= start_date,
+                TransactionRecord.booking_date <= end_date,
             )
             .order_by(TransactionRecord.occurred_at.desc())
         )
@@ -278,3 +359,44 @@ class TransactionRepository:
             existing.category = category
         await self.session.flush()
         return transaction
+
+    async def existing_fingerprints(
+        self, *, account_id: UUID, fingerprints: set[str]
+    ) -> set[str]:
+        """一次读取账户内已有指纹，避免按行往返数据库。"""
+        if not fingerprints:
+            return set()
+        values = await self.session.scalars(
+            select(TransactionRecord.source_fingerprint).where(
+                TransactionRecord.account_id == account_id,
+                TransactionRecord.source_fingerprint.in_(fingerprints),
+            )
+        )
+        return {value for value in values if value is not None}
+
+    async def add_imported(
+        self,
+        *,
+        account_id: UUID,
+        import_batch_id: UUID,
+        rows: list[ParsedStatementRow],
+    ) -> None:
+        """在调用方事务中批量加入已校验交易，不在仓储层隐式提交。"""
+        self.session.add_all(
+            [
+                TransactionRecord(
+                    account_id=account_id,
+                    import_batch_id=import_batch_id,
+                    source_row_number=row.row_number,
+                    source_fingerprint=row.fingerprint,
+                    booking_date=row.booking_date,
+                    occurred_at=row.occurred_at,
+                    merchant=row.merchant,
+                    description=row.description,
+                    amount=row.amount,
+                    currency=row.currency,
+                )
+                for row in rows
+            ]
+        )
+        await self.session.flush()

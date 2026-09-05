@@ -112,6 +112,7 @@ class ModelPlan(BaseModel):
 
 class TransactionItem(BaseModel):
     id: UUID
+    booking_date: date
     occurred_at: datetime
     merchant: str
     description: str

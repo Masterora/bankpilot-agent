@@ -1,10 +1,11 @@
 """
-文件职责：定义 BankPilot v1 的认证、卡片、Agent、事件流与账单分类修正路由。
+文件职责：定义 BankPilot v1 的认证、卡片、账单导入、Agent、事件流与分类修正路由。
 
 主要内容：
 - 系统接口：`healthz` 和数据库 `readyz`。
 - 认证接口：注册、登录、退出与当前用户查询。
 - 卡片接口：读取当前用户所属账户下的卡片。
+- 导入接口：原子校验 CSV、账户内去重、保存交易并返回批次报告。
 - 运行接口：创建异步 Agent 运行，按 ID 读取状态，并通过 SSE 增量订阅事件。
 - 分析接口：在运行归属范围内修正交易分类并重新计算确定性分析。
 - `_run_response`：组装运行记录和时间线响应。
@@ -14,7 +15,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID
 
 from fastapi import (
@@ -46,15 +47,20 @@ from bankpilot.api.schemas import (
     CorrectCategoryRequest,
     CreateRunRequest,
     HealthResponse,
+    ImportBatchListResponse,
+    ImportBatchResponse,
+    ImportRowErrorResponse,
+    ImportStatementRequest,
     LoginRequest,
     RegisterRequest,
     RunResponse,
     UserResponse,
 )
 from bankpilot.config import Settings
-from bankpilot.db.models import RunRecord, UserRecord
+from bankpilot.db.models import ImportBatchRecord, RunRecord, UserRecord
 from bankpilot.db.repositories import (
     CardRepository,
+    ImportRepository,
     RunRepository,
     SessionRepository,
     TransactionRepository,
@@ -67,6 +73,7 @@ from bankpilot.domain.contracts import (
     RunStatus,
     TransactionResult,
 )
+from bankpilot.errors import ImportConflictError
 from bankpilot.security import (
     DUMMY_PASSWORD_HASH,
     create_session_token,
@@ -74,6 +81,7 @@ from bankpilot.security import (
     hash_session_token,
     verify_password,
 )
+from bankpilot.services.statement_import import StatementImportService
 
 router = APIRouter(prefix="/api/v1")
 
@@ -223,6 +231,47 @@ async def list_cards(
             for card, account_name in rows
         ]
     )
+
+
+@router.get("/imports", response_model=ImportBatchListResponse, tags=["imports"])
+async def list_imports(
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ImportBatchListResponse:
+    """按当前用户返回导入历史，不泄露其他用户的文件名或账户。"""
+    batches = await ImportRepository(session).list_for_user(user.id)
+    return ImportBatchListResponse(items=[_import_response(batch) for batch in batches])
+
+
+@router.post(
+    "/imports",
+    response_model=ImportBatchResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["imports"],
+)
+async def import_statement(
+    payload: ImportStatementRequest,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ImportBatchResponse:
+    """整批校验 CSV；存在失败行时只保存报告，不写入任何交易。"""
+    # 身份依赖的查询会开启只读事务；先结束它，再建立覆盖整个批次的写事务。
+    await session.commit()
+    try:
+        batch = await StatementImportService(session).execute(
+            user_id=user.id,
+            file_name=payload.file_name,
+            content=payload.content,
+            account_name=payload.account_name,
+            currency=payload.currency,
+            mapping=payload.mapping,
+        )
+    except ImportConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Import conflicted with another request; retry the same file",
+        ) from exc
+    return _import_response(batch)
 
 
 @router.post(
@@ -404,4 +453,27 @@ async def _run_response(repository: RunRepository, run: RunRecord) -> RunRespons
             )
             for event in events
         ],
+    )
+
+
+def _import_response(batch: ImportBatchRecord) -> ImportBatchResponse:
+    """集中转换导入响应，确保创建与历史接口使用同一契约。"""
+    return ImportBatchResponse(
+        id=batch.id,
+        account_id=batch.account_id,
+        account_name=batch.account_name,
+        currency=batch.currency,
+        file_name=batch.file_name,
+        status=cast(
+            Literal["COMPLETED", "COMPLETED_WITH_DUPLICATES", "REJECTED"], batch.status
+        ),
+        total_rows=batch.total_rows,
+        imported_rows=batch.imported_rows,
+        duplicate_rows=batch.duplicate_rows,
+        error_rows=batch.error_rows,
+        start_date=batch.start_date,
+        end_date=batch.end_date,
+        field_mapping=batch.field_mapping,
+        errors=[ImportRowErrorResponse.model_validate(item) for item in batch.errors],
+        created_at=batch.created_at,
     )

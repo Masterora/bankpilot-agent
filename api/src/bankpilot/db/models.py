@@ -1,8 +1,9 @@
 """
-文件职责：定义 BankPilot 身份、账户、卡片、账务分析与 Agent 运行的 ORM 模型。
+文件职责：定义 BankPilot 身份、账户、卡片、账单导入、账务分析与 Agent 运行的 ORM 模型。
 
 主要内容：
 - 身份与账务：`UserRecord`、`SessionRecord`、`AccountRecord`、`CardRecord`、`TransactionRecord`。
+- 账单导入：`ImportBatchRecord` 保存来源、映射、统计和失败行报告。
 - 分析修正：`TransactionCategoryOverrideRecord` 保存用户确认的交易分类。
 - Agent 运行：`RunRecord` 保存状态、计划、结果、错误和模型信息。
 - 审计记录：`AuditEventRecord` 按运行保存有序事件。
@@ -10,7 +11,7 @@
 关键边界：所有业务归属通过外键表达；复合索引服务于归属和时间范围查询。
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -18,9 +19,11 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     JSON,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -72,6 +75,10 @@ class AccountRecord(Base):
         back_populates="account", cascade="all, delete-orphan"
     )
 
+    __table_args__ = (
+        Index("uq_accounts_user_name_currency", "user_id", "name", "currency", unique=True),
+    )
+
 
 class CardRecord(Base):
     """保存本地银行适配器可识别的卡片，以及后续操作所需的稳定标识。"""
@@ -101,15 +108,58 @@ class TransactionRecord(Base):
     account_id: Mapped[UUID] = mapped_column(
         ForeignKey("accounts.id", ondelete="CASCADE"), index=True
     )
+    booking_date: Mapped[date] = mapped_column(Date)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     merchant: Mapped[str] = mapped_column(String(160))
     description: Mapped[str] = mapped_column(String(500), default="")
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     currency: Mapped[str] = mapped_column(String(3), default="CNY")
+    import_batch_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source_row_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     account: Mapped[AccountRecord] = relationship(back_populates="transactions")
 
-    __table_args__ = (Index("ix_transactions_account_occurred", "account_id", "occurred_at"),)
+    __table_args__ = (
+        Index("ix_transactions_account_occurred", "account_id", "occurred_at"),
+        Index("ix_transactions_account_booking", "account_id", "booking_date"),
+        Index(
+            "uq_transactions_account_fingerprint",
+            "account_id",
+            "source_fingerprint",
+            unique=True,
+        ),
+    )
+
+
+class ImportBatchRecord(Base):
+    """保存一次导入的可追溯结果；源文件正文不进入数据库。"""
+
+    __tablename__ = "import_batches"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    account_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    account_name: Mapped[str] = mapped_column(String(100))
+    currency: Mapped[str] = mapped_column(String(3))
+    file_name: Mapped[str] = mapped_column(String(255))
+    file_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    total_rows: Mapped[int] = mapped_column(Integer, default=0)
+    imported_rows: Mapped[int] = mapped_column(Integer, default=0)
+    duplicate_rows: Mapped[int] = mapped_column(Integer, default=0)
+    error_rows: Mapped[int] = mapped_column(Integer, default=0)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    field_mapping: Mapped[dict[str, str | None]] = mapped_column(JSON)
+    errors: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_import_batches_user_created", "user_id", "created_at"),)
 
 
 class TransactionCategoryOverrideRecord(Base):

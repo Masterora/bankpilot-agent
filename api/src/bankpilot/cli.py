@@ -74,6 +74,7 @@ async def _seed(email: str, password: str) -> None:
                     [
                         TransactionRecord(
                             account_id=account.id,
+                            booking_date=(now - timedelta(days=2)).date(),
                             occurred_at=now - timedelta(days=2),
                             merchant="城市交通",
                             description="通勤",
@@ -82,6 +83,7 @@ async def _seed(email: str, password: str) -> None:
                         ),
                         TransactionRecord(
                             account_id=account.id,
+                            booking_date=(now - timedelta(days=5)).date(),
                             occurred_at=now - timedelta(days=5),
                             merchant="社区超市",
                             description="日用品",
@@ -90,6 +92,7 @@ async def _seed(email: str, password: str) -> None:
                         ),
                         TransactionRecord(
                             account_id=account.id,
+                            booking_date=(now - timedelta(days=10)).date(),
                             occurred_at=now - timedelta(days=10),
                             merchant="工资入账",
                             description="月度工资",

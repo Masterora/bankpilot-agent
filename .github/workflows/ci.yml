@@ -11,6 +11,24 @@ on:
 jobs:
   api:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: bankpilot_ci
+          POSTGRES_USER: bankpilot_ci
+          POSTGRES_PASSWORD: bankpilot_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bankpilot_ci -d bankpilot_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      BANKPILOT_ENV: test
+      BANKPILOT_DATABASE_URL: postgresql+asyncpg://bankpilot_ci:bankpilot_ci_password@127.0.0.1:5432/bankpilot_ci
+      BANKPILOT_SESSION_SECRET: ci-session-secret-with-more-than-32-characters
     defaults:
       run:
         working-directory: api
@@ -19,10 +37,13 @@ jobs:
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
+          python-version: "3.13"
       - run: uv sync --all-groups --locked
       - run: uv run ruff check .
       - run: uv run mypy src
       - run: uv run pytest
+      - run: uv run alembic upgrade head
+      - run: docker build -t bankpilot-api:ci .
 
   web:
     runs-on: ubuntu-latest
@@ -40,6 +61,7 @@ jobs:
       - run: npm run lint
       - run: npm test -- --run
       - run: npm run build
+      - run: docker build -t bankpilot-web:ci .
 
   deploy:
     name: Deploy production origin

@@ -65,6 +65,7 @@ async def app_context(
                 ),
                 TransactionRecord(
                     account_id=account.id,
+                    booking_date=datetime.now(UTC).date(),
                     occurred_at=datetime.now(UTC),
                     merchant="社区超市",
                     description="日用品",
