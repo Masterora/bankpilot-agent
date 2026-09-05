@@ -109,6 +109,9 @@ class TransactionRecord(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"), index=True
     )
     booking_date: Mapped[date] = mapped_column(Date)
+    time_precision: Mapped[str] = mapped_column(
+        String(16), default="unknown", server_default="unknown"
+    )
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     merchant: Mapped[str] = mapped_column(String(160))
     description: Mapped[str] = mapped_column(String(500), default="")
@@ -172,6 +175,22 @@ class TransactionCategoryOverrideRecord(Base):
     )
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     category: Mapped[str] = mapped_column(String(32))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ReviewDecisionRecord(Base):
+    """保存用户对规则证据的判断；判断不修改金额，也不替代银行确认。"""
+
+    __tablename__ = "review_decisions"
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16))
+    note: Mapped[str] = mapped_column(String(500))
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

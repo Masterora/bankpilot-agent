@@ -2,14 +2,14 @@
  * 文件职责：提供 CSV 账单选择、字段映射、原子写入和批次报告界面。
  *
  * 主要内容：
- * - 本地读取 CSV 表头并自动匹配日期、商户、金额和说明列。
+ * - 调用服务端识别 CSV 字段与显式账户信息，允许查看字段对应。
  * - 收集账户与币种，将源文本交给受认证 API 做确定性校验和去重。
  * - 展示最近一次结果、失败行和当前用户的导入历史。
  *
  * 关键边界：浏览器不解析金额或决定去重结果；服务端是校验、写入与批次状态的唯一权威。
  */
 
-import { ChangeEvent, FormEvent, useState } from 'react'
+import { ChangeEvent, FormEvent, useRef, useState } from 'react'
 
 import { ApiError, api } from '../../api'
 import type { Messages } from '../../i18n'
@@ -34,6 +34,7 @@ export function ImportPage({
   onAnalyze: () => void
 }) {
   const [fileName, setFileName] = useState('')
+  const selectionSequence = useRef(0)
   const [content, setContent] = useState('')
   const [headers, setHeaders] = useState<string[]>([])
   const [accountName, setAccountName] = useState('')
@@ -47,7 +48,7 @@ export function ImportPage({
   const [result, setResult] = useState<ImportBatch | null>(null)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [preview, setPreview] = useState<{ key: string; total_rows: number; error_rows: number; rows: { row_number: number; date: string; merchant: string; amount: string }[] } | null>(null)
+  const [preview, setPreview] = useState<{ key: string; total_rows: number; error_rows: number; duplicate_rows: number; errors: { row_number: number; message: string }[]; rows: { row_number: number; date: string; merchant: string; amount: string }[] } | null>(null)
   const payload = { file_name: fileName, content, account_name: accountName.trim(), currency, mapping }
   const payloadKey = JSON.stringify(payload)
   const previewCurrent = preview?.key === payloadKey
@@ -56,6 +57,7 @@ export function ImportPage({
   async function selectFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
+    const selection = ++selectionSequence.current
     event.target.value = ''
     setError('')
     setResult(null)
@@ -78,15 +80,29 @@ export function ImportPage({
       setError(copy.imports.fileReadFailed)
       return
     }
+    if (selection !== selectionSequence.current) return
     const detectedHeaders = parseCsvHeaders(text)
     if (detectedHeaders.length === 0) {
       setError(copy.imports.missingHeader)
       return
     }
+    let detectedMapping: ImportFieldMapping
+    try {
+      const detection = await api.detectImport(text)
+      if (selection !== selectionSequence.current) return
+      detectedMapping = detection.mapping
+      if (detection.account_name) setAccountName(detection.account_name)
+      if (detection.currency) setCurrency(detection.currency)
+    } catch {
+      if (selection !== selectionSequence.current) return
+      setError(english ? 'This statement format is not supported. Keep the original file.' : '暂不支持该账单格式，请保留原始文件。')
+      return
+    }
+    if (selection !== selectionSequence.current) return
     setFileName(file.name)
     setContent(text)
     setHeaders(detectedHeaders)
-    setMapping(autoMapHeaders(detectedHeaders))
+    setMapping(detectedMapping)
   }
 
   function updateMapping(field: keyof ImportFieldMapping, value: string) {
@@ -185,7 +201,7 @@ export function ImportPage({
           {headers.length === 0 ? (
             <p className="import-placeholder">{copy.imports.mappingEmpty}</p>
           ) : (
-            <div className="mapping-fields">
+            <details><summary>{english ? 'Field mapping' : '查看字段对应'}</summary><div className="mapping-fields">
               <MappingSelect
                 copy={copy}
                 field="occurredAt"
@@ -217,7 +233,7 @@ export function ImportPage({
                 value={mapping.description ?? ''}
                 onChange={(value) => updateMapping('description', value)}
               />
-            </div>
+            </div></details>
           )}
           {mappingHasDuplicates && <p className="error">{copy.imports.duplicateMapping}</p>}
           <button className="primary import-submit" disabled={!ready || submitting || (previewCurrent && preview.error_rows > 0)}>
@@ -226,7 +242,7 @@ export function ImportPage({
           </button>
         </section>
       </form>
-      {previewCurrent && <section className="import-report"><h2>{english ? 'Import preview' : '导入预览'}</h2><p>{preview.total_rows} {english ? 'rows' : '行'} · {preview.error_rows} {english ? 'invalid rows' : '行格式异常'}</p>{preview.error_rows > 0 && <p role="alert">{english ? 'This format cannot be imported. Check the field selection or use a supported source file.' : '该格式无法导入。请核对字段选择，或使用已适配的来源文件。'}</p>}<p>{english ? 'First 20 rows; duplicates are checked on confirmation.' : '展示前 20 行；确认导入时检查重复记录。'}</p><div className="import-table-wrap"><table className="import-table"><tbody>{preview.rows.map((row) => <tr key={row.row_number}><td>{row.date}</td><td>{row.merchant}</td><td>{row.amount} {currency}</td></tr>)}</tbody></table></div></section>}
+      {previewCurrent && <section className="import-report"><h2>{english ? 'Import preview' : '导入预览'}</h2><p>{preview.total_rows} {english ? 'rows' : '行'} · {preview.duplicate_rows} {english ? 'duplicates' : '行重复'} · {preview.error_rows} {english ? 'invalid rows' : '行格式异常'}</p>{preview.error_rows > 0 && <p role="alert">{english ? 'This format cannot be imported. Check the field selection or use a supported source file.' : '该格式无法导入。请核对字段选择，或使用已适配的来源文件。'}</p>}<ul>{preview.errors?.map((item) => <li key={item.row_number}>{english ? 'Row' : '第'} {item.row_number}: {item.message}</li>)}</ul><p>{english ? 'First 20 rows; duplicates are checked on confirmation.' : '展示前 20 行；确认导入时检查重复记录。'}</p><div className="import-table-wrap"><table className="import-table"><tbody>{preview.rows.map((row) => <tr key={row.row_number}><td>{row.date}</td><td>{row.merchant}</td><td>{row.amount} {currency}</td></tr>)}</tbody></table></div></section>}
 
       {error && <p className="error import-page-error" role="alert">{error}</p>}
       {result && <>
@@ -371,24 +387,6 @@ function canSubmit(
       && mapping.merchant
       && mapping.amount,
   )
-}
-
-function autoMapHeaders(headers: string[]): ImportFieldMapping {
-  // 自动匹配只用于减少操作，不匹配的必填列仍需用户显式选择。
-  return {
-    occurred_at: matchHeader(headers, ['date', 'datetime', 'occurredat', 'transactiondate', '交易日期', '日期']),
-    merchant: matchHeader(headers, ['merchant', 'counterparty', 'payee', '交易对方', '商户', '对方']),
-    amount: matchHeader(headers, ['amount', 'transactionamount', '金额', '交易金额']),
-    description: matchHeader(headers, ['description', 'memo', 'note', '说明', '摘要', '备注']) || null,
-  }
-}
-
-function matchHeader(headers: string[], aliases: string[]) {
-  return headers.find((header) => aliases.includes(normalizeHeader(header))) ?? ''
-}
-
-function normalizeHeader(value: string) {
-  return value.toLowerCase().replace(/[\s_-]/g, '')
 }
 
 function parseCsvHeaders(content: string) {

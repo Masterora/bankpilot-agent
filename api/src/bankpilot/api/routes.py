@@ -66,10 +66,7 @@ from bankpilot.db.repositories import (
     TransactionRepository,
     UserRepository,
 )
-from bankpilot.domain.bill_analysis import analyze_bill
 from bankpilot.domain.contracts import (
-    CategorySource,
-    RunResult,
     RunStatus,
     TransactionResult,
 )
@@ -86,9 +83,7 @@ from bankpilot.services.statement_import import StatementImportService
 router = APIRouter(prefix="/api/v1")
 
 
-def _set_session_cookie(
-    response: Response, *, token: str, settings: Settings
-) -> None:
+def _set_session_cookie(response: Response, *, token: str, settings: Settings) -> None:
     """统一设置注册和登录会话，确保 Cookie 安全属性不会漂移。"""
     response.set_cookie(
         SESSION_COOKIE,
@@ -138,9 +133,7 @@ async def register(
             password_hash = await asyncio.to_thread(hash_password, payload.password)
             user = await users.add(email=str(payload.email), password_hash=password_hash)
             token = create_session_token()
-            token_hash = hash_session_token(
-                token, settings.session_secret.get_secret_value()
-            )
+            token_hash = hash_session_token(token, settings.session_secret.get_secret_value())
             await SessionRepository(session).create(
                 user_id=user.id,
                 token_hash=token_hash,
@@ -334,9 +327,7 @@ async def stream_run_events(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Last-Event-ID"
             )
 
-    session_factory = cast(
-        async_sessionmaker[AsyncSession], request.app.state.session_factory
-    )
+    session_factory = cast(async_sessionmaker[AsyncSession], request.app.state.session_factory)
 
     async def generate() -> AsyncIterator[str]:
         """每次轮询使用短会话，确保能够看到后台任务刚提交的事件。"""
@@ -346,9 +337,7 @@ async def stream_run_events(
         while not await request.is_disconnected():
             async with session_factory() as stream_session:
                 stream_repository = RunRepository(stream_session)
-                current_run = await stream_repository.get_for_user(
-                    run_id=run_id, user_id=user.id
-                )
+                current_run = await stream_repository.get_for_user(run_id=run_id, user_id=user.id)
                 if current_run is None:
                     return
                 events = await stream_repository.events_after(run_id, current_sequence)
@@ -391,7 +380,7 @@ async def correct_transaction_category(
     user: UserRecord = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> RunResponse:
-    """保存用户分类修正，并重新生成该次运行的确定性统计。"""
+    """保存用户分类修正与事件；返回原运行快照，新查询读取修正结果。"""
     runs = RunRepository(session)
     run = await runs.get_for_user(run_id=run_id, user_id=user.id)
     if run is None or run.status != RunStatus.SUCCEEDED.value or run.result is None:
@@ -410,15 +399,7 @@ async def correct_transaction_category(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
 
     previous_category = item.category
-    item.category = payload.category
-    item.category_source = CategorySource.USER
-    item.category_rule_id = "category_user_override_v1"
-    result = RunResult(
-        message=str(run.result.get("message", "")),
-        transactions=transactions,
-        analysis=analyze_bill(transactions.items),
-    )
-    await runs.update_result(run_id, result.model_dump(mode="json"))
+    # 分类只影响当前账本；生成时快照不覆盖，新的查询读取已保存分类。
     await runs.add_event(
         run_id,
         "transaction.category_corrected",
@@ -464,9 +445,7 @@ def _import_response(batch: ImportBatchRecord) -> ImportBatchResponse:
         account_name=batch.account_name,
         currency=batch.currency,
         file_name=batch.file_name,
-        status=cast(
-            Literal["COMPLETED", "COMPLETED_WITH_DUPLICATES", "REJECTED"], batch.status
-        ),
+        status=cast(Literal["COMPLETED", "COMPLETED_WITH_DUPLICATES", "REJECTED"], batch.status),
         total_rows=batch.total_rows,
         imported_rows=batch.imported_rows,
         duplicate_rows=batch.duplicate_rows,

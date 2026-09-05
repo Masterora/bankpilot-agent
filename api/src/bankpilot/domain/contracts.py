@@ -112,6 +112,9 @@ class ModelPlan(BaseModel):
 
 class TransactionItem(BaseModel):
     id: UUID
+    time_precision: Literal["unknown", "date", "timestamp"] = "unknown"
+    import_batch_id: UUID | None = None
+    source_row_number: int | None = None
     booking_date: date
     occurred_at: datetime
     merchant: str

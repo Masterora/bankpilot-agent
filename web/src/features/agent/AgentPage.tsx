@@ -22,6 +22,7 @@ interface RunViewProps {
 }
 
 interface AgentPageProps extends RunViewProps {
+  correctionSaved: boolean
   error: string
   message: string
   onMessageChange: (message: string) => void
@@ -30,6 +31,7 @@ interface AgentPageProps extends RunViewProps {
 }
 
 export function AgentPage({
+  correctionSaved,
   copy,
   correctingId,
   error,
@@ -81,6 +83,7 @@ export function AgentPage({
           ))}
         </div>
         {error && <p className="error" role="alert">{error}</p>}
+        {correctionSaved && <p role="status">{locale === 'en-US' ? 'Category saved to the ledger. Query again to generate an updated snapshot.' : '分类已保存到账本，请重新查询以生成新的结果快照。'}</p>}
       </section>
       <RunPanel
         copy={copy}
@@ -170,6 +173,7 @@ function AnalysisPanel({ copy, locale, run }: { copy: Messages; locale: Locale; 
   return (
     <div className="analysis-panel">
       <p className="eyebrow">{copy.analysisEyebrow}</p>
+      <p>{locale === 'en-US' ? 'Snapshot of imported flows. Transfers and refunds are not netted; coverage is unverified. Query again after corrections.' : '已导入流水快照；未抵销转账与退款，未验证期间完整性。分类修正后请重新查询。'}</p>
       <div className="summary-grid">
         {analysis.currency_summaries.map((summary) => (
           <div className="currency-summary" key={summary.currency}>

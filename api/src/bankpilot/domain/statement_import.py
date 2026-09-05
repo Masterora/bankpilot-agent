@@ -12,6 +12,7 @@
 import csv
 import hashlib
 import io
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -29,13 +30,19 @@ class StatementFieldMapping(BaseModel):
     merchant: str = Field(min_length=1, max_length=120)
     amount: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, min_length=1, max_length=120)
+    transaction_id: str | None = Field(default=None, min_length=1, max_length=120)
+    account: str | None = Field(default=None, min_length=1, max_length=120)
+    currency: str | None = Field(default=None, min_length=1, max_length=120)
 
     @model_validator(mode="after")
     def fields_must_be_distinct(self) -> "StatementFieldMapping":
         """禁止一个源列同时承担多个标准字段，避免静默误映射。"""
         selected = [self.occurred_at, self.merchant, self.amount]
-        if self.description is not None:
-            selected.append(self.description)
+        selected.extend(
+            value
+            for value in (self.description, self.transaction_id, self.account, self.currency)
+            if value is not None
+        )
         if len(selected) != len(set(selected)):
             raise ValueError("mapped source columns must be distinct")
         return self
@@ -51,6 +58,7 @@ class ParsedStatementRow:
     amount: Decimal
     currency: str
     fingerprint: str
+    time_precision: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -86,11 +94,7 @@ def parse_statement_csv(
             file_hash=file_hash,
             total_rows=0,
             rows=[],
-            errors=[
-                StatementRowError(
-                    1, "INVALID_ENCODING", "CSV contains undecodable text"
-                )
-            ],
+            errors=[StatementRowError(1, "INVALID_ENCODING", "CSV contains undecodable text")],
         )
 
     try:
@@ -108,8 +112,16 @@ def parse_statement_csv(
             errors=[StatementRowError(1, "DUPLICATE_HEADER", "CSV headers must be unique")],
         )
     required_headers = [mapping.occurred_at, mapping.merchant, mapping.amount]
-    if mapping.description is not None:
-        required_headers.append(mapping.description)
+    required_headers.extend(
+        value
+        for value in (
+            mapping.description,
+            mapping.transaction_id,
+            mapping.account,
+            mapping.currency,
+        )
+        if value is not None
+    )
     missing_headers = [header for header in required_headers if header not in headers]
     if missing_headers:
         return ParsedStatement(
@@ -150,6 +162,8 @@ def parse_statement_csv(
     parsed_rows: list[ParsedStatementRow] = []
     errors: list[StatementRowError] = []
     occurrence_counts: defaultdict[str, int] = defaultdict(int)
+    identifiers: dict[str, str] = {}
+    account_names: set[str] = set()
     for row_number, raw in enumerate(raw_rows, start=2):
         try:
             if None in raw or any(value is None for value in raw.values()):
@@ -160,6 +174,12 @@ def parse_statement_csv(
                 raw.get(mapping.description, "") if mapping.description else "", 500
             )
             amount = _parse_amount(raw.get(mapping.amount, ""))
+            if mapping.currency and raw[mapping.currency].strip().upper() != currency:
+                raise ValueError("currency differs from the selected account currency")
+            if mapping.account:
+                account_names.add(_required_text(raw[mapping.account], "account", 100))
+                if len(account_names) > 1:
+                    raise ValueError("one statement must contain only one account")
             canonical = "\x1f".join(
                 [
                     booking_date.isoformat(),
@@ -175,6 +195,13 @@ def parse_statement_csv(
             fingerprint = hashlib.sha256(
                 f"{canonical}\x1f{occurrence_counts[canonical]}".encode()
             ).hexdigest()
+            if mapping.transaction_id:
+                source_id = _required_text(raw[mapping.transaction_id], "transaction_id", 160)
+                if source_id in identifiers:
+                    raise ValueError("duplicate transaction identifier inside the file")
+                identifiers[source_id] = canonical
+                # 账户限定由持久化唯一索引提供；稳定来源 ID 不依赖导出顺序或日期范围。
+                fingerprint = hashlib.sha256(f"source-id-v1:{source_id}".encode()).hexdigest()
             parsed_rows.append(
                 ParsedStatementRow(
                     row_number=row_number,
@@ -185,6 +212,11 @@ def parse_statement_csv(
                     amount=amount,
                     currency=currency,
                     fingerprint=fingerprint,
+                    time_precision=(
+                        "timestamp"
+                        if re.search(r"[T ]\d{2}:\d{2}", raw[mapping.occurred_at])
+                        else "date"
+                    ),
                 )
             )
         except ValueError as exc:
@@ -221,13 +253,18 @@ def _parse_datetime(value: str | None) -> tuple[date, datetime]:
 
 
 def _parse_amount(value: str | None) -> Decimal:
-    raw = (value or "").strip().replace(",", "")
+    raw = (value or "").strip()
+    # 通用格式只接受小数点；不猜测逗号是小数还是千位符，避免静默改变金额。
+    if not re.fullmatch(r"[+-]?\d+(?:\.\d{1,2})?", raw):
+        raise ValueError("amount must use a decimal point without grouping separators")
     try:
         amount = Decimal(raw)
     except InvalidOperation:
         raise ValueError("amount must be a decimal number") from None
     if not amount.is_finite():
         raise ValueError("amount must be finite")
+    if abs(amount) >= Decimal("10000000000000000"):
+        raise ValueError("amount exceeds the supported range")
     if amount != amount.quantize(Decimal("0.01")):
         raise ValueError("amount must have at most two decimal places")
     return amount.quantize(Decimal("0.01"))

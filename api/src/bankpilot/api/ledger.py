@@ -25,7 +25,8 @@ from bankpilot.db.models import (
 )
 from bankpilot.db.repositories import TransactionRepository
 from bankpilot.domain.contracts import TransactionResult
-from bankpilot.domain.statement_import import parse_statement_csv
+from bankpilot.domain.source_detection import detect_account, detect_mapping
+from bankpilot.domain.statement_import import StatementFieldMapping, parse_statement_csv
 
 router = APIRouter(prefix="/api/v1", tags=["ledger"])
 
@@ -91,7 +92,7 @@ async def transactions(
     session: AsyncSession = Depends(get_db_session),
 ) -> TransactionResult:
     """账本浏览不依赖 Agent 运行或模型可用性。"""
-    if end_date < start_date:
+    if end_date < start_date or (end_date - start_date).days > 366:
         raise HTTPException(422, "End date must not precede start date")
     return await LocalBankingGateway(session).query_transactions(
         user_id=user.id, start_date=start_date, end_date=end_date
@@ -124,21 +125,56 @@ class PreviewRow(BaseModel):
 class PreviewResponse(BaseModel):
     total_rows: int
     error_rows: int
+    duplicate_rows: int
     rows: list[PreviewRow]
+    errors: list[dict[str, str | int]]
 
 
 @router.post("/imports/preview", response_model=PreviewResponse)
 async def preview(
     payload: ImportStatementRequest,
     user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
 ) -> PreviewResponse:
     """使用与提交完全一致的解析器预览，失败行阻止确认写入。"""
     parsed = parse_statement_csv(
         content=payload.content, mapping=payload.mapping, currency=payload.currency
     )
+    account = await session.scalar(
+        select(AccountRecord).where(
+            AccountRecord.user_id == user.id,
+            AccountRecord.name == payload.account_name,
+            AccountRecord.currency == payload.currency,
+        )
+    )
+    existing = (
+        await TransactionRepository(session).existing_fingerprints(
+            account_id=account.id, fingerprints={row.fingerprint for row in parsed.rows}
+        )
+        if account
+        else set()
+    )
+    conflicts = (
+        await TransactionRepository(session).conflicting_rows(
+            account_id=account.id, rows=parsed.rows
+        )
+        if account
+        else []
+    )
+    errors: list[dict[str, str | int]] = [
+        {"row_number": item.row_number, "message": item.message} for item in parsed.errors
+    ]
+    errors.extend(
+        [
+            {"row_number": number, "message": "Transaction identifier conflicts with saved data"}
+            for number in conflicts
+        ]
+    )
     return PreviewResponse(
         total_rows=parsed.total_rows,
-        error_rows=len(parsed.errors),
+        error_rows=len(errors),
+        errors=errors[:100],
+        duplicate_rows=sum(row.fingerprint in existing for row in parsed.rows),
         rows=[
             PreviewRow(
                 row_number=row.row_number,
@@ -149,3 +185,29 @@ async def preview(
             for row in parsed.rows[:20]
         ],
     )
+
+
+class DetectRequest(BaseModel):
+    content: str
+
+
+class DetectionResponse(BaseModel):
+    mapping: StatementFieldMapping
+    account_name: str | None
+    currency: str | None
+
+
+@router.post("/imports/detect", response_model=DetectionResponse)
+async def detect(
+    payload: DetectRequest,
+    user: UserRecord = Depends(get_current_user),
+) -> DetectionResponse:
+    """识别可直接处理的文本结构；未知来源不进入自动确认链路。"""
+    if len(payload.content.encode("utf-8")) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Statement exceeds the size limit")
+    try:
+        mapping = detect_mapping(payload.content)
+        account_name, currency = detect_account(payload.content, mapping)
+        return DetectionResponse(mapping=mapping, account_name=account_name, currency=currency)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc

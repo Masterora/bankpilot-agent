@@ -97,9 +97,7 @@ def analyze_bill(transactions: list[TransactionItem]) -> BillAnalysis:
             totals["expense"] = Decimal(str(totals["expense"])) + abs(item.amount)
 
         category_key = (item.category, item.currency)
-        current_amount, current_count = category_totals.get(
-            category_key, (Decimal("0.00"), 0)
-        )
+        current_amount, current_count = category_totals.get(category_key, (Decimal("0.00"), 0))
         category_totals[category_key] = (current_amount + abs(item.amount), current_count + 1)
 
     currency_summaries = [
@@ -150,7 +148,7 @@ def _detect_anomalies(transactions: list[TransactionItem]) -> list[BillAnomaly]:
 
     duplicate_groups: dict[tuple[str, Decimal, str], list[TransactionItem]] = defaultdict(list)
     for item in transactions:
-        if item.amount < 0:
+        if item.amount < 0 and item.time_precision == "timestamp":
             key = (item.merchant.casefold().strip(), item.amount, item.currency)
             duplicate_groups[key].append(item)
     for (_, amount, currency), group in duplicate_groups.items():

@@ -31,6 +31,9 @@ export interface CardList {
 }
 
 export interface ImportFieldMapping {
+  transaction_id?: string | null
+  account?: string | null
+  currency?: string | null
   occurred_at: string
   merchant: string
   amount: string
@@ -89,6 +92,9 @@ export type TransactionCategory =
   | 'other'
 
 export interface Transaction {
+  time_precision?: 'unknown' | 'date' | 'timestamp'
+  import_batch_id?: string | null
+  source_row_number?: number | null
   id: string
   booking_date: string
   occurred_at: string
@@ -108,6 +114,16 @@ export interface CurrencySummary {
   expense: string
   net: string
   transaction_count: number
+}
+
+export interface ReviewItem {
+  key: string
+  rule_id: 'large_outflow_v1' | 'possible_duplicate_v1'
+  severity: 'notice' | 'warning'
+  transaction_ids: string[]
+  facts: Record<string, string>
+  state: 'pending' | 'normal' | 'follow_up'
+  note: string
 }
 
 export interface CategorySummary {

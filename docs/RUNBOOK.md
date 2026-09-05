@@ -27,7 +27,9 @@ sequenceDiagram
 
 当前 Agent 只开放 `query_transactions`。账单导入已作为独立的确定性数据入口接入；导入报告查询、周期扣款、预算、报告和确认工具尚未进入 Agent 运行链路，详见 [当前交付状态](CURRENT_STATE.md)。
 
-账单导入是独立的确定性数据入口，不经过模型。当前支持 UTF-8 CSV、显式字段映射、单账户币种、最多 10 MB/5,000 行；金额列必须使用正负号表达收支方向。任一失败行都会拒绝整批交易写入，但保留可查询的批次报告。
+账单导入是独立的确定性数据入口，不经过模型。支持 UTF-8 CSV（逗号、分号或制表符）、自动字段识别、单账户币种、最多 10 MB/5,000 行；金额列必须使用正负号表达收支方向。可从明确的账户、币种列填充归属；不存在时由用户确认。交易编号用于账户内稳定去重，相同编号内容冲突时拒绝写入；缺少编号时使用内容指纹，不能保证跨来源去重。任一失败行都会拒绝整批交易写入；预览不保存批次，正式提交的解析失败保留拒绝报告，编号冲突返回 409。
+
+独立收支方向、交易状态、退款列及机构专用格式必须经过来源适配验证，不自动猜测。固定测试文件、导入顺序与金额预期见 [CSV 验收说明](../api/tests/fixtures/statements/README.md)。测试使用虚构数据与隔离数据库，不连接业务数据库。
 
 ## 运行拓扑
 
@@ -90,14 +92,27 @@ OpenRouter 请求启用 `require_parameters=true` 与 `data_collection=deny`。�
 | `GET` | `/api/v1/cards` | 获取当前用户的脱敏卡片清单 |
 | `GET` | `/api/v1/imports` | 获取当前用户的账单导入历史 |
 | `POST` | `/api/v1/imports` | 校验、去重并原子导入 CSV 账单 |
+| `POST` | `/api/v1/imports/detect` | 识别字段、显式账户和币种 |
+| `POST` | `/api/v1/imports/preview` | 预览交易、错误行和重复数量 |
+| `POST` | `/api/v1/imports/{batch_id}/revoke` | 撤销批次实际写入的交易 |
+| `GET` | `/api/v1/accounts` | 获取当前用户账本账户 |
+| `GET` | `/api/v1/transactions` | 按日期读取交易账本 |
+| `POST` | `/api/v1/transactions/{transaction_id}/category` | 独立修正交易分类 |
 | `POST` | `/api/v1/runs` | 创建账单查询 Run |
 | `GET` | `/api/v1/runs/{run_id}` | 查询运行结果 |
 | `GET` | `/api/v1/runs/{run_id}/events` | 订阅并续传 SSE 事件 |
-| `POST` | `/api/v1/runs/{run_id}/transactions/{transaction_id}/category` | 修正交易分类并重算分析 |
+| `POST` | `/api/v1/runs/{run_id}/transactions/{transaction_id}/category` | 保存分类与事件，结果快照不变，新查询读取修正 |
+| `GET` | `/api/v1/run-history` | 当前用户最近 50 次运行 |
+| `GET` | `/api/v1/reviews` | 指定期间的确定性异常与已保存判断 |
+| `POST` | `/api/v1/reviews` | 重算证据后保存正常、待核实或待处理状态及备注 |
 
 路线图中的工具名称不是当前 API，不得作为已实现接口调用。
 
 ## 验证
+
+数据库需迁移至 `20260905_0005` 后再启动对应 API。迁移增加时间精度和核查结论；已有交易精度为未知，不触发分钟级重复规则。部署前在隔离 PostgreSQL 验证完整迁移与恢复，不直接用业务库做迁移测试。
+
+统计为流入/流出，不是净消费；日期或未知精度不作为分钟级依据。账本提供筛选结果 CSV 导出，核查表保留最新判断而非历次变更。核查判断不更改金额，撤销批次后旧证据不可继续提交。运行结果保持快照，账本修改后重新查询。
 
 ```bash
 make verify

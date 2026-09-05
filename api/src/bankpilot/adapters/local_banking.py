@@ -9,6 +9,7 @@
 """
 
 from datetime import date
+from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,6 +55,11 @@ class LocalBankingGateway:
         )
         return TransactionItem(
             id=transaction.id,
+            time_precision=cast(
+                Literal["unknown", "date", "timestamp"], transaction.time_precision
+            ),
+            import_batch_id=transaction.import_batch_id,
+            source_row_number=transaction.source_row_number,
             booking_date=transaction.booking_date,
             occurred_at=transaction.occurred_at,
             merchant=transaction.merchant,

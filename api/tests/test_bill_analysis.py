@@ -115,6 +115,7 @@ def _item(
     resolved_occurred_at = occurred_at or datetime(2026, 9, 3, tzinfo=UTC)
     return TransactionItem(
         id=transaction_id or uuid4(),
+        time_precision="timestamp",
         booking_date=resolved_occurred_at.date(),
         occurred_at=resolved_occurred_at,
         merchant=merchant,

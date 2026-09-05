@@ -67,6 +67,8 @@ class StatementImportService:
                         currency=currency,
                     )
                     transactions = TransactionRepository(self.session)
+                    if await transactions.conflicting_rows(account_id=account.id, rows=parsed.rows):
+                        raise ImportConflictError
                     existing = await transactions.existing_fingerprints(
                         account_id=account.id,
                         fingerprints={row.fingerprint for row in parsed.rows},

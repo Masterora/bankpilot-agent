@@ -44,6 +44,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  reviews: (start: string, end: string) => request<{ summaries: import('./types').CurrencySummary[]; items: import('./types').ReviewItem[] }>(`/api/v1/reviews?start_date=${start}&end_date=${end}`),
+  saveReview: (start: string, end: string, key: string, state: import('./types').ReviewItem['state'], note: string) => request<void>('/api/v1/reviews', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end, key, state, note }) }),
+  runHistory: () => request<{ items: { id: string; message: string; status: string; created_at: string }[] }>('/api/v1/run-history'),
   register: (email: string, password: string) =>
     request<User>('/api/v1/auth/register', {
       method: 'POST',
@@ -60,8 +63,9 @@ export const api = {
   ledger: (start: string, end: string) => request<import('./types').RunResult['transactions']>(`/api/v1/transactions?start_date=${start}&end_date=${end}`),
   correctLedgerCategory: (id: string, category: TransactionCategory) => request<void>(`/api/v1/transactions/${id}/category`, { method: 'POST', body: JSON.stringify({ category }) }),
   listImports: () => request<ImportBatchList>('/api/v1/imports'),
+  detectImport: (content: string) => request<{ mapping: import('./types').ImportFieldMapping; account_name: string | null; currency: string | null }>('/api/v1/imports/detect', { method: 'POST', body: JSON.stringify({ content }) }),
   revokeImport: (id: string) => request<void>(`/api/v1/imports/${id}/revoke`, { method: 'POST' }),
-  previewImport: (payload: ImportStatementPayload) => request<{ total_rows: number; error_rows: number; rows: { row_number: number; date: string; merchant: string; amount: string }[] }>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify(payload) }),
+  previewImport: (payload: ImportStatementPayload) => request<{ total_rows: number; error_rows: number; duplicate_rows: number; errors: { row_number: number; message: string }[]; rows: { row_number: number; date: string; merchant: string; amount: string }[] }>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify(payload) }),
   importStatement: (payload: ImportStatementPayload) =>
     request<ImportBatch>('/api/v1/imports', {
       method: 'POST',

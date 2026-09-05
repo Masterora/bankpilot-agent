@@ -90,9 +90,7 @@ class AccountRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_or_create(
-        self, *, user_id: UUID, name: str, currency: str
-    ) -> AccountRecord:
+    async def get_or_create(self, *, user_id: UUID, name: str, currency: str) -> AccountRecord:
         """账户名称和币种在用户范围内稳定复用，避免每次导入产生新账户。"""
         existing = cast(
             AccountRecord | None,
@@ -360,9 +358,7 @@ class TransactionRepository:
         await self.session.flush()
         return transaction
 
-    async def existing_fingerprints(
-        self, *, account_id: UUID, fingerprints: set[str]
-    ) -> set[str]:
+    async def existing_fingerprints(self, *, account_id: UUID, fingerprints: set[str]) -> set[str]:
         """一次读取账户内已有指纹，避免按行往返数据库。"""
         if not fingerprints:
             return set()
@@ -373,6 +369,33 @@ class TransactionRepository:
             )
         )
         return {value for value in values if value is not None}
+
+    async def conflicting_rows(
+        self, *, account_id: UUID, rows: list[ParsedStatementRow]
+    ) -> list[int]:
+        """相同来源标识若对应不同金额或交易内容，拒绝静默跳过。"""
+        if not rows:
+            return []
+        records = await self.session.scalars(
+            select(TransactionRecord).where(
+                TransactionRecord.account_id == account_id,
+                TransactionRecord.source_fingerprint.in_({row.fingerprint for row in rows}),
+            )
+        )
+        existing = {record.source_fingerprint: record for record in records}
+        return [
+            row.row_number
+            for row in rows
+            if row.fingerprint in existing
+            and (
+                existing[row.fingerprint].booking_date != row.booking_date
+                or existing[row.fingerprint].occurred_at.replace(tzinfo=UTC) != row.occurred_at
+                or existing[row.fingerprint].amount != row.amount
+                or existing[row.fingerprint].currency != row.currency
+                or existing[row.fingerprint].merchant.casefold() != row.merchant.casefold()
+                or existing[row.fingerprint].description.casefold() != row.description.casefold()
+            )
+        ]
 
     async def add_imported(
         self,
@@ -385,6 +408,7 @@ class TransactionRepository:
         self.session.add_all(
             [
                 TransactionRecord(
+                    time_precision=row.time_precision,
                     account_id=account_id,
                     import_batch_id=import_batch_id,
                     source_row_number=row.row_number,

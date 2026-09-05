@@ -4,7 +4,7 @@
  * 关键边界：测试不访问真实 API，每次执行后清理全局替身。
  */
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
@@ -61,7 +61,8 @@ describe('App language and theme', () => {
         return jsonResponse({ id: 'user-new', email: 'new@example.com' }, 201)
       }
       if (path === '/api/v1/cards') return jsonResponse({ items: [] })
-      if (path === '/api/v1/imports/preview') return jsonResponse({ total_rows: 1, error_rows: 0, rows: [] })
+      if (path === '/api/v1/imports/detect') return jsonResponse({ mapping: { occurred_at: '交易日期', merchant: '交易对方', amount: '金额', description: '说明' }, account_name: null, currency: null })
+      if (path === '/api/v1/imports/preview') return jsonResponse({ total_rows: 1, error_rows: 0, duplicate_rows: 0, errors: [], rows: [] })
       if (path === '/api/v1/imports') return jsonResponse({ items: [] })
       return jsonResponse({ detail: 'Not found' }, 404)
     })
@@ -98,7 +99,6 @@ describe('App language and theme', () => {
 
   it('renders deterministic analysis and saves a category correction', async () => {
     const run = buildRun('groceries')
-    const corrected = buildRun('dining')
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input)
       if (path === '/api/v1/auth/me') {
@@ -120,7 +120,7 @@ describe('App language and theme', () => {
       }
       if (path === '/api/v1/imports') return jsonResponse({ items: [] })
       if (path === '/api/v1/runs' && init?.method === 'POST') return jsonResponse(run, 202)
-      if (path.endsWith('/category') && init?.method === 'POST') return jsonResponse(corrected)
+      if (path.endsWith('/category') && init?.method === 'POST') return jsonResponse(run)
       return jsonResponse({ detail: 'Not found' }, 404)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -161,7 +161,8 @@ describe('App language and theme', () => {
     const category = screen.getByRole('combobox', { name: '交易分类: 社区超市' })
     fireEvent.change(category, { target: { value: 'dining' } })
 
-    await waitFor(() => expect(category).toHaveValue('dining'))
+    await screen.findByText('分类已保存到账本，请重新查询以生成新的结果快照。')
+    expect(category).toHaveValue('groceries')
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/v1/runs/run-1/transactions/transaction-1/category',
       expect.objectContaining({ body: JSON.stringify({ category: 'dining' }), method: 'POST' }),
@@ -201,7 +202,8 @@ describe('App language and theme', () => {
       if (path === '/api/v1/imports' && init?.method === 'POST') {
         return jsonResponse(batch, 201)
       }
-      if (path === '/api/v1/imports/preview') return jsonResponse({ total_rows: 1, error_rows: 0, rows: [] })
+      if (path === '/api/v1/imports/detect') return jsonResponse({ mapping: { occurred_at: '交易日期', merchant: '交易对方', amount: '金额', description: '说明' }, account_name: null, currency: null })
+      if (path === '/api/v1/imports/preview') return jsonResponse({ total_rows: 1, error_rows: 0, duplicate_rows: 0, errors: [], rows: [] })
       if (path === '/api/v1/imports') return jsonResponse({ items: [] })
       return jsonResponse({ detail: 'Not found' }, 404)
     })

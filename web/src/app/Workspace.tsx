@@ -39,6 +39,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   const [importsFailed, setImportsFailed] = useState(false)
   const [run, setRun] = useState<Run | null>(null)
   const [error, setError] = useState('')
+  const [correctionSaved, setCorrectionSaved] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [correctingId, setCorrectingId] = useState<string | null>(null)
   const eventSource = useRef<EventSource | null>(null)
@@ -138,6 +139,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     if (submitting || !message.trim()) return
     setError('')
     setRun(null)
+    setCorrectionSaved(false)
     setSubmitting(true)
     try {
       const created = await api.createRun(message.trim())
@@ -156,6 +158,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     setCorrectingId(transactionId)
     try {
       setRun(await api.correctCategory(run.id, transactionId, category))
+      setCorrectionSaved(true)
     } catch {
       setError(copy.categoryUpdateFailed)
     } finally {
@@ -180,6 +183,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     ),
     agent: (
       <AgentPage
+        correctionSaved={correctionSaved}
         copy={copy}
         correctingId={correctingId}
         error={error}

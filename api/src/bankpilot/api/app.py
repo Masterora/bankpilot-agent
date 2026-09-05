@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from bankpilot.adapters.openrouter import OpenRouterModelGateway
 from bankpilot.api.ledger import router as ledger_router
+from bankpilot.api.reviews import router as reviews_router
 from bankpilot.api.routes import router
 from bankpilot.config import Settings, get_settings
 from bankpilot.db.session import create_engine, create_session_factory
@@ -75,4 +76,5 @@ def create_app(
     )
     app.include_router(router)
     app.include_router(ledger_router)
+    app.include_router(reviews_router)
     return app
