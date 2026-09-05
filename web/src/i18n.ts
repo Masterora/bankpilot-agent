@@ -10,7 +10,7 @@
  * 关键边界：切换语言只替换预设查询，不覆盖用户自行输入的文本。
  */
 
-import type { BillAnomaly, Card, Run, TransactionCategory } from './types'
+import type { BillAnomaly, Run, TransactionCategory } from './types'
 import type { ProductPage } from './app/pages'
 
 export type { ProductPage } from './app/pages'
@@ -28,7 +28,6 @@ export interface ProductPageCopy {
 export interface ImportCopy {
   chooseFile: string
   fileRequirements: string
-  csvOnly: string
   fileTooLarge: string
   missingHeader: string
   fileReadFailed: string
@@ -91,18 +90,10 @@ export interface Messages {
   invalidCredentials: string
   emailAlreadyRegistered: string
   passwordMismatch: string
-  cardsEyebrow: string
-  cardsHeading: string
-  cardsLoading: string
-  cardsEmpty: string
-  cardsLoadFailed: string
-  cardEnding: string
-  cardStatuses: Record<Card['status'], string>
   navigationLabel: string
   readOnlyScope: string
   localDataScope: string
   productPages: Record<ProductPage, ProductPageCopy>
-  linkedCardsMetric: string
   transactionsMetric: string
   reviewSignalsMetric: string
   latestRunMetric: string
@@ -170,13 +161,6 @@ const zhCN: Messages = {
   invalidCredentials: '凭证无效',
   emailAlreadyRegistered: '该邮箱已注册',
   passwordMismatch: '两次输入的密码不一致',
-  cardsEyebrow: '账户范围',
-  cardsHeading: '关联卡片',
-  cardsLoading: '账户载入中…',
-  cardsEmpty: '暂无关联卡片',
-  cardsLoadFailed: '账户载入失败',
-  cardEnding: '尾号',
-  cardStatuses: { ACTIVE: '有效', LOCKED: '锁定' },
   navigationLabel: '工作区',
   readOnlyScope: '只读执行',
   localDataScope: '本地数据写入',
@@ -219,7 +203,6 @@ const zhCN: Messages = {
       empty: '暂无执行记录',
     },
   },
-  linkedCardsMetric: '关联卡片',
   transactionsMetric: '最近交易',
   reviewSignalsMetric: '待核查信号',
   latestRunMetric: '最近运行',
@@ -259,9 +242,8 @@ const zhCN: Messages = {
   categoryLabel: '交易分类',
   categoryUpdateFailed: '分类修正失败',
   imports: {
-    chooseFile: '选择 CSV 账单',
-    fileRequirements: 'CSV · 最大 10 MB · 原文件不保存',
-    csvOnly: '仅支持 CSV 文件',
+    chooseFile: '选择账单文件',
+    fileRequirements: 'CSV / XLSX · 最大 10 MB · 原文件不保存',
     fileTooLarge: '文件超过 10 MB 限制',
     missingHeader: '未识别到 CSV 表头',
     fileReadFailed: '文件读取失败',
@@ -376,13 +358,6 @@ const enUS: Messages = {
   invalidCredentials: 'Invalid credentials',
   emailAlreadyRegistered: 'Email is already registered',
   passwordMismatch: 'Passwords do not match',
-  cardsEyebrow: 'ACCOUNT SCOPE',
-  cardsHeading: 'Linked cards',
-  cardsLoading: 'Loading cards…',
-  cardsEmpty: 'No cards available',
-  cardsLoadFailed: 'Unable to load cards',
-  cardEnding: 'Ending in',
-  cardStatuses: { ACTIVE: 'Active', LOCKED: 'Locked' },
   navigationLabel: 'Workspace',
   readOnlyScope: 'Read-only execution',
   localDataScope: 'Local data write',
@@ -425,7 +400,6 @@ const enUS: Messages = {
       empty: 'No execution records',
     },
   },
-  linkedCardsMetric: 'Linked cards',
   transactionsMetric: 'Latest transactions',
   reviewSignalsMetric: 'Review signals',
   latestRunMetric: 'Latest run',
@@ -469,9 +443,8 @@ const enUS: Messages = {
   categoryLabel: 'Transaction category',
   categoryUpdateFailed: 'Unable to update category',
   imports: {
-    chooseFile: 'Choose CSV statement',
-    fileRequirements: 'CSV · 10 MB maximum · Source file not retained',
-    csvOnly: 'Only CSV files are supported',
+    chooseFile: 'Choose statement file',
+    fileRequirements: 'CSV / XLSX · 10 MB maximum · Source file not retained',
     fileTooLarge: 'File exceeds the 10 MB limit',
     missingHeader: 'CSV header could not be detected',
     fileReadFailed: 'Unable to read the file',

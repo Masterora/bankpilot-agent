@@ -14,6 +14,8 @@ import { ChangeEvent, FormEvent, useRef, useState } from 'react'
 import { ApiError, api } from '../../api'
 import type { Messages } from '../../i18n'
 import type { ImportBatch, ImportFieldMapping } from '../../types'
+import { detectionError } from './detectionError'
+import { formatTimestamp, formatTransactionTime } from '../../format'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 export function ImportPage({
@@ -24,6 +26,7 @@ export function ImportPage({
   loading,
   onImported,
   onAnalyze,
+  onRetryHistory,
 }: {
   copy: Messages
   english: boolean
@@ -32,6 +35,7 @@ export function ImportPage({
   loading: boolean
   onImported: (batch: ImportBatch) => void
   onAnalyze: () => void
+  onRetryHistory: () => void
 }) {
   const [fileName, setFileName] = useState('')
   const selectionSequence = useRef(0)
@@ -39,6 +43,7 @@ export function ImportPage({
   const [headers, setHeaders] = useState<string[]>([])
   const [accountName, setAccountName] = useState('')
   const [currency, setCurrency] = useState('CNY')
+  const [source, setSource] = useState('standard')
   const [mapping, setMapping] = useState<ImportFieldMapping>({
     occurred_at: '',
     merchant: '',
@@ -48,7 +53,9 @@ export function ImportPage({
   const [result, setResult] = useState<ImportBatch | null>(null)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [preview, setPreview] = useState<{ key: string; total_rows: number; error_rows: number; duplicate_rows: number; errors: { row_number: number; message: string }[]; rows: { row_number: number; date: string; merchant: string; amount: string }[] } | null>(null)
+  const [detecting, setDetecting] = useState(false)
+  const [retryFile, setRetryFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<{ key: string; skipped_rows: number; excluded: { row_number: number; message: string }[]; total_rows: number; error_rows: number; duplicate_rows: number; errors: { row_number: number; message: string }[]; rows: { row_number: number; date: string; occurred_at: string; time_precision: 'unknown' | 'date' | 'timestamp'; merchant: string; amount: string }[] } | null>(null)
   const payload = { file_name: fileName, content, account_name: accountName.trim(), currency, mapping }
   const payloadKey = JSON.stringify(payload)
   const previewCurrent = preview?.key === payloadKey
@@ -57,16 +64,27 @@ export function ImportPage({
   async function selectFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) return
-    const selection = ++selectionSequence.current
     event.target.value = ''
+    await detectFile(file)
+  }
+
+  // 服务故障时只在组件内存保留文件供重试；后一次选择使前一次异步结果失效。
+  async function detectFile(file: File) {
+    const selection = ++selectionSequence.current
+    setRetryFile(null)
+    setDetecting(false)
+    setPreview(null)
     setError('')
     setResult(null)
     setFileName('')
     setContent('')
     setHeaders([])
+    setSource('standard')
+    setAccountName('')
+    setCurrency('')
     setMapping({ occurred_at: '', merchant: '', amount: '', description: null })
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      setError(copy.imports.csvOnly)
+    if (!/\.(csv|xlsx)$/i.test(file.name)) {
+      setError(english ? 'Use CSV or XLSX. Decrypt archives on your device.' : '支持 CSV、XLSX；压缩包请在本机解密解压。')
       return
     }
     if (file.size > MAX_FILE_BYTES) {
@@ -75,33 +93,45 @@ export function ImportPage({
     }
     let text: string
     try {
-      text = await file.text()
-    } catch {
-      setError(copy.imports.fileReadFailed)
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      let binary = ''
+      for (let offset = 0; offset < bytes.length; offset += 8192) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
+      }
+      text = (await api.decodeImport(file.name, btoa(binary))).content
+    } catch (reason) {
+      if (selection !== selectionSequence.current) return
+      setError(reason instanceof ApiError && reason.status === 422 ? reason.message : copy.imports.fileReadFailed)
+      if (!(reason instanceof ApiError) || reason.status >= 500) setRetryFile(file)
       return
     }
     if (selection !== selectionSequence.current) return
-    const detectedHeaders = parseCsvHeaders(text)
-    if (detectedHeaders.length === 0) {
+    if (!text.trim()) {
       setError(copy.imports.missingHeader)
       return
     }
     let detectedMapping: ImportFieldMapping
+    setDetecting(true)
     try {
       const detection = await api.detectImport(text)
       if (selection !== selectionSequence.current) return
       detectedMapping = detection.mapping
+      setSource(detection.source)
+      setHeaders(detection.headers)
       if (detection.account_name) setAccountName(detection.account_name)
       if (detection.currency) setCurrency(detection.currency)
-    } catch {
+    } catch (reason) {
       if (selection !== selectionSequence.current) return
-      setError(english ? 'This statement format is not supported. Keep the original file.' : '暂不支持该账单格式，请保留原始文件。')
+      const failure = detectionError(reason, english)
+      setError(failure.message)
+      if (failure.retry) setRetryFile(file)
       return
+    } finally {
+      if (selection === selectionSequence.current) setDetecting(false)
     }
     if (selection !== selectionSequence.current) return
     setFileName(file.name)
     setContent(text)
-    setHeaders(detectedHeaders)
     setMapping(detectedMapping)
   }
 
@@ -152,16 +182,15 @@ export function ImportPage({
   return (
     <section className="product-page">
       <header className="page-header">
-        <p className="eyebrow">{copy.productPages.import.eyebrow}</p>
         <h1>{copy.productPages.import.title}</h1>
-        <p>{copy.productPages.import.description}</p>
+        <p>UTC+8</p>
       </header>
-      <details className="import-report"><summary>{english ? 'Supported files' : '支持的文件与获取方式'}</summary><p>{english ? 'Upload a CSV exported by your provider. Institution-specific Excel, PDF and encrypted archives require a verified adapter. Do not convert or edit your bank statement to fit this form.' : '上传机构导出的 CSV。机构专用 Excel、PDF 和加密压缩包需经过格式验证后接入，请勿为适配此表单修改原账单。'}</p></details>
+      <details className="import-report"><summary>{english ? 'Supported files' : '支持的文件与获取方式'}</summary><p>{english ? 'Alipay and WeChat personal bill layouts · CSV / XLSX. Unsupported layouts are rejected. Decrypt archives on your device; never provide a payment password.' : '支付宝、微信个人账单结构 · CSV / XLSX。未知格式拒绝导入；压缩包在本机解密解压，不要提供支付密码。'}</p></details>
 
       <form className="import-workspace" onSubmit={submit}>
         <section className="import-source-panel">
           <label className="file-drop">
-            <input type="file" accept=".csv,text/csv" onChange={selectFile} />
+            <input type="file" accept=".csv,.xlsx" onChange={selectFile} />
             <span className="file-drop-icon" aria-hidden="true">↑</span>
             <strong>{fileName || copy.imports.chooseFile}</strong>
             <span>{copy.imports.fileRequirements}</span>
@@ -170,17 +199,20 @@ export function ImportPage({
             <label>
               {copy.imports.accountName}
               <input
+                list="statement-accounts"
                 maxLength={100}
                 placeholder={copy.imports.accountPlaceholder}
                 required
                 value={accountName}
                 onChange={(event) => setAccountName(event.target.value)}
               />
+              <datalist id="statement-accounts">{[...new Set(imports.map((batch) => batch.account_name))].filter((name) => source === 'standard' || name.startsWith(source === 'alipay' ? '支付宝 · ' : '微信 · ')).map((name) => <option key={name} value={name} />)}</datalist>
             </label>
             <label>
               {copy.imports.currency}
               <input
                 aria-label={copy.imports.currency}
+                readOnly={source !== 'standard'}
                 inputMode="text"
                 maxLength={3}
                 pattern="[A-Za-z]{3}"
@@ -200,7 +232,7 @@ export function ImportPage({
           </div>
           {headers.length === 0 ? (
             <p className="import-placeholder">{copy.imports.mappingEmpty}</p>
-          ) : (
+          ) : source !== 'standard' ? <p>{source === 'alipay' ? '支付宝' : '微信'} · {english ? 'Source fields locked · UTC+8' : '来源字段已识别 · UTC+8'}</p> : (
             <details><summary>{english ? 'Field mapping' : '查看字段对应'}</summary><div className="mapping-fields">
               <MappingSelect
                 copy={copy}
@@ -242,13 +274,16 @@ export function ImportPage({
           </button>
         </section>
       </form>
-      {previewCurrent && <section className="import-report"><h2>{english ? 'Import preview' : '导入预览'}</h2><p>{preview.total_rows} {english ? 'rows' : '行'} · {preview.duplicate_rows} {english ? 'duplicates' : '行重复'} · {preview.error_rows} {english ? 'invalid rows' : '行格式异常'}</p>{preview.error_rows > 0 && <p role="alert">{english ? 'This format cannot be imported. Check the field selection or use a supported source file.' : '该格式无法导入。请核对字段选择，或使用已适配的来源文件。'}</p>}<ul>{preview.errors?.map((item) => <li key={item.row_number}>{english ? 'Row' : '第'} {item.row_number}: {item.message}</li>)}</ul><p>{english ? 'First 20 rows; duplicates are checked on confirmation.' : '展示前 20 行；确认导入时检查重复记录。'}</p><div className="import-table-wrap"><table className="import-table"><tbody>{preview.rows.map((row) => <tr key={row.row_number}><td>{row.date}</td><td>{row.merchant}</td><td>{row.amount} {currency}</td></tr>)}</tbody></table></div></section>}
+      {previewCurrent && <section className="import-report"><h2>{english ? 'Import preview' : '导入预览'}</h2><p>{preview.skipped_rows} {english ? 'excluded' : '行排除'} · {preview.total_rows} {english ? 'rows' : '行'} · {preview.duplicate_rows} {english ? 'duplicates' : '行重复'} · {preview.error_rows} {english ? 'invalid rows' : '行格式异常'}</p>{preview.error_rows > 0 && <p role="alert">{english ? 'This format cannot be imported. Check the field selection or use a supported source file.' : '该格式无法导入。请核对字段选择，或使用已适配的来源文件。'}</p>}<details><summary>{english ? 'Excluded rows' : '排除明细'}</summary>{preview.excluded.map((item) => <p key={item.row_number}>{item.row_number} · {item.message}</p>)}</details><ul>{preview.errors?.map((item) => <li key={item.row_number}>{english ? 'Row' : '第'} {item.row_number}: {item.message}</li>)}</ul><p>{english ? 'First 20 rows · UTC+8' : '前 20 行 · UTC+8'}</p><div className="import-table-wrap"><table className="import-table"><tbody>{preview.rows.map((row) => <tr key={row.row_number}><td>{formatTransactionTime({ booking_date: row.date, occurred_at: row.occurred_at, time_precision: row.time_precision }, english ? 'en-US' : 'zh-CN')}</td><td>{row.merchant}</td><td>{row.amount} {currency}</td></tr>)}</tbody></table></div></section>}
 
       {error && <p className="error import-page-error" role="alert">{error}</p>}
+      {detecting && <p role="status">{english ? 'Recognizing statement' : '正在识别账单'}</p>}
+      {retryFile && <button type="button" disabled={detecting} onClick={() => void detectFile(retryFile)}>{english ? 'Retry detection' : '重试识别'}</button>}
       {result && <>
-        <ImportReport batch={result} copy={copy} />
+        <ImportReport batch={result} copy={copy} english={english} />
         {result.status !== 'REJECTED' && <div className="import-next"><button type="button" className="primary" onClick={onAnalyze}>{copy.openAgent}<span aria-hidden="true"> →</span></button></div>}
       </>}
+      {failed && <button type="button" onClick={onRetryHistory}>{english ? 'Retry history' : '重新读取历史'}</button>}
       <ImportHistory copy={copy} english={english} failed={failed} imports={imports} loading={loading} onRevoked={onImported} />
     </section>
   )
@@ -280,7 +315,7 @@ function MappingSelect({
   )
 }
 
-function ImportReport({ batch, copy }: { batch: ImportBatch; copy: Messages }) {
+function ImportReport({ batch, copy, english }: { batch: ImportBatch; copy: Messages; english: boolean }) {
   return (
     <section className="import-report" aria-live="polite">
       <div className="import-panel-heading">
@@ -292,7 +327,9 @@ function ImportReport({ batch, copy }: { batch: ImportBatch; copy: Messages }) {
         <Metric label={copy.imports.importedRows} value={batch.imported_rows} />
         <Metric label={copy.imports.duplicateRows} value={batch.duplicate_rows} />
         <Metric label={copy.imports.errorRows} value={batch.error_rows} />
+        <Metric label={english ? 'Excluded' : '排除'} value={batch.skipped_rows} />
       </div>
+      {batch.excluded?.length > 0 && <details><summary>{english ? 'Excluded rows' : '排除明细'}</summary>{batch.excluded.map((row) => <p key={row.row_number}>{row.row_number} · {row.message}</p>)}</details>}
       {batch.errors.length > 0 && (
         <ol className="import-errors">
           {batch.errors.map((item) => (
@@ -355,10 +392,10 @@ function ImportHistory({
                   <tbody>
                     {imports.map((batch) => (
                       <tr key={batch.id}>
-                        <td>{batch.file_name}</td><td>{batch.account_name} · {batch.currency}</td>
+                        <td>{batch.file_name}<small className="event-time">{formatTimestamp(batch.created_at, english ? 'en-US' : 'zh-CN')}</small>{(batch.excluded?.length > 0 || batch.errors.length > 0) && <details><summary>{english ? 'Row report' : '行报告'} · {batch.skipped_rows ?? 0} {english ? 'excluded' : '行排除'}</summary>{[...batch.errors, ...(batch.excluded ?? [])].map((row) => <p key={`${row.row_number}-${row.code}`}>{row.row_number} · {row.message}</p>)}</details>}</td><td>{batch.account_name} · {batch.currency}</td>
                         <td>{batch.start_date && batch.end_date ? `${batch.start_date} — ${batch.end_date}` : '—'}</td>
                         <td>{batch.imported_rows} / {batch.total_rows}</td><td>{batch.duplicate_rows}</td>
-                        <td><ImportStatus batch={batch} copy={copy} />{batch.status !== 'REVOKED' && batch.status !== 'REJECTED' && (pending === batch.id ? <div><p>{english ? 'Remove transactions written by this batch? Historical reports remain unchanged.' : '移除本批次写入的交易？历史分析快照保持不变。'}</p><button disabled={busy} onClick={() => void revoke(batch)}>{english ? 'Confirm revocation' : '确认撤销'}</button><button disabled={busy} onClick={() => setPending(null)}>{english ? 'Cancel' : '取消'}</button></div> : <button onClick={() => setPending(batch.id)}>{english ? 'Revoke' : '撤销批次'}</button>)}</td>
+                        <td><ImportStatus batch={batch} copy={copy} />{batch.status !== 'REVOKED' && batch.status !== 'REJECTED' && (pending === batch.id ? <div><p>{english ? 'Remove imported transactions? Snapshots remain.' : '撤销本批次交易？保留历史快照。'}</p><button disabled={busy} onClick={() => void revoke(batch)}>{english ? 'Confirm revocation' : '确认撤销'}</button><button disabled={busy} onClick={() => setPending(null)}>{english ? 'Cancel' : '取消'}</button></div> : <button onClick={() => setPending(batch.id)}>{english ? 'Revoke' : '撤销批次'}</button>)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -387,46 +424,4 @@ function canSubmit(
       && mapping.merchant
       && mapping.amount,
   )
-}
-
-function parseCsvHeaders(content: string) {
-  // 此处仅为映射界面提取首行；完整 CSV 结构由服务端重新解析和校验。
-  const firstLine = content.replace(/^\ufeff/, '').split(/\r?\n/, 1)[0] ?? ''
-  if (!firstLine.trim()) return []
-  const delimiters = [',', ';', '\t']
-  const delimiter = delimiters.reduce((best, candidate) =>
-    countUnquoted(firstLine, candidate) > countUnquoted(firstLine, best) ? candidate : best)
-  return parseDelimitedLine(firstLine, delimiter).map((value) => value.trim()).filter(Boolean)
-}
-
-function countUnquoted(line: string, delimiter: string) {
-  let quoted = false
-  let count = 0
-  for (let index = 0; index < line.length; index += 1) {
-    if (line[index] === '"') {
-      if (quoted && line[index + 1] === '"') index += 1
-      else quoted = !quoted
-    } else if (!quoted && line[index] === delimiter) count += 1
-  }
-  return count
-}
-
-function parseDelimitedLine(line: string, delimiter: string) {
-  const values: string[] = []
-  let current = ''
-  let quoted = false
-  for (let index = 0; index < line.length; index += 1) {
-    const character = line[index]
-    if (character === '"') {
-      if (quoted && line[index + 1] === '"') {
-        current += '"'
-        index += 1
-      } else quoted = !quoted
-    } else if (!quoted && character === delimiter) {
-      values.push(current)
-      current = ''
-    } else current += character
-  }
-  values.push(current)
-  return values
 }

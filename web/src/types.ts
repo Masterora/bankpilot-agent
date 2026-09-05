@@ -3,7 +3,6 @@
  *
  * 主要内容：
  * - `User`：当前登录用户。
- * - `Card` / `CardList`：当前用户可见的卡片摘要与列表。
  * - `ImportBatch`：CSV 字段映射、导入统计与失败行报告。
  * - `Transaction` / `BillAnalysis` / `RunResult`：分类交易、统计和异常结果。
  * - `RunEvent`：审计时间线事件。
@@ -15,19 +14,6 @@
 export interface User {
   id: string
   email: string
-}
-
-export interface Card {
-  id: string
-  account_id: string
-  account_name: string
-  display_name: string
-  last_four: string
-  status: 'ACTIVE' | 'LOCKED'
-}
-
-export interface CardList {
-  items: Card[]
 }
 
 export interface ImportFieldMapping {
@@ -47,6 +33,9 @@ export interface ImportRowError {
 }
 
 export interface ImportBatch {
+  source: string
+  skipped_rows: number
+  excluded: ImportRowError[]
   id: string
   account_id: string | null
   account_name: string

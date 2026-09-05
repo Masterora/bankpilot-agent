@@ -42,9 +42,7 @@ export function PageHeader({ copy, page }: { copy: Messages; page: ProductPage }
   const content = copy.productPages[page]
   return (
     <header className="page-header">
-      <p className="eyebrow">{content.eyebrow}</p>
       <h1>{content.title}</h1>
-      <p>{content.description}</p>
     </header>
   )
 }

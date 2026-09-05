@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
+import { formatTimestamp, formatTransactionTime } from '../../format'
 import type { Messages } from '../../i18n'
 import { PageHeader } from '../../shared/ui'
 import type { Run } from '../../types'
@@ -40,13 +41,13 @@ export function AuditPage({ copy, run }: { copy: Messages; run: Run | null }) {
   return (
     <section className="product-page">
       <PageHeader copy={copy} page="audit" />
-      <label>{english ? 'Recent runs (50)' : '最近运行（50 条）'}<select value={selectedId} onChange={(event) => { setSelected(null); setFailed(false); setLoading(Boolean(event.target.value)); setSelectedId(event.target.value) }}><option value="">{english ? 'Current run' : '当前运行'}</option>{history.map((item) => <option key={item.id} value={item.id}>{item.created_at.slice(0, 10)} · {item.message} · {item.status}</option>)}</select></label>
+      <label>{english ? 'Recent runs · UTC+8' : '最近运行 · UTC+8'}<select value={selectedId} onChange={(event) => { setSelected(null); setFailed(false); setLoading(Boolean(event.target.value)); setSelectedId(event.target.value) }}><option value="">{english ? 'Current run' : '当前运行'}</option>{history.map((item) => <option key={item.id} value={item.id}>{formatTimestamp(item.created_at, english ? 'en-US' : 'zh-CN')} · {item.message} · {item.status}</option>)}</select></label>
       {loading && <p>{english ? 'Loading' : '正在读取'}</p>}
       {failed && <button onClick={() => { setFailed(false); setAttempt((a) => a + 1) }}>{english ? 'Request failed. Retry' : '读取失败，重试'}</button>}
-      {displayed?.result && <details><summary>{english ? 'Result snapshot' : '结果快照'}</summary><p>{displayed.result.message}</p><p>{english ? 'Historical data; query again after changes.' : '历史数据；账本变化后请重新查询。'}</p><div className="import-table-wrap"><table className="import-table"><tbody>{displayed.result.transactions.items.map((item) => <tr key={item.id}><td>{item.booking_date}</td><td>{item.account_name}</td><td>{item.merchant}</td><td>{item.amount} {item.currency}</td><td>{copy.categoryLabels[item.category]}</td></tr>)}</tbody></table></div></details>}
+      {displayed?.result && <details><summary>{english ? 'Result snapshot' : '结果快照'}</summary><p>{displayed.result.message}</p><p>{english ? 'Snapshot · Query again after changes' : '历史快照 · 更新后需重新查询'}</p><div className="import-table-wrap"><table className="import-table"><tbody>{displayed.result.transactions.items.map((item) => <tr key={item.id}><td className="time-cell">{formatTransactionTime(item, english ? 'en-US' : 'zh-CN')}</td><td>{item.account_name}</td><td>{item.merchant}</td><td>{item.amount} {item.currency}</td><td>{copy.categoryLabels[item.category]}</td></tr>)}</tbody></table></div></details>}
       <div className="audit-grid">
-        <article className="audit-panel">
-          <p className="eyebrow">{copy.auditBoundaryHeading}</p>
+        <details className="audit-panel scope-note">
+          <summary>{copy.auditBoundaryHeading}</summary>
           <div className="boundary-list">
             {boundaries.map(([title, detail]) => (
               <div className="boundary-item" key={title}>
@@ -55,14 +56,14 @@ export function AuditPage({ copy, run }: { copy: Messages; run: Run | null }) {
               </div>
             ))}
           </div>
-        </article>
+        </details>
         <article className="audit-panel">
           <p className="eyebrow">{copy.auditEventsHeading}</p>
           {displayed?.events.length ? (
             <ol className="audit-events">
               {displayed.events.map((event) => (
                 <li key={event.sequence}>
-                  <span />{copy.events[event.event_type] ?? event.event_type}
+                  <span /><div>{copy.events[event.event_type] ?? event.event_type}<small className="event-time">{formatTimestamp(event.occurred_at, english ? 'en-US' : 'zh-CN')}</small></div>
                 </li>
               ))}
             </ol>

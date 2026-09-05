@@ -1,14 +1,14 @@
 /**
  * 文件职责：展示 Agent 任务输入、运行结果、账单核查和分类修正界面。
  *
- * 主要内容：`AgentPage`、`ReviewPage`、执行时间线、确定性统计、异常与交易证据。
+ * 主要内容：任务输入、执行时间线、确定性统计、异常与交易证据。
  * 关键边界：页面不计算账务结果；金额、分类、异常和重算均来自受控 API。
  */
 
 import { useRef } from 'react'
 import type { FormEvent } from 'react'
 
-import { formatDate, formatMoney } from '../../format'
+import { formatMoney, formatTimestamp, formatTransactionTime } from '../../format'
 import type { Locale, Messages } from '../../i18n'
 import { PageHeader } from '../../shared/ui'
 import type { Run, TransactionCategory } from '../../types'
@@ -96,15 +96,6 @@ export function AgentPage({
   )
 }
 
-export function ReviewPage(props: RunViewProps) {
-  return (
-    <section className="product-page">
-      <PageHeader copy={props.copy} page="review" />
-      <RunPanel {...props} />
-    </section>
-  )
-}
-
 function RunPanel({ copy, correctingId, locale, onCategoryChange, run }: RunViewProps) {
   if (!run) {
     return <section className="empty-state"><p>{copy.emptyResult}</p></section>
@@ -133,7 +124,8 @@ function RunPanel({ copy, correctingId, locale, onCategoryChange, run }: RunView
                 <div className="merchant-mark">{item.merchant.slice(0, 1)}</div>
                 <div className="transaction-copy">
                   <strong>{item.merchant}</strong>
-                  <span>{item.description} · {formatDate(item.booking_date, locale)}</span>
+                  <span>{formatTransactionTime(item, locale)}</span>
+                  {item.description && <small>{item.description}</small>}
                   <select
                     aria-label={`${copy.categoryLabel}: ${item.merchant}`}
                     disabled={correctingId === item.id}
@@ -159,7 +151,7 @@ function RunPanel({ copy, correctingId, locale, onCategoryChange, run }: RunView
         <p className="eyebrow">{copy.timelineEyebrow}</p>
         <ol>
           {run.events.map((event) => (
-            <li key={event.sequence}><span />{copy.events[event.event_type] ?? event.event_type}</li>
+            <li key={event.sequence}><span /><div>{copy.events[event.event_type] ?? event.event_type}<small className="event-time">{formatTimestamp(event.occurred_at, locale)}</small></div></li>
           ))}
         </ol>
       </aside>
@@ -173,7 +165,7 @@ function AnalysisPanel({ copy, locale, run }: { copy: Messages; locale: Locale; 
   return (
     <div className="analysis-panel">
       <p className="eyebrow">{copy.analysisEyebrow}</p>
-      <p>{locale === 'en-US' ? 'Snapshot of imported flows. Transfers and refunds are not netted; coverage is unverified. Query again after corrections.' : '已导入流水快照；未抵销转账与退款，未验证期间完整性。分类修正后请重新查询。'}</p>
+      <details className="scope-note"><summary>{locale === 'en-US' ? 'Data scope' : '统计口径'}</summary><p>{locale === 'en-US' ? 'Imported flows only. Transfers and refunds are not netted. Coverage is unverified; corrections require a new query.' : '仅统计导入流水，未抵销转账与退款，期间完整性未验证。修正后需重新查询。'}</p></details>
       <div className="summary-grid">
         {analysis.currency_summaries.map((summary) => (
           <div className="currency-summary" key={summary.currency}>

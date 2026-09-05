@@ -1,43 +1,37 @@
 /**
- * 文件职责：配置 Web 的 Vite 开发/构建环境与 Vitest 测试环境。
+ * 文件职责：配置 Web 的 Vite 开发与生产构建环境。
  *
- * 主要内容：React 插件、Tailscale 远程 API 开发代理、jsdom 测试环境与测试初始化文件。
- * 关键边界：浏览器始终请求同源 `/api`；远程地址只从仓库根目录的本地环境变量读取，不进入前端产物。
+ * 主要内容：React 插件、本地 API 开发代理和生产构建。
+ * 关键边界：浏览器始终请求同源 `/api`；代理地址由根目录环境变量配置，不进入前端产物。
  */
 
 import react from '@vitejs/plugin-react'
-import { loadEnv } from 'vite'
-import { defineConfig } from 'vitest/config'
+import { loadEnv, defineConfig } from 'vite'
 
 export default defineConfig(({ command, mode }) => {
-  const env = loadEnv(mode, '..', 'BANKPILOT_')
-  const remoteOrigin = env.BANKPILOT_REMOTE_ORIGIN?.trim()
+  // 只有本地开发代理读取运行配置；测试和生产构建不依赖本地环境文件。
+  const env = command === 'serve' && mode === 'development'
+    ? loadEnv(mode, '..', 'BANKPILOT_')
+    : {}
+  const apiOrigin = env.BANKPILOT_API_ORIGIN?.trim() || 'http://127.0.0.1:8000'
 
-  // 开发服务器必须显式连接远程 Tailscale 入口，避免静默回退到不存在的本机 API。
-  if (command === 'serve' && mode === 'development' && !remoteOrigin) {
-    throw new Error('BANKPILOT_REMOTE_ORIGIN is required for local Web development')
-  }
-
-  if (remoteOrigin && !/^https?:\/\/[^/]+(?::\d+)?$/.test(remoteOrigin)) {
-    throw new Error('BANKPILOT_REMOTE_ORIGIN must be an HTTP(S) origin without a path')
+  if (!/^https?:\/\/[^/]+(?::\d+)?$/.test(apiOrigin)) {
+    throw new Error('BANKPILOT_API_ORIGIN must be an HTTP(S) origin without a path')
   }
 
   return {
     envDir: '..',
     plugins: [react()],
     server: {
-      proxy: remoteOrigin
-        ? {
-            '/api': {
-              target: remoteOrigin,
-              changeOrigin: true,
-            },
-          }
-        : undefined,
-    },
-    test: {
-      environment: 'jsdom',
-      setupFiles: './src/test/setup.ts',
+      host: '127.0.0.1',
+      port: 5173,
+      strictPort: true,
+      proxy: {
+        '/api': {
+          target: apiOrigin,
+          changeOrigin: true,
+        },
+      },
     },
   }
 })

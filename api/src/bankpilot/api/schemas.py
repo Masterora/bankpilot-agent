@@ -77,8 +77,8 @@ class ImportStatementRequest(BaseModel):
             raise ValueError("file_name contains control characters")
         if normalized != normalized.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]:
             raise ValueError("file_name must not contain a path")
-        if not normalized.lower().endswith(".csv"):
-            raise ValueError("only CSV files are supported")
+        if not normalized.lower().endswith((".csv", ".xlsx")):
+            raise ValueError("only CSV and XLSX files are supported")
         return normalized
 
     @field_validator("content")
@@ -112,6 +112,9 @@ class ImportRowErrorResponse(BaseModel):
 
 
 class ImportBatchResponse(BaseModel):
+    source: str
+    skipped_rows: int
+    excluded: list[ImportRowErrorResponse]
     id: UUID
     account_id: UUID | None
     account_name: str

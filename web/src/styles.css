@@ -4,7 +4,7 @@
  * 主要内容：
  * - 根变量：背景、表面、文字、强调色、边框与错误色。
  * - 通用组件：品牌、按钮、输入框、语言切换和状态提示。
- * - 页面布局：认证、账单导入、查询、脱敏卡片、分析结果、交易列表和操作记录。
+ * - 页面布局：认证、导入、账户、分析、交易与核查记录。
  * - 响应式规则：900px 与 430px 断点下的单列和窄屏适配。
  *
  * 关键边界：页面不依赖装饰图片，颜色统一使用变量，最小支持 320px 宽度。
@@ -555,7 +555,7 @@ select:focus {
 .prompt textarea { min-height: 116px; background: var(--surface); transition: border-color 0.15s, box-shadow 0.15s; }
 .suggestions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
 .suggestions button { padding: 6px 9px; color: var(--muted); font-size: 12px; }
-.cards-section {
+.accounts-section {
   width: 100%;
   margin: 0;
   padding: 0;
@@ -565,20 +565,8 @@ select:focus {
   gap: 16px;
   animation: enter 0.34s 0.08s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.cards-heading { padding-top: 4px; }
-.cards-heading h2 { margin: 0; font-size: 16px; letter-spacing: -0.02em; }
-.cards-message {
-  min-height: 106px;
-  display: grid;
-  place-items: center;
-  margin: 0;
-  border: 1px dashed var(--line);
-  border-radius: 12px;
-  color: var(--muted);
-  font-size: 13px;
-}
-.card-list { display: flex; gap: 12px; overflow-x: auto; padding: 0 0 4px; }
-.bank-card {
+.account-list { display: flex; gap: 12px; overflow-x: auto; padding: 0 0 4px; }
+.account-tile {
   flex: 0 0 260px;
   min-height: 106px;
   display: grid;
@@ -590,10 +578,7 @@ select:focus {
   background: linear-gradient(145deg, #181d19, #111512);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16);
 }
-.bank-card-header,
-.bank-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.bank-card-header strong { font-size: 13px; }
-.bank-card > p {
+.account-tile > p {
   margin: 0;
   color: var(--text);
   font-size: 19px;
@@ -601,17 +586,6 @@ select:focus {
   letter-spacing: 0.09em;
   font-variant-numeric: tabular-nums;
 }
-.bank-card > p span { color: #777e79; letter-spacing: 0.03em; }
-.bank-card-footer { color: var(--muted); font-size: 12px; }
-.card-status {
-  padding: 4px 6px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: rgba(199, 214, 165, 0.09);
-  font-size: 12px;
-  font-weight: 700;
-}
-.card-status-locked { color: var(--danger); background: var(--danger-bg); }
 
 .results-grid {
   width: 100%;
@@ -886,7 +860,7 @@ select:focus {
   .account-chip span { display: none; }
   .product-page { padding: 36px 16px 44px; }
   .overview-metrics { grid-template-columns: 1fr 1fr; }
-  .cards-section { grid-template-columns: 1fr; }
+  .accounts-section { grid-template-columns: 1fr; }
   .task-path { grid-template-columns: 1fr; }
   .task-path button { gap: 12px; padding: 20px; }
   .task-path strong { font-size: 18px; }
@@ -917,6 +891,20 @@ select:focus {
   .import-account-grid { grid-template-columns: 1fr; }
   .import-metrics { grid-template-columns: 1fr 1fr; }
 }
+
+.event-time { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.time-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scope-note { color: var(--muted); font-size: 13px; margin: 12px 0; }
+.scope-note summary { cursor: pointer; width: fit-content; }
+.scope-note p { max-width: 70ch; line-height: 1.6; }
+.product-page > .import-account-grid { padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; }
+.import-report form, form.import-report { display: grid; gap: 12px; }
+form.import-report label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+form.import-report input, form.import-report select { min-height: 38px; padding: 8px 10px; width: 100%; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+form.import-report button { justify-self: start; }
+form.import-report p { margin: 0; }
+.import-table details { margin-top: 5px; color: var(--muted); font-size: 12px; }
+.import-table details p { max-width: 40ch; overflow-wrap: anywhere; }
 
 @media (prefers-reduced-motion: reduce) {
   *,

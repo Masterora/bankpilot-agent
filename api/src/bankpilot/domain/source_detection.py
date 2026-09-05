@@ -7,6 +7,7 @@
 import csv
 import io
 
+from bankpilot.domain.payment_sources import locate_source
 from bankpilot.domain.statement_import import StatementFieldMapping
 
 ALIASES = {
@@ -20,14 +21,33 @@ ALIASES = {
 }
 
 
-def detect_mapping(content: str) -> StatementFieldMapping:
-    """只接受唯一匹配的结构；表头外说明、独立收支列需来源适配器处理。"""
+def read_csv_headers(content: str) -> list[str]:
+    """按同一 CSV 方言返回原始列名，供识别和浏览器映射共用。"""
+    native = locate_source(content)
+    if native is not None:
+        return native.headers
     content = content.removeprefix("\ufeff")
     try:
         dialect = csv.Sniffer().sniff(content[:4096], delimiters=",;\t")
     except csv.Error:
         dialect = csv.excel
     headers = next(csv.reader(io.StringIO(content), dialect=dialect), [])
+    return headers
+
+
+def detect_mapping(content: str) -> StatementFieldMapping:
+    """只接受唯一匹配的结构；表头外说明、独立收支列需来源适配器处理。"""
+    native = locate_source(content)
+    if native is not None:
+        p = native.profile
+        return StatementFieldMapping(
+            occurred_at=p.time,
+            merchant=p.merchant,
+            amount=p.amount,
+            description=p.description,
+            transaction_id=p.identifier,
+        )
+    headers = read_csv_headers(content)
     fields: dict[str, str | None] = {}
     if any(
         header.strip().lower()
@@ -59,6 +79,8 @@ def detect_mapping(content: str) -> StatementFieldMapping:
 
 def detect_account(content: str, mapping: StatementFieldMapping) -> tuple[str | None, str | None]:
     """仅从全文件一致的显式账户与币种列提取元数据，不从文件名推断身份。"""
+    if locate_source(content) is not None:
+        return None, "CNY"
     content = content.removeprefix("\ufeff")
     try:
         dialect = csv.Sniffer().sniff(content[:4096], delimiters=",;\t")

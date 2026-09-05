@@ -5,15 +5,20 @@
 关键边界：所有数据按登录用户隔离；预览不持久化，分类修正不覆盖源交易。
 """
 
-from datetime import date
+import base64
+import binascii
+import csv
+from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from bankpilot.adapters.local_banking import LocalBankingGateway
+from bankpilot.adapters.statement_files import decode_statement
 from bankpilot.api.dependencies import get_current_user, get_db_session
 from bankpilot.api.schemas import CorrectCategoryRequest, ImportStatementRequest
 from bankpilot.db.models import (
@@ -25,7 +30,8 @@ from bankpilot.db.models import (
 )
 from bankpilot.db.repositories import TransactionRepository
 from bankpilot.domain.contracts import TransactionResult
-from bankpilot.domain.source_detection import detect_account, detect_mapping
+from bankpilot.domain.payment_sources import locate_source, source_account
+from bankpilot.domain.source_detection import detect_account, detect_mapping, read_csv_headers
 from bankpilot.domain.statement_import import StatementFieldMapping, parse_statement_csv
 
 router = APIRouter(prefix="/api/v1", tags=["ledger"])
@@ -118,11 +124,16 @@ async def correct_category(
 class PreviewRow(BaseModel):
     row_number: int
     date: date
+    occurred_at: datetime
+    time_precision: str
     merchant: str
     amount: str
 
 
 class PreviewResponse(BaseModel):
+    source: str
+    skipped_rows: int
+    excluded: list[dict[str, str | int]]
     total_rows: int
     error_rows: int
     duplicate_rows: int
@@ -140,10 +151,14 @@ async def preview(
     parsed = parse_statement_csv(
         content=payload.content, mapping=payload.mapping, currency=payload.currency
     )
+    try:
+        account_name = source_account(payload.content, payload.account_name)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     account = await session.scalar(
         select(AccountRecord).where(
             AccountRecord.user_id == user.id,
-            AccountRecord.name == payload.account_name,
+            AccountRecord.name == account_name,
             AccountRecord.currency == payload.currency,
         )
     )
@@ -171,6 +186,9 @@ async def preview(
         ]
     )
     return PreviewResponse(
+        source=parsed.source,
+        skipped_rows=len(parsed.skipped),
+        excluded=[{"row_number": e.row_number, "message": e.message} for e in parsed.skipped],
         total_rows=parsed.total_rows,
         error_rows=len(errors),
         errors=errors[:100],
@@ -179,6 +197,8 @@ async def preview(
             PreviewRow(
                 row_number=row.row_number,
                 date=row.booking_date,
+                occurred_at=row.occurred_at,
+                time_precision=row.time_precision,
                 merchant=row.merchant,
                 amount=str(row.amount),
             )
@@ -191,7 +211,30 @@ class DetectRequest(BaseModel):
     content: str
 
 
+class DecodeRequest(BaseModel):
+    file_name: str = Field(min_length=1, max_length=255)
+    data: str = Field(min_length=1, max_length=14 * 1024 * 1024)
+
+
+@router.post("/imports/decode")
+async def decode_file(
+    payload: DecodeRequest,
+    user: UserRecord = Depends(get_current_user),
+) -> dict[str, str]:
+    """解码上传文件，仅返回内存中的文本，不持久化内容。"""
+    try:
+        raw = base64.b64decode(payload.data, validate=True)
+        content = await run_in_threadpool(decode_statement, payload.file_name, raw)
+        return {"content": content}
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, "无法读取工作簿，请保留原文件") from exc
+
+
 class DetectionResponse(BaseModel):
+    source: str
+    headers: list[str]
     mapping: StatementFieldMapping
     account_name: str | None
     currency: str | None
@@ -208,6 +251,14 @@ async def detect(
     try:
         mapping = detect_mapping(payload.content)
         account_name, currency = detect_account(payload.content, mapping)
-        return DetectionResponse(mapping=mapping, account_name=account_name, currency=currency)
-    except ValueError as exc:
+        return DetectionResponse(
+            source=(
+                native.profile.key if (native := locate_source(payload.content)) else "standard"
+            ),
+            headers=read_csv_headers(payload.content),
+            mapping=mapping,
+            account_name=account_name,
+            currency=currency,
+        )
+    except (ValueError, csv.Error) as exc:
         raise HTTPException(422, str(exc)) from exc

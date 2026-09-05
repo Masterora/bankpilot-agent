@@ -10,14 +10,18 @@
 关键边界：模型调用和工具执行期间不持有长数据库事务；非预期错误不对外暴露内部细节。
 """
 
+import asyncio
 import logging
+from contextlib import suppress
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bankpilot.adapters.local_banking import LocalBankingGateway
 from bankpilot.agent.workflow import ReadOnlyBillWorkflow
+from bankpilot.db.models import RunRecord
 from bankpilot.db.repositories import RunRepository
 from bankpilot.domain.contracts import ModelPlan, RunStatus, SupportedAction
 from bankpilot.errors import BankPilotError
@@ -50,6 +54,7 @@ class RunProcessor:
             await repository.set_status(run_id, RunStatus.PLANNING)
             await repository.add_event(run_id, "run.planning", {})
 
+        heartbeat = asyncio.create_task(self._heartbeat(run_id))
         try:
             async with self.session_factory() as session:
                 workflow = ReadOnlyBillWorkflow(
@@ -66,6 +71,9 @@ class RunProcessor:
             result = state["result"]
             async with self.session_factory() as session, session.begin():
                 repository = RunRepository(session)
+                current = await repository.get(run_id)
+                if current is None or current.status != RunStatus.EXECUTING.value:
+                    return
                 await repository.add_event(
                     run_id,
                     "tool.completed",
@@ -86,6 +94,38 @@ class RunProcessor:
             # 完整诊断信息仅写入服务端日志，对外返回稳定且不含敏感信息的错误。
             logger.exception("Unexpected run processing failure", extra={"run_id": str(run_id)})
             await self._fail(run_id, "INTERNAL_ERROR", "Run processing failed")
+        finally:
+            heartbeat.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat
+
+    async def _heartbeat(self, run_id: UUID) -> None:
+        """每十五秒续约；失去数据库连接时停止续约，由超时扫描收敛状态。"""
+        try:
+            while True:
+                await asyncio.sleep(15)
+                async with self.session_factory() as session, session.begin():
+                    await session.execute(
+                        update(RunRecord)
+                        .where(
+                            RunRecord.id == run_id,
+                            RunRecord.status.in_(
+                                [RunStatus.PLANNING.value, RunStatus.EXECUTING.value]
+                            ),
+                        )
+                        .values(updated_at=datetime.now(UTC))
+                    )
+        except Exception:
+            logger.exception("Run heartbeat failed", extra={"run_id": str(run_id)})
+
+    async def recover_expired(self) -> None:
+        """周期扫描失联任务，无需等待服务重启，不重新执行模型或工具。"""
+        while True:
+            await asyncio.sleep(15)
+            try:
+                await self.reconcile_interrupted()
+            except Exception:
+                logger.exception("Expired run recovery failed")
 
     async def reconcile_interrupted(self) -> int:
         """在进程启动时处理遗留的非终态记录。"""
@@ -96,6 +136,9 @@ class RunProcessor:
         """持久化模型决策，且仅在操作允许时进入执行中状态。"""
         async with self.session_factory() as session, session.begin():
             repository = RunRepository(session)
+            run = await repository.get(run_id)
+            if run is None or run.status != RunStatus.PLANNING.value:
+                raise BankPilotError("Run is no longer active")
             await repository.set_plan(
                 run_id,
                 draft_action=plan.decision.model_dump(mode="json"),
@@ -107,4 +150,10 @@ class RunProcessor:
 
     async def _fail(self, run_id: UUID, code: str, message: str) -> None:
         async with self.session_factory() as session, session.begin():
-            await RunRepository(session).fail(run_id, code=code, message=message)
+            repository = RunRepository(session)
+            run = await repository.get(run_id)
+            if run is not None and run.status in {
+                RunStatus.PLANNING.value,
+                RunStatus.EXECUTING.value,
+            }:
+                await repository.fail(run_id, code=code, message=message)

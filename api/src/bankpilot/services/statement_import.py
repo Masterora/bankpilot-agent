@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.db.models import ImportBatchRecord
 from bankpilot.db.repositories import AccountRepository, ImportRepository, TransactionRepository
+from bankpilot.domain.payment_sources import source_account
 from bankpilot.domain.statement_import import StatementFieldMapping, parse_statement_csv
 from bankpilot.errors import ImportConflictError
 
@@ -33,6 +34,12 @@ class StatementImportService:
         """整批校验并持久化；调用前应结束身份查询产生的只读事务。"""
         parsed = parse_statement_csv(content=content, mapping=mapping, currency=currency)
         mapping_data = mapping.model_dump()
+        mapping_data["source"] = parsed.source
+        account_name = source_account(content, account_name)
+        exclusions = [
+            {"row_number": item.row_number, "code": item.code, "message": item.message}
+            for item in parsed.skipped
+        ]
         row_errors = [
             {"row_number": error.row_number, "code": error.code, "message": error.message}
             for error in parsed.errors[:100]
@@ -58,7 +65,7 @@ class StatementImportService:
                         start_date=min(parsed_dates) if parsed_dates else None,
                         end_date=max(parsed_dates) if parsed_dates else None,
                         field_mapping=mapping_data,
-                        errors=row_errors,
+                        errors=row_errors + exclusions,
                     )
                 else:
                     account = await AccountRepository(self.session).get_or_create(
@@ -89,7 +96,7 @@ class StatementImportService:
                         start_date=min(parsed_dates) if parsed_dates else None,
                         end_date=max(parsed_dates) if parsed_dates else None,
                         field_mapping=mapping_data,
-                        errors=[],
+                        errors=exclusions,
                     )
                     await transactions.add_imported(
                         account_id=account.id,

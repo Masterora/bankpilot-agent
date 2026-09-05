@@ -9,8 +9,9 @@
 关键边界：应用生命周期只关闭自身创建的引擎和客户端。
 """
 
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import httpx
 from fastapi import FastAPI
@@ -54,13 +55,19 @@ def create_app(
         app.state.settings = resolved_settings
         app.state.session_factory = session_factory
         app.state.run_processor = RunProcessor(session_factory, resolved_gateway)
-        # 进程重启后无法安全继续原有后台任务，因此必须显式修复非终态记录。
+        # 启动与周期恢复均只处理心跳过期任务，不触碰其他实例的活跃运行。
         await app.state.run_processor.reconcile_interrupted()
-        yield
-        if model_client is not None:
-            await model_client.aclose()
-        if managed_engine is not None:
-            await managed_engine.dispose()
+        recovery = asyncio.create_task(app.state.run_processor.recover_expired())
+        try:
+            yield
+        finally:
+            recovery.cancel()
+            with suppress(asyncio.CancelledError):
+                await recovery
+            if model_client is not None:
+                await model_client.aclose()
+            if managed_engine is not None:
+                await managed_engine.dispose()
 
     app = FastAPI(
         title="BankPilot Agent API",

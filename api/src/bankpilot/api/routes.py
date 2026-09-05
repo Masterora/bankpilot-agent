@@ -30,7 +30,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import StreamingResponse
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -57,7 +57,14 @@ from bankpilot.api.schemas import (
     UserResponse,
 )
 from bankpilot.config import Settings
-from bankpilot.db.models import ImportBatchRecord, RunRecord, UserRecord
+from bankpilot.db.models import (
+    AccountRecord,
+    ImportBatchRecord,
+    RunRecord,
+    TransactionCategoryOverrideRecord,
+    TransactionRecord,
+    UserRecord,
+)
 from bankpilot.db.repositories import (
     CardRepository,
     ImportRepository,
@@ -66,6 +73,7 @@ from bankpilot.db.repositories import (
     TransactionRepository,
     UserRepository,
 )
+from bankpilot.domain.bill_analysis import classify_transaction
 from bankpilot.domain.contracts import (
     RunStatus,
     TransactionResult,
@@ -264,6 +272,8 @@ async def import_statement(
             status_code=status.HTTP_409_CONFLICT,
             detail="Import conflicted with another request; retry the same file",
         ) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     return _import_response(batch)
 
 
@@ -390,6 +400,25 @@ async def correct_transaction_category(
     item = next((entry for entry in transactions.items if entry.id == transaction_id), None)
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    # 锁定当前源交易，分类读取与覆盖必须属于同一事务，不能引用历史快照作旧值。
+    current = await session.scalar(
+        select(TransactionRecord)
+        .join(AccountRecord)
+        .where(TransactionRecord.id == transaction_id, AccountRecord.user_id == user.id)
+        .with_for_update()
+    )
+    if current is None:
+        raise HTTPException(404, "Transaction not found")
+    override = await session.get(TransactionCategoryOverrideRecord, transaction_id)
+    previous_category = (
+        override.category
+        if override
+        else classify_transaction(
+            merchant=current.merchant,
+            description=current.description,
+            amount=current.amount,
+        ).category.value
+    )
     transaction = await TransactionRepository(session).set_category_override(
         user_id=user.id,
         transaction_id=transaction_id,
@@ -398,14 +427,13 @@ async def correct_transaction_category(
     if transaction is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
 
-    previous_category = item.category
     # 分类只影响当前账本；生成时快照不覆盖，新的查询读取已保存分类。
     await runs.add_event(
         run_id,
         "transaction.category_corrected",
         {
             "transaction_id": str(transaction_id),
-            "previous_category": previous_category.value,
+            "previous_category": previous_category,
             "category": payload.category.value,
         },
     )
@@ -440,6 +468,13 @@ async def _run_response(repository: RunRepository, run: RunRecord) -> RunRespons
 def _import_response(batch: ImportBatchRecord) -> ImportBatchResponse:
     """集中转换导入响应，确保创建与历史接口使用同一契约。"""
     return ImportBatchResponse(
+        source=batch.field_mapping.get("source") or "standard",
+        skipped_rows=sum(item.get("code") == "EXCLUDED" for item in batch.errors),
+        excluded=[
+            ImportRowErrorResponse.model_validate(item)
+            for item in batch.errors
+            if item.get("code") == "EXCLUDED"
+        ],
         id=batch.id,
         account_id=batch.account_id,
         account_name=batch.account_name,
@@ -453,6 +488,10 @@ def _import_response(batch: ImportBatchRecord) -> ImportBatchResponse:
         start_date=batch.start_date,
         end_date=batch.end_date,
         field_mapping=batch.field_mapping,
-        errors=[ImportRowErrorResponse.model_validate(item) for item in batch.errors],
+        errors=[
+            ImportRowErrorResponse.model_validate(item)
+            for item in batch.errors
+            if item.get("code") != "EXCLUDED"
+        ],
         created_at=batch.created_at,
     )

@@ -199,7 +199,7 @@ class RunRepository:
         )
 
     async def get(self, run_id: UUID) -> RunRecord | None:
-        return await self.session.get(RunRecord, run_id)
+        return await self.session.get(RunRecord, run_id, with_for_update=True)
 
     async def set_status(self, run_id: UUID, status: RunStatus) -> None:
         await self.session.execute(
@@ -225,12 +225,6 @@ class RunRepository:
         )
         await self.add_event(run_id, "run.completed", {"status": RunStatus.SUCCEEDED.value})
 
-    async def update_result(self, run_id: UUID, result: dict[str, Any]) -> None:
-        """更新已完成运行的派生分析结果，不改变运行终态。"""
-        await self.session.execute(
-            update(RunRecord).where(RunRecord.id == run_id).values(result=result)
-        )
-
     async def fail(self, run_id: UUID, *, code: str, message: str) -> None:
         await self.session.execute(
             update(RunRecord)
@@ -240,23 +234,26 @@ class RunRepository:
         await self.add_event(run_id, "run.failed", {"code": code})
 
     async def reconcile_interrupted(self) -> int:
-        """重启后将非终态运行标记为未知，不虚构成功或失败结果。"""
+        """只收敛超过两分钟无心跳的任务，行锁防止与执行器同时提交。"""
         interrupted = await self.session.scalars(
-            select(RunRecord).where(
+            select(RunRecord)
+            .where(
+                RunRecord.updated_at < datetime.now(UTC) - timedelta(seconds=120),
                 RunRecord.status.in_(
                     [
                         RunStatus.CREATED.value,
                         RunStatus.PLANNING.value,
                         RunStatus.EXECUTING.value,
                     ]
-                )
+                ),
             )
+            .with_for_update(skip_locked=True)
         )
         records = list(interrupted)
         for run in records:
             run.status = RunStatus.UNKNOWN.value
             run.error_code = "OPERATION_STATUS_UNKNOWN"
-            run.error_message = "The service stopped before this run reached a terminal state"
+            run.error_message = "The execution heartbeat expired before completion"
             await self.add_event(
                 run.id,
                 "run.failed",

@@ -37,6 +37,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   const [imports, setImports] = useState<ImportBatch[]>([])
   const [importsLoading, setImportsLoading] = useState(true)
   const [importsFailed, setImportsFailed] = useState(false)
+  const [importsAttempt, setImportsAttempt] = useState(0)
   const [run, setRun] = useState<Run | null>(null)
   const [error, setError] = useState('')
   const [correctionSaved, setCorrectionSaved] = useState(false)
@@ -76,7 +77,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     return () => {
       active = false
     }
-  }, [])
+  }, [importsAttempt])
 
   useEffect(() => () => {
     eventSource.current?.close()
@@ -204,6 +205,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         imports={imports}
         loading={importsLoading}
         onAnalyze={() => setActivePage('agent')}
+        onRetryHistory={() => { setImportsFailed(false); setImportsLoading(true); setImportsAttempt((value) => value + 1) }}
         onImported={(batch) => {
           setImports((current) => [batch, ...current.filter((item) => item.id !== batch.id)])
           setImportsFailed(false)

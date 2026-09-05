@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
+import { formatTransactionTime } from '../../format'
 import type { Messages } from '../../i18n'
 import type { ReviewItem, Transaction, TransactionCategory } from '../../types'
 
@@ -51,7 +52,7 @@ export function LedgerPage({ copy, english }: { copy: Messages; english: boolean
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
   return <section className="product-page">
-    <header className="page-header"><h1>{english ? 'Transaction ledger' : '交易账本'}</h1><p>{english ? 'Imported flows · Coverage unverified · Not net consumption' : '已导入流水 · 期间完整性未验证 · 非净消费'}</p></header>
+    <header className="page-header"><h1>{english ? 'Transaction ledger' : '交易账本'}</h1><p>{english ? 'Imported flows · UTC+8' : '已导入流水 · UTC+8'}</p></header>
     <div className="import-account-grid">
       <label>{english ? 'From' : '开始日期'}<input type="date" value={start} onChange={(e) => { setState('loading'); setStart(e.target.value) }} /></label>
       <label>{english ? 'To' : '结束日期'}<input type="date" value={end} onChange={(e) => { setState('loading'); setEnd(e.target.value) }} /></label>
@@ -61,11 +62,11 @@ export function LedgerPage({ copy, english }: { copy: Messages; english: boolean
     {notice && <p role="status">{notice}</p>}
     {invalid ? <p role="alert">{english ? 'Select an ordered period of at most 366 days.' : '请选择有效期间，跨度不超过 366 天。'}</p> : state === 'loading' ? <p>{english ? 'Loading' : '正在读取'}</p> : state === 'failed' ? <button onClick={() => { setState('loading'); setAttempt((a) => a + 1) }}>{english ? 'Request failed. Retry' : '读取失败，重试'}</button> : <>
       <button disabled={!filtered.length} onClick={download}>{english ? 'Export filtered CSV' : '导出筛选结果 CSV'}</button>
-      {!filtered.length ? <p>{english ? 'No matching transactions' : '暂无匹配交易'}</p> : <div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Date', 'Account', 'Merchant / Source', 'Amount', 'Category'] : ['日期', '账户', '商户／来源', '金额', '分类']).map((text) => <th key={text}>{text}</th>)}</tr></thead><tbody>{filtered.map((item) => <tr key={item.id}>
-        <td>{item.booking_date}</td><td>{item.account_name}</td><td>{item.merchant}<details><summary>{english ? 'Details' : '详情'}</summary><p>{item.description || '—'}</p><p>{english ? 'Batch' : '批次'}：{item.import_batch_id ?? '—'}</p><p>{english ? 'Source row' : '源行'}：{item.source_row_number ?? '—'}</p><p>{english ? 'Time precision' : '时间精度'}：{item.time_precision === 'timestamp' ? (english ? 'Timestamp' : '时间') : item.time_precision === 'date' ? (english ? 'Date' : '日期') : (english ? 'Unknown' : '未知')}</p></details></td>
+      {!filtered.length ? <p>{english ? 'No matching transactions' : '暂无匹配交易'}</p> : <div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant / Source', 'Amount', 'Category'] : ['时间', '账户', '商户／来源', '金额', '分类']).map((text) => <th key={text}>{text}</th>)}</tr></thead><tbody>{filtered.map((item) => <tr key={item.id}>
+        <td className="time-cell">{formatTransactionTime(item, english ? 'en-US' : 'zh-CN')}</td><td>{item.account_name}</td><td>{item.merchant}<details><summary>{english ? 'Details' : '详情'}</summary><p>{item.description || '—'}</p><p>{english ? 'Batch' : '批次'}：{item.import_batch_id ?? '—'}</p><p>{english ? 'Source row' : '源行'}：{item.source_row_number ?? '—'}</p><p>{english ? 'Time precision' : '时间精度'}：{item.time_precision === 'timestamp' ? (english ? 'Timestamp' : '时间') : item.time_precision === 'date' ? (english ? 'Date' : '日期') : (english ? 'Unknown' : '未知')}</p></details></td>
         <td>{item.amount} {item.currency}</td><td><select aria-label={`${copy.categoryLabel}: ${item.merchant}`} value={item.category} disabled={saving} onChange={(e) => void correct(item.id, e.target.value as TransactionCategory)}>{Object.entries(copy.categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
       </tr>)}</tbody></table></div>}
-      <h2>{english ? 'Review' : '异常核查'}</h2><p>{english ? 'Judgments do not change amounts or confirm a bank action.' : '核查结论不改变金额，不代表银行已处理。'}</p>
+      <h2>{english ? 'Review' : '异常核查'}</h2><details className="scope-note"><summary>{english ? 'Scope' : '数据口径'}</summary><p>{english ? 'Coverage unverified; flows are not net consumption. Decisions do not change amounts.' : '期间完整性未验证；流水非净消费，核查结论不改变金额。'}</p></details>
       {!reviews.some((r) => r.transaction_ids.some((id) => visibleIds.has(id))) && <p>{english ? 'No rule matches in the selection' : '当前筛选未命中核查规则'}</p>}
       {reviews.filter((r) => r.transaction_ids.some((id) => visibleIds.has(id))).map((review) => <ReviewForm key={review.key} review={review} english={english} start={start} end={end} evidence={items.filter((i) => review.transaction_ids.includes(i.id))} />)}
     </>}
@@ -85,7 +86,7 @@ function ReviewForm({ review, english, start, end, evidence }: { review: ReviewI
     finally { setBusy(false) }
   }}><h3>{review.rule_id === 'large_outflow_v1' ? (english ? 'Large outflow' : '大额流出') : (english ? 'Possible duplicate' : '疑似重复')}</h3>
     <p>{review.rule_id === 'large_outflow_v1' ? `${english ? 'Threshold' : '阈值'} ${review.facts.threshold} ${review.facts.currency}` : `${english ? 'Window (minutes)' : '时间窗口（分钟）'} ${review.facts.window_minutes}`}</p>
-    {evidence.map((i) => <p key={i.id}>{i.booking_date} · {i.account_name} · {i.merchant} · {i.amount} {i.currency}</p>)}
+    {evidence.map((i) => <p key={i.id}>{formatTransactionTime(i, english ? 'en-US' : 'zh-CN')} · {i.account_name} · {i.merchant} · {i.amount} {i.currency}</p>)}
     <label>{english ? 'Decision' : '核查状态'}<select value={status} disabled={busy} onChange={(e) => setStatus(e.target.value as ReviewItem['state'])}><option value="pending">{english ? 'Pending' : '待处理'}</option><option value="normal">{english ? 'Confirmed normal' : '确认为正常'}</option><option value="follow_up">{english ? 'Follow up' : '待进一步核实'}</option></select></label>
     <label>{english ? 'Note' : '核查备注'}<input value={note} disabled={busy} maxLength={500} onChange={(e) => setNote(e.target.value)} /></label>
     <button disabled={busy}>{english ? 'Save decision' : '保存结论'}</button><p role="status">{message}</p>

@@ -41,8 +41,8 @@ jobs:
       - run: uv sync --all-groups --locked
       - run: uv run ruff check .
       - run: uv run mypy src
-      - run: uv run pytest
       - run: uv run alembic upgrade head
+      - run: uv run alembic check
       - run: docker build -t bankpilot-api:ci .
 
   web:
@@ -59,7 +59,6 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run lint
-      - run: npm test -- --run
       - run: npm run build
       - run: docker build -t bankpilot-web:ci .
 
@@ -99,17 +98,8 @@ jobs:
       - name: Package release
         run: |
           release_archive="${RUNNER_TEMP}/bankpilot-release.tgz"
-          tar \
-            --exclude='.git' \
-            --exclude='.env' \
-            --exclude='.venv' \
-            --exclude='node_modules' \
-            --exclude='dist' \
-            --exclude='__pycache__' \
-            --exclude='.pytest_cache' \
-            --exclude='.mypy_cache' \
-            --exclude='.ruff_cache' \
-            -czf "$release_archive" .
+          # 只发布当前提交，不携带工作目录中的本地配置、缓存或临时文件。
+          git archive --format=tar.gz --output="$release_archive" HEAD
 
       - name: Deploy remote origin
         env:

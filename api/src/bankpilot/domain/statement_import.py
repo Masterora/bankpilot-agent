@@ -14,11 +14,13 @@ import hashlib
 import io
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from bankpilot.domain.payment_sources import locate_source, normalize_row
 
 MAX_STATEMENT_ROWS = 5_000
 
@@ -74,9 +76,100 @@ class ParsedStatement:
     total_rows: int
     rows: list[ParsedStatementRow]
     errors: list[StatementRowError]
+    source: str = "standard"
+    skipped: list[StatementRowError] = field(default_factory=list)
 
 
 def parse_statement_csv(
+    *, content: str, mapping: StatementFieldMapping, currency: str
+) -> ParsedStatement:
+    """将 CSV 读取错误统一转换为拒绝报告，包含超长表头和字段。"""
+    try:
+        native = _parse_payment_source(content, currency)
+        if native is not None:
+            return native
+        return _parse_statement_csv(content=content, mapping=mapping, currency=currency)
+    except (csv.Error, ValueError) as exc:
+        digest = hashlib.sha256(content.removeprefix("\ufeff").encode()).hexdigest()
+        return ParsedStatement(
+            digest,
+            0,
+            [],
+            [StatementRowError(1, "INVALID_ROW", str(exc) or "CSV structure is invalid")],
+        )
+
+
+def _parse_payment_source(content: str, currency: str) -> ParsedStatement | None:
+    """来源解析复用金额与编号校验，映射错误和排除行回到原文件行号。"""
+    table = locate_source(content)
+    if table is None:
+        return None
+    if currency != "CNY":
+        raise ValueError("个人支付账单币种必须为 CNY")
+    stream = io.StringIO()
+    writer = csv.writer(stream)
+    writer.writerow(["date", "merchant", "amount", "description", "transaction_id"])
+    numbers: list[int] = []
+    errors: list[StatementRowError] = []
+    skipped: list[StatementRowError] = []
+    total = 0
+    for number, cells in table.rows:
+        if not any(v.strip() for v in cells):
+            continue
+        if cells[0].strip().startswith(("---", "共", "导出时间", "温馨提示")):
+            continue
+        total += 1
+        if total > MAX_STATEMENT_ROWS:
+            raise ValueError("Statement exceeds the 5000 row limit")
+        while len(cells) > len(table.headers) and not cells[-1].strip():
+            cells = cells[:-1]
+        # 工作表省略尾部空单元格；补空后仍由必填字段校验禁止缺失交易依据。
+        if len(cells) < len(table.headers):
+            cells = cells + [""] * (len(table.headers) - len(cells))
+        try:
+            if len(cells) != len(table.headers):
+                raise ValueError("源行列数与表头不一致")
+            row = dict(zip(table.headers, cells, strict=True))
+            result = normalize_row(table.profile, row)
+            if result is None:
+                skipped.append(
+                    StatementRowError(
+                        number,
+                        "EXCLUDED",
+                        f"未入账：{row[table.profile.status].strip()} / {row['收/支'].strip()}",
+                    )
+                )
+                continue
+            writer.writerow(result)
+            numbers.append(number)
+        except ValueError as exc:
+            errors.append(StatementRowError(number, "INVALID_ROW", str(exc)))
+    parsed = _parse_statement_csv(
+        content=stream.getvalue(),
+        currency=currency,
+        mapping=StatementFieldMapping(
+            occurred_at="date",
+            merchant="merchant",
+            amount="amount",
+            description="description",
+            transaction_id="transaction_id",
+        ),
+    )
+    if numbers:
+        errors.extend(replace(e, row_number=numbers[e.row_number - 2]) for e in parsed.errors)
+    elif total == 0:
+        errors.append(StatementRowError(1, "NO_DATA_ROWS", "没有交易行"))
+    return ParsedStatement(
+        hashlib.sha256(content.encode()).hexdigest(),
+        total,
+        [replace(row, row_number=numbers[row.row_number - 2]) for row in parsed.rows],
+        errors,
+        table.profile.key + ":1",
+        skipped,
+    )
+
+
+def _parse_statement_csv(
     *, content: str, mapping: StatementFieldMapping, currency: str
 ) -> ParsedStatement:
     """完整解析 CSV；错误行与有效行同时返回，由调用方执行整批接受或拒绝。"""
@@ -104,6 +197,8 @@ def parse_statement_csv(
 
     reader = csv.DictReader(io.StringIO(normalized_content, newline=""), dialect=dialect)
     headers = reader.fieldnames or []
+    if any(h.strip() in {"收/支", "收支方向", "交易状态", "当前状态", "退款金额"} for h in headers):
+        raise ValueError("来源结构未适配，禁止按通用金额列推断收支")
     if len(headers) != len(set(headers)):
         return ParsedStatement(
             file_hash=file_hash,
@@ -137,7 +232,19 @@ def parse_statement_csv(
             ],
         )
 
-    raw_rows = list(reader)
+    try:
+        raw_rows = list(reader)
+    except csv.Error:
+        return ParsedStatement(
+            file_hash,
+            0,
+            [],
+            [
+                StatementRowError(
+                    reader.line_num, "INVALID_ROW", "CSV structure or field size is invalid"
+                )
+            ],
+        )
     if not raw_rows:
         return ParsedStatement(
             file_hash=file_hash,
@@ -248,6 +355,8 @@ def _parse_datetime(value: str | None) -> tuple[date, datetime]:
         else:
             raise ValueError("occurred_at must be an ISO or supported calendar date") from None
     booking_date = parsed.date()
+    if parsed.tzinfo is None and re.search(r"[T ]\d{2}:\d{2}", raw):
+        raise ValueError("Timestamp must include a timezone offset, for example +08:00")
     occurred_at = parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
     return booking_date, occurred_at
 

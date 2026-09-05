@@ -23,6 +23,7 @@ class Settings(BaseSettings):
 
     environment: str = Field(default="development", validation_alias="BANKPILOT_ENV")
     database_url: str = Field(
+        repr=False,
         default="postgresql+asyncpg://bankpilot:replace-me@db.internal:5432/bankpilot",
         validation_alias="BANKPILOT_DATABASE_URL",
     )

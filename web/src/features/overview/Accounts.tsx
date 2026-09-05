@@ -16,10 +16,10 @@ export function Accounts({ english }: { english: boolean }) {
       .catch(() => { if (active) setState('failed') })
     return () => { active = false }
   }, [attempt])
-  return <section className="cards-section"><h2>{english ? 'Accounts' : '资金账户'}</h2>
+  return <section className="accounts-section"><h2>{english ? 'Accounts' : '资金账户'}</h2>
     {state === 'loading' ? <p>{english ? 'Loading' : '正在读取'}</p>
       : state === 'failed' ? <button onClick={() => setAttempt(attempt + 1)}>{english ? 'Retry' : '重新读取账户'}</button>
         : items.length === 0 ? <p>{english ? 'Import a statement to create an account' : '导入账单后显示账户'}</p>
-          : <div className="card-list">{items.map((item) => <article className="bank-card" key={item.id}><strong>{item.name}</strong><p>{item.currency}</p></article>)}</div>}
+          : <div className="account-list">{items.map((item) => <article className="account-tile" key={item.id}><strong>{item.name}</strong><p>{item.currency}</p></article>)}</div>}
   </section>
 }
