@@ -4,7 +4,6 @@
 主要内容：
 - `UserRepository`：用户查询与创建。
 - `SessionRepository`：创建、解析和删除可过期会话。
-- `AccountRepository`：按用户复用或创建导入账户。
 - `ImportRepository`：保存并读取账单导入报告。
 - `RunRepository`：运行创建、状态迁移、计划/结果记录、中断修复与增量事件读取。
 - `CardRepository`：按当前用户所属账户读取卡片。
@@ -84,30 +83,6 @@ class SessionRepository:
         await self.session.execute(
             delete(SessionRecord).where(SessionRecord.token_hash == token_hash)
         )
-
-
-class AccountRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
-
-    async def get_or_create(self, *, user_id: UUID, name: str, currency: str) -> AccountRecord:
-        """账户名称和币种在用户范围内稳定复用，避免每次导入产生新账户。"""
-        existing = cast(
-            AccountRecord | None,
-            await self.session.scalar(
-                select(AccountRecord).where(
-                    AccountRecord.user_id == user_id,
-                    AccountRecord.name == name,
-                    AccountRecord.currency == currency,
-                )
-            ),
-        )
-        if existing is not None:
-            return existing
-        account = AccountRecord(user_id=user_id, name=name, currency=currency)
-        self.session.add(account)
-        await self.session.flush()
-        return account
 
 
 class ImportRepository:

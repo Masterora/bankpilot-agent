@@ -307,7 +307,7 @@ select:focus {
   position: sticky;
   top: 0;
   z-index: 10;
-  height: 68px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -355,10 +355,10 @@ select:focus {
 .product-page {
   width: min(1160px, 100%);
   margin: 0 auto;
-  padding: 36px 32px 64px;
+  padding: 32px 32px 64px;
   animation: enter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.page-header { margin-bottom: 28px; }
+.page-header { margin-bottom: 22px; }
 .page-header > .eyebrow { display: none; }
 .page-header h1 {
   margin: 0;
@@ -374,7 +374,7 @@ select:focus {
 }
 .overview-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   margin: 24px 0 32px;
   border-block: 1px solid var(--line);
@@ -441,9 +441,7 @@ select:focus {
 .module-empty p,
 .module-empty-copy { margin: 0; color: var(--muted); font-size: 12px; }
 .import-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 15px;
+  display: block;
 }
 .import-source-panel,
 .import-mapping-panel,
@@ -456,7 +454,7 @@ select:focus {
   background: var(--surface);
 }
 .file-drop {
-  min-height: 190px;
+  min-height: 220px;
   display: grid;
   place-content: center;
   justify-items: center;
@@ -484,7 +482,21 @@ select:focus {
   background: rgba(199, 214, 165, 0.09);
   font-size: 20px;
 }
+.import-source-panel.has-file {
+  display: grid;
+  grid-template-columns: minmax(260px, .8fr) minmax(0, 1.2fr);
+  gap: 14px 20px;
+  align-items: start;
+}
+.import-source-panel.has-file > .file-drop { grid-row: 1 / span 5; min-height: 100%; }
+.import-file-state { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text); }
+.import-file-state strong { font-size: 15px; }
+.import-file-state span { color: var(--accent); font-size: 12px; }
 .import-account-grid { display: grid; grid-template-columns: 1fr 110px; gap: 10px; margin-top: 14px; }
+.import-source-panel.has-file > .import-account-grid { grid-template-columns: minmax(0, 1fr) 110px; margin-top: 0; }
+.import-source-panel.has-file > .import-account-grid > label:first-child { grid-column: 1 / -1; }
+.mapping-details { color: var(--muted); font-size: 13px; }
+.mapping-details summary { width: fit-content; cursor: pointer; }
 .import-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .import-panel-heading h2 { margin: 0; font-size: 16px; font-weight: 620; }
 .import-panel-heading > span { color: var(--muted); font-size: 13px; }
@@ -492,6 +504,7 @@ select:focus {
 .mapping-fields label > span { color: var(--muted); font-size: 13px; }
 .import-placeholder { min-height: 150px; display: grid; place-items: center; margin: 0; color: var(--muted); font-size: 12px; }
 .import-submit { width: 100%; margin-top: 16px; }
+.import-source-panel.has-file > .import-submit { margin-top: 0; }
 .import-page-error { margin-top: 15px; }
 .import-report,
 .import-history { margin-top: 15px; }
@@ -510,6 +523,8 @@ select:focus {
 .import-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .import-table th { padding: 9px 10px; color: var(--muted); font-weight: 600; text-align: left; white-space: nowrap; }
 .import-table td { padding: 12px 10px; border-top: 1px solid var(--line); color: #c8cec9; white-space: nowrap; }
+.ledger-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 12px; color: var(--muted); font-size: 13px; }
+.ledger-toolbar button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface); }
 .import-status { display: inline-flex; padding: 5px 8px; border-radius: 6px; color: var(--accent); background: rgba(199, 214, 165, 0.09); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .import-status-rejected { color: var(--danger); background: var(--danger-bg); }
 .import-status-completed_with_duplicates { color: #dfc08f; background: #261e13; }
@@ -868,6 +883,8 @@ select:focus {
   .analysis-columns { grid-template-columns: 1fr; }
   .audit-grid { grid-template-columns: 1fr; }
   .import-workspace { grid-template-columns: 1fr; }
+  .import-source-panel.has-file { grid-template-columns: 1fr; }
+  .import-source-panel.has-file > .file-drop { grid-row: auto; min-height: 170px; }
 }
 
 @media (max-width: 430px) {
@@ -916,3 +933,25 @@ form.import-report p { margin: 0; }
     transition-duration: 0.01ms !important;
   }
 }
+/* 交易关系：双边证据并列，状态操作与金额层级清晰，窄屏改为单列。 */
+.relations-panel { display: grid; gap: 18px; }
+.relation-tabs, .relation-actions, .relation-summary-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.relation-tabs button, .relations-panel button, .account-tile button { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); color: var(--text); font-size: 13px; }
+.relation-tabs button:hover, .relations-panel button:hover, .account-tile button:hover { border-color: var(--accent); }
+.relations-panel button:disabled, .account-tile button:disabled { opacity: .45; cursor: not-allowed; }
+.relation-summary-head { justify-content: space-between; }
+.relation-tabs button[aria-pressed="true"] { background: var(--surface-raised); border-color: var(--accent); color: var(--accent); }
+.relation-card { border: 1px solid var(--line); border-radius: 14px; padding: 20px; background: var(--surface); }
+.relation-card header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.relation-card h3 { margin: 0 0 16px; }
+.relation-card time, .relation-reason { font-size: 12px; color: var(--muted); }
+.relation-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.relation-evidence { display: grid; align-content: start; gap: 8px; min-width: 0; padding: 16px; border-radius: 10px; background: var(--bg); overflow-wrap: anywhere; }
+.relation-evidence strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.relation-evidence small { color: var(--muted); }
+.manual-relation { display: grid; gap: 12px; margin-top: 16px; }
+.manual-relation label { display: grid; gap: 8px; min-width: 0; }
+.manual-relation select { width: 100%; min-width: 0; }
+.product-page > .relation-dates { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 640px) { .relation-pair { grid-template-columns: 1fr; } .relation-card { padding: 14px; } }
+@media (prefers-reduced-motion: no-preference) { .relation-card { animation: relation-enter .18s ease-out; } @keyframes relation-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } } }

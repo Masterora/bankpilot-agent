@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from bankpilot.domain.contracts import CardStatus, RunResult, TransactionCategory
 from bankpilot.domain.statement_import import StatementFieldMapping
+from bankpilot.security import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, validate_new_password
 
 MAX_IMPORT_BYTES = 10 * 1024 * 1024
 
@@ -28,7 +29,7 @@ class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
 
 
 class RegisterRequest(BaseModel):
@@ -37,7 +38,13 @@ class RegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_format(cls, value: str) -> str:
+        """统一执行新密码组合校验，不依赖浏览器约束。"""
+        return validate_new_password(value)
 
 
 class UserResponse(BaseModel):
@@ -66,6 +73,7 @@ class ImportStatementRequest(BaseModel):
     file_name: str = Field(min_length=1, max_length=255)
     content: str = Field(min_length=1, max_length=MAX_IMPORT_BYTES)
     account_name: str = Field(min_length=1, max_length=100)
+    account_id: UUID | None = None
     currency: str = Field(min_length=3, max_length=3)
     mapping: StatementFieldMapping
 

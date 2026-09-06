@@ -35,11 +35,6 @@ export interface ImportCopy {
   accountPlaceholder: string
   currency: string
   currencyPlaceholder: string
-  mappingEyebrow: string
-  mappingHeading: string
-  columns: string
-  pending: string
-  mappingEmpty: string
   occurredAt: string
   merchant: string
   amount: string
@@ -47,18 +42,15 @@ export interface ImportCopy {
   selectColumn: string
   notMapped: string
   duplicateMapping: string
-  commit: string
   importing: string
   importFailed: string
   conflict: string
-  reportEyebrow: string
   reportHeading: string
   totalRows: string
   importedRows: string
   duplicateRows: string
   errorRows: string
   row: string
-  historyEyebrow: string
   historyHeading: string
   loading: string
   loadFailed: string
@@ -81,6 +73,7 @@ export interface Messages {
   password: string
   confirmPassword: string
   passwordRequirement: string
+  passwordFormatInvalid: string
   login: string
   loggingIn: string
   register: string
@@ -91,8 +84,6 @@ export interface Messages {
   emailAlreadyRegistered: string
   passwordMismatch: string
   navigationLabel: string
-  readOnlyScope: string
-  localDataScope: string
   productPages: Record<ProductPage, ProductPageCopy>
   transactionsMetric: string
   reviewSignalsMetric: string
@@ -151,7 +142,8 @@ const zhCN: Messages = {
   email: '邮箱',
   password: '密码',
   confirmPassword: '确认密码',
-  passwordRequirement: '至少 12 位',
+  passwordRequirement: '8–128 位，包含大小写字母、数字和符号',
+  passwordFormatInvalid: '密码须包含大写字母、小写字母、数字和符号',
   login: '登录',
   loggingIn: '验证中…',
   register: '注册',
@@ -162,35 +154,33 @@ const zhCN: Messages = {
   emailAlreadyRegistered: '该邮箱已注册',
   passwordMismatch: '两次输入的密码不一致',
   navigationLabel: '工作区',
-  readOnlyScope: '只读执行',
-  localDataScope: '本地数据写入',
   productPages: {
     overview: {
       navigation: '财务总览',
       eyebrow: '财务工作区',
       title: '财务总览',
-      description: '账户范围 · 核查状态 · 任务入口',
+      description: '账户与最近结果',
       empty: '',
     },
     agent: {
       navigation: 'Agent 工作台',
       eyebrow: '受控财务 Agent',
       title: 'Agent 工作台',
-      description: '任务解析 · 白名单工具 · 执行证据',
+      description: '按时间范围查询',
       empty: '',
     },
     import: {
       navigation: '账单导入',
       eyebrow: '账单文件',
       title: '账单导入',
-      description: '文件校验 · 字段映射 · 归一化',
+      description: '导入 CSV 或 XLSX',
       empty: '暂无导入批次',
     },
     review: {
       navigation: '交易账本',
       eyebrow: '确定性分析',
       title: '交易账本',
-      description: '收支统计 · 异常信号 · 交易证据',
+      description: '筛选、分类与关联',
       empty: '暂无核查结果',
     },
     recurring: { navigation: '周期扣款', eyebrow: '周期信号', title: '周期扣款', description: '扣款周期 · 金额变化 · 预计日期', empty: '暂无周期扣款记录' },
@@ -203,11 +193,11 @@ const zhCN: Messages = {
       empty: '暂无执行记录',
     },
   },
-  transactionsMetric: '最近交易',
-  reviewSignalsMetric: '待核查信号',
+  transactionsMetric: '本次查询',
+  reviewSignalsMetric: '待核查',
   latestRunMetric: '最近运行',
   noRunStatus: '无记录',
-  quickTasksHeading: '任务入口',
+  quickTasksHeading: '快捷操作',
   openAgent: '发起核查',
   openReview: '查看结果',
   auditBoundaryHeading: '数据边界',
@@ -243,7 +233,7 @@ const zhCN: Messages = {
   categoryUpdateFailed: '分类修正失败',
   imports: {
     chooseFile: '选择账单文件',
-    fileRequirements: 'CSV / XLSX · 最大 10 MB · 原文件不保存',
+    fileRequirements: 'CSV / XLSX · 最大 10 MB',
     fileTooLarge: '文件超过 10 MB 限制',
     missingHeader: '未识别到 CSV 表头',
     fileReadFailed: '文件读取失败',
@@ -251,11 +241,6 @@ const zhCN: Messages = {
     accountPlaceholder: '例如：日常账户',
     currency: '币种',
     currencyPlaceholder: '例如：CNY',
-    mappingEyebrow: '标准字段',
-    mappingHeading: '字段映射',
-    columns: '列',
-    pending: '等待文件',
-    mappingEmpty: '选择文件后配置字段映射',
     occurredAt: '交易日期',
     merchant: '交易对方',
     amount: '带符号金额',
@@ -263,18 +248,15 @@ const zhCN: Messages = {
     selectColumn: '选择源列',
     notMapped: '不映射',
     duplicateMapping: '每个标准字段必须对应不同源列',
-    commit: '校验并导入',
     importing: '正在校验',
     importFailed: '账单导入失败',
     conflict: '数据冲突，请检查交易编号与已导入记录后重试',
-    reportEyebrow: '批次结果',
     reportHeading: '导入报告',
     totalRows: '总行数',
     importedRows: '已写入',
     duplicateRows: '重复',
     errorRows: '失败',
     row: '第',
-    historyEyebrow: '导入记录',
     historyHeading: '导入历史',
     loading: '正在读取导入历史',
     loadFailed: '导入历史读取失败',
@@ -348,7 +330,8 @@ const enUS: Messages = {
   email: 'Email',
   password: 'Password',
   confirmPassword: 'Confirm password',
-  passwordRequirement: '12 characters minimum',
+  passwordRequirement: '8–128 characters with uppercase, lowercase, number and symbol',
+  passwordFormatInvalid: 'Use uppercase, lowercase, number and symbol',
   login: 'Sign in',
   loggingIn: 'Validating…',
   register: 'Register',
@@ -359,35 +342,33 @@ const enUS: Messages = {
   emailAlreadyRegistered: 'Email is already registered',
   passwordMismatch: 'Passwords do not match',
   navigationLabel: 'Workspace',
-  readOnlyScope: 'Read-only execution',
-  localDataScope: 'Local data write',
   productPages: {
     overview: {
       navigation: 'Overview',
       eyebrow: 'FINANCE WORKSPACE',
       title: 'Financial overview',
-      description: 'Account scope · Review status · Task entry points',
+      description: 'Accounts and latest results',
       empty: '',
     },
     agent: {
       navigation: 'Agent workspace',
       eyebrow: 'GOVERNED FINANCE AGENT',
       title: 'Agent workspace',
-      description: 'Task parsing · Allowlisted tools · Execution evidence',
+      description: 'Query by time range',
       empty: '',
     },
     import: {
       navigation: 'Statement import',
       eyebrow: 'LOCAL DATA ENTRY',
       title: 'Statement import',
-      description: 'File validation · Field mapping · Normalization',
+      description: 'Import CSV or XLSX',
       empty: 'No import batches',
     },
     review: {
       navigation: 'Statement review',
       eyebrow: 'DETERMINISTIC ANALYSIS',
       title: 'Statement review',
-      description: 'Cash flow · Review signals · Transaction evidence',
+      description: 'Filter, classify and link',
       empty: 'No review result',
     },
     recurring: { navigation: 'Recurring charges', eyebrow: 'RECURRING SIGNALS', title: 'Recurring charges', description: 'Cadence · Amount changes · Expected dates', empty: 'No recurring charge records' },
@@ -400,11 +381,11 @@ const enUS: Messages = {
       empty: 'No execution records',
     },
   },
-  transactionsMetric: 'Latest transactions',
+  transactionsMetric: 'Current query',
   reviewSignalsMetric: 'Review signals',
   latestRunMetric: 'Latest run',
   noRunStatus: 'No record',
-  quickTasksHeading: 'Task entry points',
+  quickTasksHeading: 'Quick actions',
   openAgent: 'Start review',
   openReview: 'View result',
   auditBoundaryHeading: 'Data boundaries',
@@ -444,7 +425,7 @@ const enUS: Messages = {
   categoryUpdateFailed: 'Unable to update category',
   imports: {
     chooseFile: 'Choose statement file',
-    fileRequirements: 'CSV / XLSX · 10 MB maximum · Source file not retained',
+    fileRequirements: 'CSV / XLSX · 10 MB maximum',
     fileTooLarge: 'File exceeds the 10 MB limit',
     missingHeader: 'CSV header could not be detected',
     fileReadFailed: 'Unable to read the file',
@@ -452,11 +433,6 @@ const enUS: Messages = {
     accountPlaceholder: 'e.g. Daily account',
     currency: 'Currency',
     currencyPlaceholder: 'e.g. USD',
-    mappingEyebrow: 'STANDARD FIELDS',
-    mappingHeading: 'Field mapping',
-    columns: 'columns',
-    pending: 'Awaiting file',
-    mappingEmpty: 'Choose a file to configure field mapping',
     occurredAt: 'Transaction date',
     merchant: 'Merchant',
     amount: 'Signed amount',
@@ -464,18 +440,15 @@ const enUS: Messages = {
     selectColumn: 'Select source column',
     notMapped: 'Not mapped',
     duplicateMapping: 'Each standard field must use a different source column',
-    commit: 'Validate and import',
     importing: 'Validating',
     importFailed: 'Statement import failed',
     conflict: 'Import conflict. Check transaction identifiers against saved records before retrying.',
-    reportEyebrow: 'BATCH RESULT',
     reportHeading: 'Import report',
     totalRows: 'Total rows',
     importedRows: 'Imported',
     duplicateRows: 'Duplicates',
     errorRows: 'Failed',
     row: 'Row',
-    historyEyebrow: 'LOCAL BATCHES',
     historyHeading: 'Import history',
     loading: 'Loading import history',
     loadFailed: 'Unable to load import history',

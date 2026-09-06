@@ -5,6 +5,7 @@
 - 身份与账务：`UserRecord`、`SessionRecord`、`AccountRecord`、`CardRecord`、`TransactionRecord`。
 - 账单导入：`ImportBatchRecord` 保存来源、映射、统计和失败行报告。
 - 分析修正：`TransactionCategoryOverrideRecord` 保存用户确认的交易分类。
+- 交易关系：`TransactionRelationRecord` 保存双边证据、确认状态及版本，原交易不改写。
 - Agent 运行：`RunRecord` 保存状态、计划、结果、错误和模型信息。
 - 审计记录：`AuditEventRecord` 按运行保存有序事件。
 
@@ -66,6 +67,7 @@ class AccountRecord(Base):
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(100))
     currency: Mapped[str] = mapped_column(String(3), default="CNY")
+    source: Mapped[str] = mapped_column(String(16), default="standard", server_default="standard")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     transactions: Mapped[list["TransactionRecord"]] = relationship(
@@ -193,6 +195,34 @@ class ReviewDecisionRecord(Base):
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TransactionRelationRecord(Base):
+    """独立关联两条流水；删除任一源交易时清除关联，避免残留抵销。"""
+
+    __tablename__ = "transaction_relations"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    first_id: Mapped[UUID] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), index=True
+    )
+    second_id: Mapped[UUID] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))
+    state: Mapped[str] = mapped_column(String(16))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("first_id <> second_id", name="ck_relations_distinct"),
+        CheckConstraint("kind IN ('duplicate', 'transfer', 'refund')", name="ck_relations_kind"),
+        CheckConstraint("state IN ('confirmed', 'rejected', 'revoked')", name="ck_relations_state"),
+        Index("uq_relations_pair", "user_id", "kind", "first_id", "second_id", unique=True),
     )
 
 

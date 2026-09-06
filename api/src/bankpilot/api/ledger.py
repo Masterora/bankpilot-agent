@@ -12,8 +12,9 @@ from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -33,6 +34,7 @@ from bankpilot.domain.contracts import TransactionResult
 from bankpilot.domain.payment_sources import locate_source, source_account
 from bankpilot.domain.source_detection import detect_account, detect_mapping, read_csv_headers
 from bankpilot.domain.statement_import import StatementFieldMapping, parse_statement_csv
+from bankpilot.services.accounts import resolve_account
 
 router = APIRouter(prefix="/api/v1", tags=["ledger"])
 
@@ -44,6 +46,8 @@ async def revoke_import(
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     """撤销该批次写入的交易，保留批次报告与历史运行快照供追溯。"""
+    # 与关系确认共用用户锁，防止校验通过后源交易被并发撤销。
+    await session.scalar(select(UserRecord).where(UserRecord.id == user.id).with_for_update())
     batch = await session.scalar(
         select(ImportBatchRecord)
         .where(ImportBatchRecord.id == batch_id, ImportBatchRecord.user_id == user.id)
@@ -68,6 +72,7 @@ class AccountResponse(BaseModel):
     id: UUID
     name: str
     currency: str
+    source: str
 
 
 class AccountListResponse(BaseModel):
@@ -86,8 +91,51 @@ async def accounts(
         .order_by(AccountRecord.created_at, AccountRecord.id)
     )
     return AccountListResponse(
-        items=[AccountResponse(id=row.id, name=row.name, currency=row.currency) for row in rows]
+        items=[
+            AccountResponse(id=row.id, name=row.name, currency=row.currency, source=row.source)
+            for row in rows
+        ]
     )
+
+
+class RenameAccountRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        """折叠空白并拒绝空名称。"""
+        value = " ".join(value.split())
+        if not value:
+            raise ValueError("Account name is required")
+        return value
+
+
+@router.post("/accounts/{account_id}/name", status_code=204)
+async def rename_account(
+    account_id: UUID,
+    payload: RenameAccountRequest,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    """重命名不改变账户身份、去重指纹或历史批次的名称快照。"""
+    account = await session.scalar(
+        select(AccountRecord)
+        .where(
+            AccountRecord.id == account_id,
+            AccountRecord.user_id == user.id,
+        )
+        .with_for_update()
+    )
+    if account is None:
+        raise HTTPException(404, "Account not found")
+    account.name = payload.name
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(409, "Account name already exists") from exc
 
 
 @router.get("/transactions", response_model=TransactionResult)
@@ -152,16 +200,24 @@ async def preview(
         content=payload.content, mapping=payload.mapping, currency=payload.currency
     )
     try:
-        account_name = source_account(payload.content, payload.account_name)
+        account_name = (
+            payload.account_name
+            if payload.account_id
+            else source_account(payload.content, payload.account_name)
+        )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    account = await session.scalar(
-        select(AccountRecord).where(
-            AccountRecord.user_id == user.id,
-            AccountRecord.name == account_name,
-            AccountRecord.currency == payload.currency,
+    try:
+        account = await resolve_account(
+            session,
+            user_id=user.id,
+            account_id=payload.account_id,
+            name=account_name,
+            currency=payload.currency,
+            source=parsed.source,
         )
-    )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     existing = (
         await TransactionRepository(session).existing_fingerprints(
             account_id=account.id, fingerprints={row.fingerprint for row in parsed.rows}

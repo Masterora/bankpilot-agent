@@ -1,18 +1,18 @@
 /**
  * 文件职责：声明当前可访问的产品页面与权限表现。
  *
- * 主要内容：`pageDefinitions` 是导航、页面渲染与数据作用域提示的唯一页面注册表。
- * 关键边界：保留产品导航与未实现页面的空态；业务能力以独立 feature 模块接入。
+ * 主要内容：`pageDefinitions` 统一声明页面类型和当前导航可见性。
+ * 关键边界：未接入能力保留页面结构和导航入口，但不模拟数据或操作。
  */
 
 export const pageDefinitions = [
-  { id: 'overview', scope: 'read' },
-  { id: 'agent', scope: 'read' },
-  { id: 'import', scope: 'write' },
-  { id: 'review', scope: 'write' },
-  { id: 'recurring', scope: 'read' },
-  { id: 'budgets', scope: 'read' },
-  { id: 'audit', scope: 'read' },
+  { id: 'overview', visible: true },
+  { id: 'import', visible: true },
+  { id: 'review', visible: true },
+  { id: 'agent', visible: true },
+  { id: 'recurring', visible: true },
+  { id: 'budgets', visible: true },
+  { id: 'audit', visible: true },
 ] as const
 
 export type ProductPage = (typeof pageDefinitions)[number]['id']

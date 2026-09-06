@@ -39,6 +39,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   const [importsFailed, setImportsFailed] = useState(false)
   const [importsAttempt, setImportsAttempt] = useState(0)
   const [run, setRun] = useState<Run | null>(null)
+  const [reviewPeriod, setReviewPeriod] = useState<{ start: string; end: string } | null>(null)
   const [error, setError] = useState('')
   const [correctionSaved, setCorrectionSaved] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -199,20 +200,28 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     ),
     import: (
       <ImportPage
+        active={activePage === 'import'}
         copy={copy}
         english={locale === 'en-US'}
         failed={importsFailed}
         imports={imports}
         loading={importsLoading}
-        onAnalyze={() => setActivePage('agent')}
+        onAnalyze={() => setActivePage('review')}
         onRetryHistory={() => { setImportsFailed(false); setImportsLoading(true); setImportsAttempt((value) => value + 1) }}
         onImported={(batch) => {
           setImports((current) => [batch, ...current.filter((item) => item.id !== batch.id)])
           setImportsFailed(false)
+          if (batch.start_date && batch.end_date) {
+            setReviewPeriod({ start: batch.start_date, end: batch.end_date })
+          }
         }}
       />
     ),
-    review: <LedgerPage copy={copy} english={locale === 'en-US'} />,
+    review: <LedgerPage
+      copy={copy}
+      english={locale === 'en-US'}
+      initialPeriod={reviewPeriod}
+    />,
     audit: <AuditPage copy={copy} run={run} />,
     recurring: <EmptyProductPage copy={copy} page="recurring" />,
     budgets: <EmptyProductPage copy={copy} page="budgets" />,
@@ -222,7 +231,6 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     <div className="product-shell">
       <aside className="product-sidebar">
         <div className="sidebar-brand brand"><Logo /> BankPilot</div>
-        <p className="sidebar-label">{copy.navigationLabel}</p>
         <Navigation
           activePage={activePage}
           copy={copy}
@@ -237,15 +245,6 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
       <main className="workspace-shell">
         <header className="workspace-topbar">
           <div className="topbar-brand brand"><Logo /> BankPilot</div>
-          <div className="topbar-context">
-            <strong>{copy.productPages[activePage].navigation}</strong>
-            <span>
-              <i aria-hidden="true" />
-              {pageDefinitions.find((page) => page.id === activePage)?.scope === 'write'
-                ? copy.localDataScope
-                : copy.readOnlyScope}
-            </span>
-          </div>
           <div className="header-actions">
             <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
             <div className="account-chip">
@@ -277,7 +276,7 @@ function Navigation({
 }) {
   return (
     <nav className="product-nav" aria-label={copy.navigationLabel}>
-      {pageDefinitions.map((page) => (
+      {pageDefinitions.filter((page) => page.visible).map((page) => (
         <button
           type="button"
           className={activePage === page.id ? 'active' : undefined}

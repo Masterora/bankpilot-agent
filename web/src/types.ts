@@ -16,6 +16,13 @@ export interface User {
   email: string
 }
 
+export interface Account {
+  id: string
+  name: string
+  currency: string
+  source: string
+}
+
 export interface ImportFieldMapping {
   transaction_id?: string | null
   account?: string | null
@@ -61,8 +68,38 @@ export interface ImportStatementPayload {
   file_name: string
   content: string
   account_name: string
+  account_id?: string | null
   currency: string
   mapping: ImportFieldMapping
+}
+
+export type RelationKind = 'duplicate' | 'transfer' | 'refund'
+export interface TransactionRelation {
+  id: string | null
+  kind: RelationKind
+  first_id: string
+  second_id: string
+  state: 'pending' | 'confirmed' | 'rejected' | 'revoked'
+  version: number
+  updated_at: string | null
+}
+
+export type RelationTransaction = Pick<Transaction, 'id' | 'booking_date' | 'occurred_at' | 'time_precision' | 'account_name' | 'merchant' | 'description' | 'amount' | 'currency' | 'import_batch_id' | 'source_row_number'> & { account_id: string }
+export interface RelationWorkspace {
+  items: TransactionRelation[]
+  transactions: RelationTransaction[]
+  truncated: boolean
+  summaries: {
+    currency: string
+    raw_inflow: string
+    raw_outflow: string
+    adjusted_inflow: string
+    adjusted_outflow: string
+    adjusted_net: string
+    duplicate_excluded: number
+    transfer_excluded: number
+    refund_amount: string
+  }[]
 }
 
 export type TransactionCategory =

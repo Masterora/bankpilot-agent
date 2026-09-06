@@ -264,6 +264,7 @@ async def import_statement(
             file_name=payload.file_name,
             content=payload.content,
             account_name=payload.account_name,
+            account_id=payload.account_id,
             currency=payload.currency,
             mapping=payload.mapping,
         )

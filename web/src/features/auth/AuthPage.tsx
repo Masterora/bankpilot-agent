@@ -12,6 +12,13 @@ import { LanguageSwitch, Logo } from '../../shared/ui'
 import type { LanguageProps } from '../../shared/ui'
 import type { User } from '../../types'
 
+const MIN_PASSWORD_LENGTH = 8
+const validNewPassword = (value: string) =>
+  /[a-z]/.test(value)
+  && /[A-Z]/.test(value)
+  && /[0-9]/.test(value)
+  && /[^A-Za-z0-9\s]/.test(value)
+
 interface AuthPageProps extends LanguageProps {
   onAuthenticated: (user: User) => void
 }
@@ -34,6 +41,10 @@ export function AuthPage({ copy, locale, onLocaleChange, onAuthenticated }: Auth
   async function submit(event: FormEvent) {
     event.preventDefault()
     setError('')
+    if (mode === 'register' && !validNewPassword(password)) {
+      setError(copy.passwordFormatInvalid)
+      return
+    }
     if (mode === 'register' && password !== passwordConfirmation) {
       setError(copy.passwordMismatch)
       return
@@ -99,7 +110,9 @@ export function AuthPage({ copy, locale, onLocaleChange, onAuthenticated }: Auth
             autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            minLength={mode === 'register' ? 12 : 8}
+            minLength={MIN_PASSWORD_LENGTH}
+            maxLength={128}
+            pattern={mode === 'register' ? '(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,128}' : undefined}
             required
           />
           {mode === 'register' && <span className="field-hint">{copy.passwordRequirement}</span>}
@@ -113,7 +126,8 @@ export function AuthPage({ copy, locale, onLocaleChange, onAuthenticated }: Auth
               autoComplete="new-password"
               value={passwordConfirmation}
               onChange={(event) => setPasswordConfirmation(event.target.value)}
-              minLength={12}
+              minLength={MIN_PASSWORD_LENGTH}
+              maxLength={128}
               required
             />
           </label>

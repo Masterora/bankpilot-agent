@@ -21,7 +21,7 @@ from bankpilot.db.models import AccountRecord, CardRecord, TransactionRecord
 from bankpilot.db.repositories import UserRepository
 from bankpilot.db.session import create_engine, create_session_factory
 from bankpilot.domain.contracts import CardStatus
-from bankpilot.security import hash_password
+from bankpilot.security import hash_password, validate_new_password
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -44,8 +44,13 @@ def seed(
 ) -> None:
     """创建本地用户与可重复验证的本地银行记录。"""
     TypeAdapter(EmailStr).validate_python(email)
-    if len(password) < 12:
-        raise typer.BadParameter("password must contain at least 12 characters")
+    try:
+        validate_new_password(password)
+    except ValueError as exc:
+        raise typer.BadParameter(
+            "password must contain 8 to 128 characters, including uppercase, "
+            "lowercase, number and symbol"
+        ) from exc
     asyncio.run(_seed(email, password))
 
 

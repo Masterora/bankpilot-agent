@@ -7,14 +7,16 @@
 
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bankpilot.db.models import ImportBatchRecord
-from bankpilot.db.repositories import AccountRepository, ImportRepository, TransactionRepository
+from bankpilot.db.models import AccountRecord, ImportBatchRecord, UserRecord
+from bankpilot.db.repositories import ImportRepository, TransactionRepository
 from bankpilot.domain.payment_sources import source_account
 from bankpilot.domain.statement_import import StatementFieldMapping, parse_statement_csv
 from bankpilot.errors import ImportConflictError
+from bankpilot.services.accounts import resolve_account
 
 
 class StatementImportService:
@@ -30,12 +32,14 @@ class StatementImportService:
         account_name: str,
         currency: str,
         mapping: StatementFieldMapping,
+        account_id: UUID | None = None,
     ) -> ImportBatchRecord:
         """整批校验并持久化；调用前应结束身份查询产生的只读事务。"""
         parsed = parse_statement_csv(content=content, mapping=mapping, currency=currency)
         mapping_data = mapping.model_dump()
         mapping_data["source"] = parsed.source
-        account_name = source_account(content, account_name)
+        if account_id is None:
+            account_name = source_account(content, account_name)
         exclusions = [
             {"row_number": item.row_number, "code": item.code, "message": item.message}
             for item in parsed.skipped
@@ -48,7 +52,18 @@ class StatementImportService:
 
         try:
             async with self.session.begin():
+                await self.session.scalar(
+                    select(UserRecord).where(UserRecord.id == user_id).with_for_update()
+                )
                 imports = ImportRepository(self.session)
+                account = await resolve_account(
+                    self.session,
+                    user_id=user_id,
+                    account_id=account_id,
+                    name=account_name,
+                    currency=currency,
+                    source=parsed.source,
+                )
                 if parsed.errors:
                     batch = await imports.add(
                         user_id=user_id,
@@ -68,11 +83,15 @@ class StatementImportService:
                         errors=row_errors + exclusions,
                     )
                 else:
-                    account = await AccountRepository(self.session).get_or_create(
-                        user_id=user_id,
-                        name=account_name,
-                        currency=currency,
-                    )
+                    if account is None:
+                        account = AccountRecord(
+                            user_id=user_id,
+                            name=account_name,
+                            currency=currency,
+                            source=parsed.source.partition(":")[0],
+                        )
+                        self.session.add(account)
+                        await self.session.flush()
                     transactions = TransactionRepository(self.session)
                     if await transactions.conflicting_rows(account_id=account.id, rows=parsed.rows):
                         raise ImportConflictError

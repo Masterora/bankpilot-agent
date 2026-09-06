@@ -44,6 +44,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  relations: (start: string, end: string) => request<import('./types').RelationWorkspace>(`/api/v1/relations?start_date=${start}&end_date=${end}`),
+  saveRelation: (payload: { kind: import('./types').RelationKind; first_id: string; second_id: string; state: 'confirmed' | 'rejected' | 'revoked'; expected_version: number }) => request<void>('/api/v1/relations', { method: 'POST', body: JSON.stringify(payload) }),
+  renameAccount: (id: string, name: string) => request<void>(`/api/v1/accounts/${id}/name`, { method: 'POST', body: JSON.stringify({ name }) }),
   decodeImport: (file_name: string, data: string) => request<{content: string}>('/api/v1/imports/decode', {method: 'POST', body: JSON.stringify({file_name, data})}),
   reviews: (start: string, end: string) => request<{ summaries: import('./types').CurrencySummary[]; items: import('./types').ReviewItem[] }>(`/api/v1/reviews?start_date=${start}&end_date=${end}`),
   saveReview: (start: string, end: string, key: string, state: import('./types').ReviewItem['state'], note: string) => request<void>('/api/v1/reviews', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end, key, state, note }) }),
@@ -60,7 +63,7 @@ export const api = {
     }),
   me: () => request<User>('/api/v1/auth/me'),
   logout: () => request<void>('/api/v1/auth/logout', { method: 'POST' }),
-  listAccounts: () => request<{ items: { id: string; name: string; currency: string }[] }>('/api/v1/accounts'),
+  listAccounts: () => request<{ items: import('./types').Account[] }>('/api/v1/accounts'),
   ledger: (start: string, end: string) => request<import('./types').RunResult['transactions']>(`/api/v1/transactions?start_date=${start}&end_date=${end}`),
   correctLedgerCategory: (id: string, category: TransactionCategory) => request<void>(`/api/v1/transactions/${id}/category`, { method: 'POST', body: JSON.stringify({ category }) }),
   listImports: () => request<ImportBatchList>('/api/v1/imports'),

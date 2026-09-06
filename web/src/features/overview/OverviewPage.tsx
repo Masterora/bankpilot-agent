@@ -27,7 +27,7 @@ export function OverviewPage({
     <section className="product-page">
       <PageHeader copy={copy} page="overview" />
       <section className="task-path" aria-label={copy.quickTasksHeading}>
-        {(['import', 'agent', 'review'] as const).map((page, index) => (
+        {(['import', 'review', 'agent'] as const).map((page, index) => (
           <button key={page} type="button" aria-label={page === 'agent' ? copy.openAgent : page === 'review' ? copy.openReview : copy.imports.chooseFile} onClick={() => onNavigate(page)}>
             <span className="task-path-top"><NavigationIcon kind={page} /><span>0{index + 1}</span></span>
             <strong>{copy.productPages[page].navigation}</strong>

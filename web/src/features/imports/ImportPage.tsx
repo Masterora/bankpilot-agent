@@ -9,17 +9,18 @@
  * 关键边界：浏览器不解析金额或决定去重结果；服务端是校验、写入与批次状态的唯一权威。
  */
 
-import { ChangeEvent, FormEvent, useRef, useState } from 'react'
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react'
 
 import { ApiError, api } from '../../api'
 import type { Messages } from '../../i18n'
-import type { ImportBatch, ImportFieldMapping } from '../../types'
+import type { Account, ImportBatch, ImportFieldMapping } from '../../types'
 import { detectionError } from './detectionError'
 import { formatTimestamp, formatTransactionTime } from '../../format'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 export function ImportPage({
   copy,
+  active,
   english,
   failed,
   imports,
@@ -29,6 +30,7 @@ export function ImportPage({
   onRetryHistory,
 }: {
   copy: Messages
+  active: boolean
   english: boolean
   failed: boolean
   imports: ImportBatch[]
@@ -42,6 +44,9 @@ export function ImportPage({
   const [content, setContent] = useState('')
   const [headers, setHeaders] = useState<string[]>([])
   const [accountName, setAccountName] = useState('')
+  const [accountId, setAccountId] = useState('')
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [accountsFailed, setAccountsFailed] = useState(false)
   const [currency, setCurrency] = useState('CNY')
   const [source, setSource] = useState('standard')
   const [mapping, setMapping] = useState<ImportFieldMapping>({
@@ -56,9 +61,21 @@ export function ImportPage({
   const [detecting, setDetecting] = useState(false)
   const [retryFile, setRetryFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<{ key: string; skipped_rows: number; excluded: { row_number: number; message: string }[]; total_rows: number; error_rows: number; duplicate_rows: number; errors: { row_number: number; message: string }[]; rows: { row_number: number; date: string; occurred_at: string; time_precision: 'unknown' | 'date' | 'timestamp'; merchant: string; amount: string }[] } | null>(null)
-  const payload = { file_name: fileName, content, account_name: accountName.trim(), currency, mapping }
+  const payload = { file_name: fileName, content, account_name: accountName.trim(), account_id: accountId || null, currency, mapping }
   const payloadKey = JSON.stringify(payload)
   const previewCurrent = preview?.key === payloadKey
+
+  useEffect(() => {
+    if (!active) return
+    let current = true
+    api.listAccounts().then((response) => { if (current) {
+      setAccounts(response.items); setAccountsFailed(false)
+      const selected = response.items.find((a) => a.id === accountId)
+      if (selected) setAccountName(selected.name)
+    } })
+      .catch(() => { if (current) setAccountsFailed(true) })
+    return () => { current = false }
+  }, [imports, active, accountId])
 
   // 文件只在浏览器内读取为文本；清空选择器后仍可重新选择同一文件。
   async function selectFile(event: ChangeEvent<HTMLInputElement>) {
@@ -81,6 +98,7 @@ export function ImportPage({
     setHeaders([])
     setSource('standard')
     setAccountName('')
+    setAccountId('')
     setCurrency('')
     setMapping({ occurred_at: '', merchant: '', amount: '', description: null })
     if (!/\.(csv|xlsx)$/i.test(file.name)) {
@@ -114,12 +132,33 @@ export function ImportPage({
     setDetecting(true)
     try {
       const detection = await api.detectImport(text)
+      const accountList = await api.listAccounts()
       if (selection !== selectionSequence.current) return
+      setAccounts(accountList.items)
+      setAccountsFailed(false)
       detectedMapping = detection.mapping
       setSource(detection.source)
       setHeaders(detection.headers)
-      if (detection.account_name) setAccountName(detection.account_name)
-      if (detection.currency) setCurrency(detection.currency)
+      const detectedCurrency = detection.currency || 'CNY'
+      const compatibleAccounts = accountList.items.filter(
+        (account) => account.source === detection.source && account.currency === detectedCurrency,
+      )
+      const matchingAccount = compatibleAccounts.find(
+        (account) => account.name === detection.account_name,
+      )
+      if (matchingAccount) {
+        setAccountId(matchingAccount.id)
+        setAccountName(matchingAccount.name)
+      } else if (!detection.account_name && compatibleAccounts.length === 1) {
+        setAccountId(compatibleAccounts[0].id)
+        setAccountName(compatibleAccounts[0].name)
+      } else {
+        setAccountName(
+          detection.account_name
+            || (detection.source === 'wechat' ? '日常账户' : detection.source === 'alipay' ? '支付账户' : ''),
+        )
+      }
+      setCurrency(detectedCurrency)
     } catch (reason) {
       if (selection !== selectionSequence.current) return
       const failure = detectionError(reason, english)
@@ -152,13 +191,7 @@ export function ImportPage({
         return
       }
       if (preview.error_rows) return
-      const batch = await api.importStatement({
-        file_name: fileName,
-        content,
-        account_name: accountName.trim(),
-        currency,
-        mapping,
-      })
+      const batch = await api.importStatement(payload)
       setResult(batch)
       setPreview(null)
       onImported(batch)
@@ -183,36 +216,49 @@ export function ImportPage({
     <section className="product-page">
       <header className="page-header">
         <h1>{copy.productPages.import.title}</h1>
-        <p>UTC+8</p>
       </header>
-      <details className="import-report"><summary>{english ? 'Supported files' : '支持的文件与获取方式'}</summary><p>{english ? 'Alipay and WeChat personal bill layouts · CSV / XLSX. Unsupported layouts are rejected. Decrypt archives on your device; never provide a payment password.' : '支付宝、微信个人账单结构 · CSV / XLSX。未知格式拒绝导入；压缩包在本机解密解压，不要提供支付密码。'}</p></details>
 
       <form className="import-workspace" onSubmit={submit}>
-        <section className="import-source-panel">
+        <section className={`import-source-panel${content ? ' has-file' : ''}`}>
           <label className="file-drop">
             <input type="file" accept=".csv,.xlsx" onChange={selectFile} />
             <span className="file-drop-icon" aria-hidden="true">↑</span>
             <strong>{fileName || copy.imports.chooseFile}</strong>
             <span>{copy.imports.fileRequirements}</span>
           </label>
+          {content && <>
+          <div className="import-file-state">
+            <strong>{source === 'alipay' ? '支付宝' : source === 'wechat' ? '微信支付' : (english ? 'Standard statement' : '标准账单')}</strong>
+            <span>{previewCurrent ? (english ? 'Preview ready' : '已完成预览') : (english ? 'Recognized' : '已识别')}</span>
+          </div>
           <div className="import-account-grid">
+            <label>{english ? 'Import into' : '导入账户'}
+              <select value={accountId} disabled={submitting} onChange={(event) => {
+                setAccountId(event.target.value)
+                const selected = accounts.find((a) => a.id === event.target.value)
+                if (selected) { setAccountName(selected.name); setCurrency(selected.currency) }
+                else setAccountName('')
+              }}><option value="">{english ? 'New account' : '新建账户'}</option>
+                {accounts.filter((a) => a.source === source && (!currency || a.currency === currency)).map((a) => <option key={a.id} value={a.id}>{a.name} · {a.currency}</option>)}
+              </select>
+              {accountsFailed && <span role="alert">{english ? 'Accounts unavailable. Select the file again.' : '账户读取失败，请重新选择文件。'}</span>}
+            </label>
             <label>
               {copy.imports.accountName}
               <input
-                list="statement-accounts"
+                readOnly={Boolean(accountId)}
                 maxLength={100}
                 placeholder={copy.imports.accountPlaceholder}
                 required
                 value={accountName}
                 onChange={(event) => setAccountName(event.target.value)}
               />
-              <datalist id="statement-accounts">{[...new Set(imports.map((batch) => batch.account_name))].filter((name) => source === 'standard' || name.startsWith(source === 'alipay' ? '支付宝 · ' : '微信 · ')).map((name) => <option key={name} value={name} />)}</datalist>
             </label>
             <label>
               {copy.imports.currency}
               <input
                 aria-label={copy.imports.currency}
-                readOnly={source !== 'standard'}
+                readOnly={source !== 'standard' || Boolean(accountId)}
                 inputMode="text"
                 maxLength={3}
                 pattern="[A-Za-z]{3}"
@@ -223,17 +269,8 @@ export function ImportPage({
               />
             </label>
           </div>
-        </section>
-
-        <section className="import-mapping-panel">
-          <div className="import-panel-heading">
-            <div><p className="eyebrow">{copy.imports.mappingEyebrow}</p><h2>{copy.imports.mappingHeading}</h2></div>
-            <span>{headers.length ? `${headers.length} ${copy.imports.columns}` : copy.imports.pending}</span>
-          </div>
-          {headers.length === 0 ? (
-            <p className="import-placeholder">{copy.imports.mappingEmpty}</p>
-          ) : source !== 'standard' ? <p>{source === 'alipay' ? '支付宝' : '微信'} · {english ? 'Source fields locked · UTC+8' : '来源字段已识别 · UTC+8'}</p> : (
-            <details><summary>{english ? 'Field mapping' : '查看字段对应'}</summary><div className="mapping-fields">
+          {source === 'standard' && (
+            <details className="mapping-details"><summary>{english ? 'Field mapping' : '字段对应'}</summary><div className="mapping-fields">
               <MappingSelect
                 copy={copy}
                 field="occurredAt"
@@ -272,19 +309,20 @@ export function ImportPage({
             {submitting && <span className="button-spinner" aria-hidden="true" />}
             {submitting ? copy.imports.importing : previewCurrent ? (english ? 'Confirm import' : '确认导入') : (english ? 'Preview statement' : '预览账单')}
           </button>
+          </>}
         </section>
       </form>
-      {previewCurrent && <section className="import-report"><h2>{english ? 'Import preview' : '导入预览'}</h2><p>{preview.skipped_rows} {english ? 'excluded' : '行排除'} · {preview.total_rows} {english ? 'rows' : '行'} · {preview.duplicate_rows} {english ? 'duplicates' : '行重复'} · {preview.error_rows} {english ? 'invalid rows' : '行格式异常'}</p>{preview.error_rows > 0 && <p role="alert">{english ? 'This format cannot be imported. Check the field selection or use a supported source file.' : '该格式无法导入。请核对字段选择，或使用已适配的来源文件。'}</p>}<details><summary>{english ? 'Excluded rows' : '排除明细'}</summary>{preview.excluded.map((item) => <p key={item.row_number}>{item.row_number} · {item.message}</p>)}</details><ul>{preview.errors?.map((item) => <li key={item.row_number}>{english ? 'Row' : '第'} {item.row_number}: {item.message}</li>)}</ul><p>{english ? 'First 20 rows · UTC+8' : '前 20 行 · UTC+8'}</p><div className="import-table-wrap"><table className="import-table"><tbody>{preview.rows.map((row) => <tr key={row.row_number}><td>{formatTransactionTime({ booking_date: row.date, occurred_at: row.occurred_at, time_precision: row.time_precision }, english ? 'en-US' : 'zh-CN')}</td><td>{row.merchant}</td><td>{row.amount} {currency}</td></tr>)}</tbody></table></div></section>}
+      {previewCurrent && <section className="import-report"><div className="import-panel-heading"><h2>{english ? 'Preview' : '导入预览'}</h2><strong>{preview.total_rows - preview.error_rows - preview.skipped_rows} / {preview.total_rows}</strong></div><div className="import-metrics"><Metric label={english ? 'Ready' : '可导入'} value={preview.total_rows - preview.error_rows - preview.skipped_rows} /><Metric label={copy.imports.duplicateRows} value={preview.duplicate_rows} /><Metric label={english ? 'Excluded' : '排除'} value={preview.skipped_rows} /><Metric label={copy.imports.errorRows} value={preview.error_rows} /></div>{preview.error_rows > 0 && <p className="error" role="alert">{english ? 'Fix invalid rows before importing.' : '请先处理格式异常。'}</p>}{preview.excluded.length > 0 && <details><summary>{english ? 'Excluded rows' : '排除明细'}</summary>{preview.excluded.map((item) => <p key={item.row_number}>{item.row_number} · {item.message}</p>)}</details>}{preview.errors.length > 0 && <ul className="import-errors">{preview.errors.map((item) => <li key={item.row_number}><strong>{english ? 'Row' : '第'} {item.row_number}</strong><span>{item.message}</span></li>)}</ul>}<div className="import-table-wrap"><table className="import-table"><thead><tr><th>{english ? 'Time' : '时间'}</th><th>{english ? 'Merchant' : '交易对方'}</th><th>{english ? 'Amount' : '金额'}</th></tr></thead><tbody>{preview.rows.map((row) => <tr key={row.row_number}><td>{formatTransactionTime({ booking_date: row.date, occurred_at: row.occurred_at, time_precision: row.time_precision }, english ? 'en-US' : 'zh-CN')}</td><td>{row.merchant}</td><td>{row.amount} {currency}</td></tr>)}</tbody></table></div></section>}
 
       {error && <p className="error import-page-error" role="alert">{error}</p>}
       {detecting && <p role="status">{english ? 'Recognizing statement' : '正在识别账单'}</p>}
       {retryFile && <button type="button" disabled={detecting} onClick={() => void detectFile(retryFile)}>{english ? 'Retry detection' : '重试识别'}</button>}
       {result && <>
         <ImportReport batch={result} copy={copy} english={english} />
-        {result.status !== 'REJECTED' && <div className="import-next"><button type="button" className="primary" onClick={onAnalyze}>{copy.openAgent}<span aria-hidden="true"> →</span></button></div>}
+        {result.status !== 'REJECTED' && <div className="import-next"><button type="button" className="primary" onClick={onAnalyze}>{copy.openReview}<span aria-hidden="true"> →</span></button></div>}
       </>}
       {failed && <button type="button" onClick={onRetryHistory}>{english ? 'Retry history' : '重新读取历史'}</button>}
-      <ImportHistory copy={copy} english={english} failed={failed} imports={imports} loading={loading} onRevoked={onImported} />
+      {(loading || failed || imports.length > 0) && <ImportHistory copy={copy} english={english} failed={failed} imports={imports} loading={loading} onRevoked={onImported} />}
     </section>
   )
 }
@@ -319,7 +357,7 @@ function ImportReport({ batch, copy, english }: { batch: ImportBatch; copy: Mess
   return (
     <section className="import-report" aria-live="polite">
       <div className="import-panel-heading">
-        <div><p className="eyebrow">{copy.imports.reportEyebrow}</p><h2>{copy.imports.reportHeading}</h2></div>
+        <h2>{copy.imports.reportHeading}</h2>
         <ImportStatus batch={batch} copy={copy} />
       </div>
       <div className="import-metrics">
@@ -375,7 +413,7 @@ function ImportHistory({
   return (
     <section className="import-history">
       <div className="import-panel-heading">
-        <div><p className="eyebrow">{copy.imports.historyEyebrow}</p><h2>{copy.imports.historyHeading}</h2></div>
+        <h2>{copy.imports.historyHeading}</h2>
       </div>
       {error && <p role="alert">{english ? 'Revocation failed. Retry.' : '撤销失败，请重试。'}</p>}
       {loading ? <p className="import-placeholder">{copy.imports.loading}</p>
