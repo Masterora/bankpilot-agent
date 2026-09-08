@@ -150,9 +150,12 @@ async def relation_workspace(
     user_id: UUID,
     start: date,
     end: date,
+    *,
+    acquire_lock: bool = True,
 ) -> dict[str, Any]:
-    """扩展九十天查找跨期证据；超过工作区上限拒绝而不返回不完整统计。"""
-    await lock_user(session, user_id)
+    """候选窗口超限仅停止发现；期间事实与已保存关系仍完整读取。"""
+    if acquire_lock:
+        await lock_user(session, user_id)
     low = date.fromordinal(max(date.min.toordinal(), start.toordinal() - 90))
     high = min(end, date.max - timedelta(days=90)) + timedelta(days=90)
     rows = list(
@@ -169,8 +172,25 @@ async def relation_workspace(
             )
         ).all()
     )
-    if len(rows) > 10_000:
-        raise RelationError("narrow_period", 422)
+    discovery_limited = len(rows) > 10_000
+    if discovery_limited:
+        # 不使用被截断的候选窗口计算金额，重新读取完整期间事实。
+        rows = list(
+            (
+                await session.execute(
+                    select(TransactionRecord, AccountRecord.name)
+                    .join(AccountRecord)
+                    .where(
+                        AccountRecord.user_id == user_id,
+                        TransactionRecord.booking_date.between(start, end),
+                    )
+                    .order_by(TransactionRecord.booking_date, TransactionRecord.id)
+                    .limit(10_001)
+                )
+            ).all()
+        )
+        if len(rows) > 10_000:
+            raise RelationError("narrow_period", 422)
     transactions = {row.id: to_transaction(row) for row, _ in rows}
     period_ids = {t.id for t in transactions.values() if start <= t.booking_date <= end}
     if not period_ids:
@@ -189,24 +209,34 @@ async def relation_workspace(
         )
     )
     active = [to_relation(r) for r in records if r.state == "confirmed"]
-    # 累计退款校验可能引用窗口外的另一笔退款，补齐金额事实但不纳入候选或期间流水。
-    extra_ids = {r.second_id for r in active} - transactions.keys()
+    candidate_rows = list(rows)
+    # 补齐已保存关系的双边事实与证据；窗口外记录不加入候选或期间流水。
+    extra_ids = {
+        entry for r in records for entry in (r.first_id, r.second_id)
+    } - transactions.keys()
     if extra_ids:
-        extra = await session.scalars(
-            select(TransactionRecord)
-            .join(AccountRecord)
-            .where(
-                AccountRecord.user_id == user_id,
-                TransactionRecord.id.in_(extra_ids),
+        extra = (
+            await session.execute(
+                select(TransactionRecord, AccountRecord.name)
+                .join(AccountRecord)
+                .where(
+                    AccountRecord.user_id == user_id,
+                    TransactionRecord.id.in_(extra_ids),
+                )
             )
-        )
-        transactions.update({r.id: to_transaction(r) for r in extra})
+        ).all()
+        rows.extend(extra)
+        transactions.update({r.id: to_transaction(r) for r, _ in extra})
     records = [r for r in records if period_ids.intersection((r.first_id, r.second_id))]
     # 对所有扩展窗口候选先按期间筛选，再限流，避免无关月份耗尽候选名额。
-    suggestions, truncated = suggest_relations(
-        [to_transaction(row) for row, _ in rows],
-        limit=1000,
-        period_ids=period_ids,
+    suggestions, truncated = (
+        ([], True)
+        if discovery_limited
+        else suggest_relations(
+            [to_transaction(row) for row, _ in candidate_rows],
+            limit=1000,
+            period_ids=period_ids,
+        )
     )
 
     def pair_key(kind: str, a: UUID, b: UUID) -> tuple[str, str, str]:
@@ -252,7 +282,6 @@ async def relation_workspace(
         }
         for r in available[:200]
     )
-    evidence_ids = period_ids | {i[key] for i in items for key in ("first_id", "second_id")}
     return {
         "items": items,
         "truncated": truncated or len(available) > 200,
@@ -273,6 +302,5 @@ async def relation_workspace(
                 "source_row_number": row.source_row_number,
             }
             for row, name in rows
-            if row.id in evidence_ids
         ],
     }

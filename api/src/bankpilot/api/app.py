@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from bankpilot.adapters.local_review import LocalReviewGateway
 from bankpilot.adapters.openrouter import OpenRouterModelGateway
 from bankpilot.api.ledger import router as ledger_router
 from bankpilot.api.relations import router as relations_router
@@ -25,7 +26,7 @@ from bankpilot.api.reviews import router as reviews_router
 from bankpilot.api.routes import router
 from bankpilot.config import Settings, get_settings
 from bankpilot.db.session import create_engine, create_session_factory
-from bankpilot.ports import ModelGateway
+from bankpilot.ports import ModelGateway, ReviewGateway
 from bankpilot.services.run_processor import RunProcessor
 
 
@@ -33,6 +34,7 @@ def create_app(
     settings: Settings | None = None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
     model_gateway: ModelGateway | None = None,
+    review_gateway: ReviewGateway | None = None,
 ) -> FastAPI:
     """通过可替换端口构建应用，便于测试和扩展后续供应商。"""
     resolved_settings = settings or get_settings()
@@ -55,7 +57,12 @@ def create_app(
 
         app.state.settings = resolved_settings
         app.state.session_factory = session_factory
-        app.state.run_processor = RunProcessor(session_factory, resolved_gateway)
+        app.state.run_processor = RunProcessor(
+            session_factory,
+            resolved_gateway,
+            review_gateway or LocalReviewGateway(session_factory),
+            business_timezone=resolved_settings.business_timezone,
+        )
         # 启动与周期恢复均只处理心跳过期任务，不触碰其他实例的活跃运行。
         await app.state.run_processor.reconcile_interrupted()
         recovery = asyncio.create_task(app.state.run_processor.recover_expired())

@@ -277,7 +277,7 @@ class TransactionRepository:
     async def query_for_user(
         self, *, user_id: UUID, start_date: date, end_date: date
     ) -> list[tuple[TransactionRecord, str, str | None]]:
-        """通过用户所属账户查询交易，时间范围使用 UTC 左闭右开区间。"""
+        """通过用户所属账户查询交易，按原始账单记账日期包含起止两日。"""
         rows = await self.session.execute(
             select(
                 TransactionRecord,

@@ -16,6 +16,8 @@ import type { Messages } from '../../i18n'
 import type { Account, ImportBatch, ImportFieldMapping } from '../../types'
 import { detectionError } from './detectionError'
 import { formatTimestamp, formatTransactionTime } from '../../format'
+import { EmptyContent, PageHeader } from '../../shared/ui'
+import { Accounts } from '../overview/Accounts'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 export function ImportPage({
@@ -47,6 +49,7 @@ export function ImportPage({
   const [accountId, setAccountId] = useState('')
   const [accounts, setAccounts] = useState<Account[]>([])
   const [accountsFailed, setAccountsFailed] = useState(false)
+  const [accountsAttempt, setAccountsAttempt] = useState(0)
   const [currency, setCurrency] = useState('CNY')
   const [source, setSource] = useState('standard')
   const [mapping, setMapping] = useState<ImportFieldMapping>({
@@ -75,7 +78,7 @@ export function ImportPage({
     } })
       .catch(() => { if (current) setAccountsFailed(true) })
     return () => { current = false }
-  }, [imports, active, accountId])
+  }, [imports, active, accountId, accountsAttempt])
 
   // 文件只在浏览器内读取为文本；清空选择器后仍可重新选择同一文件。
   async function selectFile(event: ChangeEvent<HTMLInputElement>) {
@@ -214,9 +217,8 @@ export function ImportPage({
 
   return (
     <section className="product-page">
-      <header className="page-header">
-        <h1>{copy.productPages.import.title}</h1>
-      </header>
+      <PageHeader copy={copy} page="import" />
+      <div className="import-steps" aria-label={english ? 'Import steps' : '导入步骤'}><span>01 {english ? 'Statement' : '选择账单'}</span><span aria-hidden="true">→</span><span>02 {english ? 'Preview' : '预览核对'}</span><span aria-hidden="true">→</span><span>03 {english ? 'Confirm' : '确认入账'}</span></div>
 
       <form className="import-workspace" onSubmit={submit}>
         <section className={`import-source-panel${content ? ' has-file' : ''}`}>
@@ -323,6 +325,7 @@ export function ImportPage({
       </>}
       {failed && <button type="button" onClick={onRetryHistory}>{english ? 'Retry history' : '重新读取历史'}</button>}
       {(loading || failed || imports.length > 0) && <ImportHistory copy={copy} english={english} failed={failed} imports={imports} loading={loading} onRevoked={onImported} />}
+      {active && <Accounts key={imports.map((batch) => `${batch.id}:${batch.status}`).join('|')} english={english} onChanged={() => setAccountsAttempt((value) => value + 1)} />}
     </section>
   )
 }
@@ -418,7 +421,7 @@ function ImportHistory({
       {error && <p role="alert">{english ? 'Revocation failed. Retry.' : '撤销失败，请重试。'}</p>}
       {loading ? <p className="import-placeholder">{copy.imports.loading}</p>
         : failed ? <p className="error">{copy.imports.loadFailed}</p>
-          : imports.length === 0 ? <p className="import-placeholder">{copy.productPages.import.empty}</p>
+          : imports.length === 0 ? <EmptyContent kind="import" title={english ? 'No import history' : '暂无导入记录'} detail={english ? 'Imported files and their processing results will appear here.' : '导入后的文件、处理结果和来源记录会保存在这里。'} />
             : (
               <div className="import-table-wrap">
                 <table className="import-table">

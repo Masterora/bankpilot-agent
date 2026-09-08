@@ -5,9 +5,10 @@
  */
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
+import { EmptyContent } from '../../shared/ui'
 import type { Account } from '../../types'
 
-export function Accounts({ english }: { english: boolean }) {
+export function Accounts({ english, onChanged }: { english: boolean; onChanged?: () => void }) {
   const [items, setItems] = useState<Account[]>([])
   const [state, setState] = useState('loading')
   const [attempt, setAttempt] = useState(0)
@@ -20,8 +21,8 @@ export function Accounts({ english }: { english: boolean }) {
   return <section className="accounts-section"><h2>{english ? 'Accounts' : '资金账户'}</h2>
     {state === 'loading' ? <p>{english ? 'Loading' : '正在读取'}</p>
       : state === 'failed' ? <button onClick={() => setAttempt(attempt + 1)}>{english ? 'Retry' : '重新读取账户'}</button>
-        : items.length === 0 ? <p>{english ? 'Import a statement to create an account' : '导入账单后显示账户'}</p>
-          : <div className="account-list">{items.map((item) => <AccountTile key={item.id} item={item} english={english} onSaved={() => setAttempt((a) => a + 1)} />)}</div>}
+        : items.length === 0 ? <EmptyContent kind="import" title={english ? 'No accounts yet' : '尚未添加账户'} detail={english ? 'Choose an account name when importing your first statement.' : '导入第一份账单时，为它选择账户名称。'} />
+          : <div className="account-list">{items.map((item) => <AccountTile key={item.id} item={item} english={english} onSaved={() => { setAttempt((a) => a + 1); onChanged?.() }} />)}</div>}
   </section>
 }
 

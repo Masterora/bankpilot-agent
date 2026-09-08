@@ -10,8 +10,9 @@ import type { FormEvent } from 'react'
 
 import { formatMoney, formatTimestamp, formatTransactionTime } from '../../format'
 import type { Locale, Messages } from '../../i18n'
-import { PageHeader } from '../../shared/ui'
+import { EmptyContent, PageHeader } from '../../shared/ui'
 import type { Run, TransactionCategory } from '../../types'
+import { ReviewSnapshot } from './ReviewSnapshot'
 
 interface RunViewProps {
   copy: Messages
@@ -51,7 +52,7 @@ export function AgentPage({
         <form aria-busy={submitting} className="prompt" onSubmit={onSubmit}>
           <textarea
             ref={inputRef}
-            rows={3}
+            rows={2}
             aria-label={copy.queryInputLabel}
             aria-describedby="query-shortcut"
             value={message}
@@ -98,7 +99,7 @@ export function AgentPage({
 
 function RunPanel({ copy, correctingId, locale, onCategoryChange, run }: RunViewProps) {
   if (!run) {
-    return <section className="empty-state"><p>{copy.emptyResult}</p></section>
+    return <section className="result-placeholder"><header>{copy.resultEyebrow}</header><EmptyContent kind="agent" title={copy.emptyResult} detail={locale === 'en-US' ? 'Run a query above to view totals, relationships and source evidence.' : '在上方发起查询，查看收支、关系与来源证据。'} /></section>
   }
   const transactions = run.result?.transactions.items ?? []
   const resultMessage = run.result
@@ -116,9 +117,11 @@ function RunPanel({ copy, correctingId, locale, onCategoryChange, run }: RunView
           <Status copy={copy} status={run.status} />
         </div>
         {run.error_message && <p className="error">{run.error_code}: {run.error_message}</p>}
-        {run.result && <AnalysisPanel copy={copy} locale={locale} run={run} />}
+        {run.result?.review && <ReviewSnapshot review={run.result.review} locale={locale} />}
+        {run.result && <details className="raw-analysis" open={!run.result.review}><summary>{locale === 'en-US' ? 'Raw flows & category analysis' : '原始流水与分类分析'}</summary><AnalysisPanel copy={copy} locale={locale} run={run} /></details>}
+        {run.result && !run.result.review && <p className="scope-note">{locale === 'en-US' ? 'This result has no relationship review snapshot. Query again to review adjustments.' : '此结果未包含关系核查快照，重新查询可查看调整结果。'}</p>}
         {transactions.length > 0 && (
-          <div className="transaction-list">
+          <details className="transaction-details"><summary>{locale === 'en-US' ? 'Source entries' : '原始交易'} · {transactions.length}</summary><div className="transaction-list">
             {transactions.map((item) => (
               <div className="transaction" key={item.id}>
                 <div className="merchant-mark">{item.merchant.slice(0, 1)}</div>
@@ -144,7 +147,7 @@ function RunPanel({ copy, correctingId, locale, onCategoryChange, run }: RunView
                 </strong>
               </div>
             ))}
-          </div>
+          </div></details>
         )}
       </article>
       <aside className="timeline-card">

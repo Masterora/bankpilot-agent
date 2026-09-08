@@ -11,6 +11,7 @@
 
 from functools import lru_cache
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,6 +23,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 
     environment: str = Field(default="development", validation_alias="BANKPILOT_ENV")
+    business_timezone: str = Field(
+        default="Asia/Shanghai", validation_alias="BANKPILOT_TIMEZONE"
+    )
     database_url: str = Field(
         repr=False,
         default="postgresql+asyncpg://bankpilot:replace-me@db.internal:5432/bankpilot",
@@ -67,6 +71,16 @@ class Settings(BaseSettings):
     def only_openrouter(cls, value: str) -> str:
         if value != "openrouter":
             raise ValueError("MODEL_PROVIDER must be openrouter")
+        return value
+
+    @field_validator("business_timezone")
+    @classmethod
+    def valid_business_timezone(cls, value: str) -> str:
+        """业务日期使用明确的 IANA 时区，避免依赖服务器时区或静默回退。"""
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("BANKPILOT_TIMEZONE must be a valid IANA timezone") from exc
         return value
 
     @field_validator("model_id")

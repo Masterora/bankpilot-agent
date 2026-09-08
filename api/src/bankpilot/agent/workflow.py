@@ -2,7 +2,7 @@
 文件职责：定义账单查询与确定性分析 Agent 的 LangGraph 状态与节点流程。
 
 主要内容：
-- `AgentState`：携带运行 ID、用户 ID、模型计划、交易和最终结果。
+- `AgentState`：携带运行 ID、用户 ID、模型计划、交易、核查快照和最终结果。
 - `ReadOnlyBillWorkflow`：按 plan、execute、analyze、respond/reject 节点组装工作流。
 - `after_plan`：允许应用层在执行前持久化模型计划。
 
@@ -19,13 +19,14 @@ from langgraph.graph import END, START, StateGraph
 from bankpilot.domain.bill_analysis import analyze_bill
 from bankpilot.domain.contracts import (
     BillAnalysis,
+    BillReview,
     ModelPlan,
     RunResult,
     SupportedAction,
     TransactionResult,
 )
 from bankpilot.errors import ActionNotAllowedError
-from bankpilot.ports import BankingGateway, ModelGateway
+from bankpilot.ports import ModelGateway, ReviewGateway
 
 
 class AgentState(TypedDict):
@@ -38,6 +39,7 @@ class AgentState(TypedDict):
     plan: NotRequired[ModelPlan]
     transactions: NotRequired[TransactionResult]
     analysis: NotRequired[BillAnalysis]
+    review: NotRequired[BillReview]
     result: NotRequired[RunResult]
 
 
@@ -47,11 +49,11 @@ class ReadOnlyBillWorkflow:
     def __init__(
         self,
         model_gateway: ModelGateway,
-        banking_gateway: BankingGateway,
+        review_gateway: ReviewGateway,
         after_plan: Callable[[ModelPlan], Awaitable[None]] | None = None,
     ) -> None:
         self.model_gateway = model_gateway
-        self.banking_gateway = banking_gateway
+        self.review_gateway = review_gateway
         self.after_plan = after_plan
         # 所有副作用只能发生在执行节点，任何拒绝都必须立即终止流程。
         graph = StateGraph(AgentState)
@@ -96,17 +98,17 @@ class ReadOnlyBillWorkflow:
     def _route_after_plan(state: AgentState) -> str:
         return "execute" if isinstance(state["plan"].decision, SupportedAction) else "reject"
 
-    async def _execute(self, state: AgentState) -> dict[str, TransactionResult]:
+    async def _execute(self, state: AgentState) -> dict[str, TransactionResult | BillReview]:
         """在访问银行数据前再次强制检查工具白名单。"""
         decision = state["plan"].decision
         if not isinstance(decision, SupportedAction) or decision.tool != "query_transactions":
             raise ActionNotAllowedError("Only query_transactions is allowed")
-        transactions = await self.banking_gateway.query_transactions(
+        snapshot = await self.review_gateway.review_transactions(
             user_id=state["user_id"],
             start_date=decision.arguments.start_date,
             end_date=decision.arguments.end_date,
         )
-        return {"transactions": transactions}
+        return {"transactions": snapshot.transactions, "review": snapshot.review}
 
     @staticmethod
     async def _analyze(state: AgentState) -> dict[str, BillAnalysis]:
@@ -126,6 +128,7 @@ class ReadOnlyBillWorkflow:
                 message=message,
                 transactions=transactions,
                 analysis=state["analysis"],
+                review=state["review"],
             )
         }
 

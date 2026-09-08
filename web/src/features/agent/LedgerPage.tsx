@@ -3,20 +3,20 @@
  * 主要内容：期间、账户和商户筛选；来源详情、分类保存、CSV 导出与核查结论。
  * 关键边界：只显示导入流水；异常判断不改金额；日期或数据变化后重新加载证据。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
-import { formatTransactionTime } from '../../format'
+import { formatMoney, formatTransactionTime } from '../../format'
 import type { Messages } from '../../i18n'
 import type { ReviewItem, Transaction, TransactionCategory } from '../../types'
 
 import { ledgerCsv } from './ledgerExport'
-import { RelationsPanel } from '../relations/RelationsPanel'
+import { EmptyContent, PageHeader } from '../../shared/ui'
+import { PeriodFilter } from '../../shared/PeriodFilter'
+import { validPeriod } from '../../shared/period'
+import type { ReviewPeriod } from '../../shared/period'
 
-export function LedgerPage({ copy, english, initialPeriod }: { copy: Messages; english: boolean; initialPeriod: { start: string; end: string } | null }) {
-  const now = new Date()
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  const [start, setStart] = useState(initialPeriod?.start ?? `${today.slice(0, 7)}-01`)
-  const [end, setEnd] = useState(initialPeriod?.end ?? today)
+export function LedgerPage({ copy, english, period, onPeriodChange }: { copy: Messages; english: boolean; period: ReviewPeriod; onPeriodChange: (period: ReviewPeriod) => void }) {
+  const { start, end } = period
   const [items, setItems] = useState<Transaction[]>([])
   const [reviews, setReviews] = useState<ReviewItem[]>([])
   const [state, setState] = useState('loading')
@@ -24,9 +24,15 @@ export function LedgerPage({ copy, english, initialPeriod }: { copy: Messages; e
   const [saving, setSaving] = useState(false)
   const [account, setAccount] = useState('')
   const [search, setSearch] = useState('')
+  const [category, setCategory] = useState('')
   const [notice, setNotice] = useState('')
-  const [view, setView] = useState<'ledger' | 'relations'>('ledger')
-  const invalid = !start || !end || start > end || (Date.parse(end) - Date.parse(start)) / 86400000 > 366
+  const [selected, setSelected] = useState<Transaction | null>(null)
+  const detailDialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    if (selected) detailDialog.current?.showModal()
+    else detailDialog.current?.close()
+  }, [selected])
+  const invalid = !validPeriod(period)
   useEffect(() => {
     if (invalid) return
     let active = true
@@ -45,7 +51,7 @@ export function LedgerPage({ copy, english, initialPeriod }: { copy: Messages; e
     } catch { setNotice(english ? 'Save failed. Retry the change.' : '保存失败，请重新选择分类。') }
     finally { setSaving(false) }
   }
-  const filtered = items.filter((i) => (!account || i.account_name === account) && `${i.merchant} ${i.description}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()))
+  const filtered = items.filter((i) => (!account || i.account_name === account) && (!category || i.category === category) && `${i.merchant} ${i.description}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()))
   const visibleIds = new Set(filtered.map((i) => i.id))
   function download() {
     const url = URL.createObjectURL(new Blob([ledgerCsv(filtered)], { type: 'text/csv;charset=utf-8' }))
@@ -53,22 +59,35 @@ export function LedgerPage({ copy, english, initialPeriod }: { copy: Messages; e
     link.href = url; link.download = `bankpilot-${start}-${end}.csv`; link.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
-  return <section className="product-page">
-    <header className="page-header"><h1>{english ? 'Transactions' : '交易账本'}</h1></header>
-    <div className="relation-tabs" role="group" aria-label={english ? 'Ledger view' : '账本视图'}><button aria-pressed={view === 'ledger'} onClick={() => setView('ledger')}>{english ? 'Transactions' : '流水'}</button><button aria-pressed={view === 'relations'} onClick={() => setView('relations')}>{english ? 'Relationships' : '交易关系'}</button></div>
-    <div className={`import-account-grid${view === 'relations' ? ' relation-dates' : ''}`}>
-      <label>{english ? 'From' : '开始日期'}<input type="date" value={start} onChange={(e) => { setState('loading'); setStart(e.target.value) }} /></label>
-      <label>{english ? 'To' : '结束日期'}<input type="date" value={end} onChange={(e) => { setState('loading'); setEnd(e.target.value) }} /></label>
-      {view === 'ledger' && <><label>{english ? 'Account' : '账户'}<select value={account} onChange={(e) => setAccount(e.target.value)}><option value="">{english ? 'All accounts' : '全部账户'}</option>{[...new Set(items.map((i) => i.account_name))].map((name) => <option key={name}>{name}</option>)}</select></label>
-      <label>{english ? 'Merchant or note' : '商户或备注'}<input value={search} onChange={(e) => setSearch(e.target.value)} /></label></>}
+  return <section className="product-page ledger-page">
+    <PageHeader copy={copy} page="review" />
+    <dialog ref={detailDialog} className="transaction-drawer" onClose={() => setSelected(null)} onCancel={() => setSelected(null)} aria-label={english ? 'Transaction details' : '交易详情'}>
+      {selected && <><header><h2>{english ? 'Transaction details' : '交易详情'}</h2><button type="button" onClick={() => setSelected(null)} aria-label={english ? 'Close' : '关闭'}>×</button></header>
+      <p className="drawer-merchant">{selected.merchant}</p><strong className="drawer-amount">{formatMoney(selected.amount, selected.currency, english ? 'en-US' : 'zh-CN')}</strong>
+      <dl>{[
+        [english ? 'Account' : '账户', selected.account_name],
+        [english ? 'Time' : '时间', formatTransactionTime(selected, english ? 'en-US' : 'zh-CN')],
+        [english ? 'Note' : '备注', selected.description || '—'],
+        [english ? 'Batch' : '来源批次', selected.import_batch_id ?? '—'],
+        [english ? 'Source row' : '源行', selected.source_row_number ?? '—'],
+        [english ? 'Time precision' : '时间精度', selected.time_precision === 'timestamp' ? (english ? 'Timestamp' : '时间') : selected.time_precision === 'date' ? (english ? 'Date' : '日期') : (english ? 'Unknown' : '未知')],
+      ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></>}
+    </dialog>
+    <PeriodFilter period={period} english={english} onChange={(value) => { setState('loading'); onPeriodChange(value) }} />
+    <div className="ledger-filters">
+      <label>{english ? 'Account' : '账户'}<select aria-label={english ? 'Account filter' : '账户筛选'} value={account} onChange={(e) => setAccount(e.target.value)}><option value="">{english ? 'All accounts' : '全部账户'}</option>{[...new Set(items.map((i) => i.account_name))].map((name) => <option key={name}>{name}</option>)}</select></label>
+      <label>{english ? 'Category' : '分类'}<select aria-label={english ? 'Category filter' : '分类筛选'} value={category} onChange={(e) => setCategory(e.target.value)}><option value="">{english ? 'All categories' : '全部分类'}</option>{Object.entries(copy.categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label>{english ? 'Merchant or note' : '商户或备注'}<input value={search} onChange={(e) => setSearch(e.target.value)} /></label>
     </div>
     {notice && <p role="status">{notice}</p>}
-    {invalid ? <p role="alert">{english ? 'Select an ordered period of at most 366 days.' : '请选择有效期间，跨度不超过 366 天。'}</p> : view === 'relations' ? <RelationsPanel key={`${start}-${end}`} start={start} end={end} english={english} /> : state === 'loading' ? <p>{english ? 'Loading' : '正在读取'}</p> : state === 'failed' ? <button onClick={() => { setState('loading'); setAttempt((a) => a + 1) }}>{english ? 'Request failed. Retry' : '读取失败，重试'}</button> : <>
+    {invalid ? <p role="alert">{english ? 'Select an ordered period of at most 366 days.' : '请选择有效期间，跨度不超过 366 天。'}</p> : state === 'loading' ? <p>{english ? 'Loading' : '正在读取'}</p> : state === 'failed' ? <button onClick={() => { setState('loading'); setAttempt((a) => a + 1) }}>{english ? 'Request failed. Retry' : '读取失败，重试'}</button> : <>
       <div className="ledger-toolbar"><span>{filtered.length} {english ? 'transactions' : '笔交易'}</span><button disabled={!filtered.length} onClick={download}>{english ? 'Export CSV' : '导出 CSV'}</button></div>
-      {!filtered.length ? <p>{english ? 'No matching transactions' : '暂无匹配交易'}</p> : <div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant / Source', 'Amount', 'Category'] : ['时间', '账户', '商户／来源', '金额', '分类']).map((text) => <th key={text}>{text}</th>)}</tr></thead><tbody>{filtered.map((item) => <tr key={item.id}>
-        <td className="time-cell">{formatTransactionTime(item, english ? 'en-US' : 'zh-CN')}</td><td>{item.account_name}</td><td>{item.merchant}<details><summary>{english ? 'Details' : '详情'}</summary><p>{item.description || '—'}</p><p>{english ? 'Batch' : '批次'}：{item.import_batch_id ?? '—'}</p><p>{english ? 'Source row' : '源行'}：{item.source_row_number ?? '—'}</p><p>{english ? 'Time precision' : '时间精度'}：{item.time_precision === 'timestamp' ? (english ? 'Timestamp' : '时间') : item.time_precision === 'date' ? (english ? 'Date' : '日期') : (english ? 'Unknown' : '未知')}</p></details></td>
-        <td>{item.amount} {item.currency}</td><td><select aria-label={`${copy.categoryLabel}: ${item.merchant}`} value={item.category} disabled={saving} onChange={(e) => void correct(item.id, e.target.value as TransactionCategory)}>{Object.entries(copy.categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
-      </tr>)}</tbody></table></div>}
+      <div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant / Source', 'Amount', 'Category'] : ['时间', '账户', '商户／来源', '金额', '分类']).map((text) => <th key={text}>{text}</th>)}</tr></thead><tbody>{!filtered.length && <tr><td colSpan={5}><EmptyContent kind="review" title={english ? 'No transactions to display' : '暂无可显示的流水'} detail={items.length ? (english ? 'Try clearing the filters.' : '调整筛选条件，查看其他交易。') : (english ? 'Import a statement or select another period.' : '导入账单，或选择其他期间。')}>
+        {items.length ? <button onClick={() => { setAccount(''); setCategory(''); setSearch('') }}>{english ? 'Clear filters' : '清除筛选'}</button> : <a className="primary" href="#page=import">{english ? 'Import statement' : '导入账单'}</a>}
+      </EmptyContent></td></tr>}{filtered.map((item) => <tr key={item.id}>
+        <td className="time-cell">{formatTransactionTime(item, english ? 'en-US' : 'zh-CN')}</td><td>{item.account_name}</td><td><button className="transaction-link" onClick={() => setSelected(item)}>{item.merchant}</button></td>
+        <td className="ledger-amount">{formatMoney(item.amount, item.currency, english ? 'en-US' : 'zh-CN')}</td><td><select aria-label={`${copy.categoryLabel}: ${item.merchant}`} value={item.category} disabled={saving} onChange={(e) => void correct(item.id, e.target.value as TransactionCategory)}>{Object.entries(copy.categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
+      </tr>)}</tbody></table></div>
       {filtered.length > 0 && <><h2>{english ? 'Review' : '异常核查'}</h2>
         {!reviews.some((r) => r.transaction_ids.some((id) => visibleIds.has(id))) && <p>{english ? 'No signals' : '无待核查交易'}</p>}
         {reviews.filter((r) => r.transaction_ids.some((id) => visibleIds.has(id))).map((review) => <ReviewForm key={review.key} review={review} english={english} start={start} end={end} evidence={items.filter((i) => review.transaction_ids.includes(i.id))} />)}

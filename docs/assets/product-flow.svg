@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="410" viewBox="0 0 1080 410" role="img" aria-labelledby="title desc">
+  <title id="title">BankPilot 账单核查流程</title>
+  <desc id="desc">原始账单经过预览导入、用户核对关系，形成 Agent 查询结果与运行快照。事实由程序计算，关系由用户确认。</desc>
+  <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8" fill="none" stroke="#9bb2c0" stroke-width="1.5"/></marker></defs>
+  <rect width="1080" height="410" rx="24" fill="#101c26"/>
+  <g font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+    <text x="40" y="48" fill="#78d9c2" font-size="13" letter-spacing="3">BANKPILOT / YOUR MONEY, WITH EVIDENCE</text>
+    <text x="40" y="91" fill="#f1f6f8" font-size="28" font-weight="600">把分散的流水，连成可追溯的事实。</text>
+    <g fill="#192b37" stroke="#324854"><rect x="40" y="137" width="220" height="151" rx="14"/><rect x="300" y="137" width="220" height="151" rx="14"/><rect x="560" y="137" width="220" height="151" rx="14"/><rect x="820" y="137" width="220" height="151" rx="14"/></g>
+    <g stroke="#9bb2c0" stroke-width="1.5" marker-end="url(#arrow)"><path d="M266 212h27"/><path d="M526 212h27"/><path d="M786 212h27"/></g>
+    <g fill="#78d9c2" font-size="13"><text x="60" y="165">01 / 取得数据</text><text x="320" y="165">02 / 统一账本</text><text x="580" y="165">03 / 核对关系</text><text x="840" y="165">04 / 查询与追溯</text></g>
+    <g fill="#f1f6f8" font-size="22" font-weight="600"><text x="60" y="204">个人账单</text><text x="320" y="204">预览后导入</text><text x="580" y="204">用户确认</text><text x="840" y="204">Agent 核查</text></g>
+    <g fill="#b2c4cf" font-size="15"><text x="60" y="239">银行 · 微信 · 支付宝</text><text x="60" y="264">CSV / XLSX</text><text x="320" y="239">账户 · 分类 · 来源</text><text x="320" y="264">拒绝歧义，保留原流水</text><text x="580" y="239">重复 · 转账 · 退款</text><text x="580" y="264">候选不自动调整金额</text><text x="840" y="239">结果 · 证据 · 快照</text><text x="840" y="264">数据变更后重新查询</text></g>
+    <path d="M40 325h1000" stroke="#324854"/>
+    <text x="40" y="364" fill="#b2c4cf" font-size="16">程序计算金额</text><text x="340" y="364" fill="#b2c4cf" font-size="16">用户确认事实</text><text x="690" y="364" fill="#b2c4cf" font-size="16">Agent 组织查询</text>
+  </g>
+</svg>

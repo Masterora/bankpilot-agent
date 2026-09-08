@@ -21,6 +21,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from bankpilot.domain.transaction_relations import AdjustedSummary, RelationKind
+
 
 class RunStatus(StrEnum):
     CREATED = "CREATED"
@@ -161,7 +163,75 @@ class BillAnalysis(BaseModel):
     anomalies: list[BillAnomaly] = Field(default_factory=list)
 
 
+class ReviewRelation(BaseModel):
+    """冻结关系方向和确认版本，候选版本为零且不参与金额调整。"""
+
+    id: UUID | None
+    kind: RelationKind
+    first_id: UUID
+    second_id: UUID
+    state: Literal["pending", "confirmed", "rejected", "revoked"]
+    version: int
+    updated_at: datetime | None
+
+
+class ReviewEvidence(BaseModel):
+    """包含跨期另一端的源交易事实，历史运行无需重新查询活动账本。"""
+
+    id: UUID
+    account_id: UUID
+    account_name: str
+    booking_date: date
+    occurred_at: datetime
+    time_precision: Literal["unknown", "date", "timestamp"]
+    merchant: str
+    description: str
+    amount: Decimal
+    currency: str
+    import_batch_id: UUID | None
+    source_row_number: int | None
+
+
+class ReviewCoverage(BaseModel):
+    """描述实际读取范围；交易存在或候选穷尽均不能证明账期完整。"""
+
+    status: Literal["unverified"] = "unverified"
+    start_date: date
+    end_date: date
+    transaction_count: int
+    import_batch_count: int
+
+
+class RelationWorkspace(BaseModel):
+    """页面工作区契约；transactions 包含前后九十天可手动配对的交易。"""
+
+    items: list[ReviewRelation]
+    truncated: bool
+    summaries: list[AdjustedSummary]
+    transactions: list[ReviewEvidence]
+
+
+class BillReview(BaseModel):
+    """一次数据库快照产生的调整口径、关系证据与完整性限制。"""
+
+    snapshot_at: datetime
+    rule_version: Literal["transaction_relations_v1"] = "transaction_relations_v1"
+    adjusted_summaries: list[AdjustedSummary]
+    relations: list[ReviewRelation]
+    evidence: list[ReviewEvidence]
+    candidates_truncated: bool
+    coverage: ReviewCoverage
+
+
+class ReviewSnapshot(BaseModel):
+    """读取端口的原子返回值，期间流水和核查证据必须来自同一快照。"""
+
+    transactions: TransactionResult
+    review: BillReview
+
+
 class RunResult(BaseModel):
     message: str
     transactions: TransactionResult
     analysis: BillAnalysis = Field(default_factory=BillAnalysis)
+    review: BillReview | None = None

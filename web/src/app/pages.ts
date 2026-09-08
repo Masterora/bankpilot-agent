@@ -9,10 +9,19 @@ export const pageDefinitions = [
   { id: 'overview', visible: true },
   { id: 'import', visible: true },
   { id: 'review', visible: true },
+  { id: 'relations', visible: true },
   { id: 'agent', visible: true },
+  { id: 'reports', visible: true },
   { id: 'recurring', visible: true },
   { id: 'budgets', visible: true },
   { id: 'audit', visible: true },
 ] as const
 
 export type ProductPage = (typeof pageDefinitions)[number]['id']
+
+/** 按任务而非实现顺序分组；规划中的入口仍可访问其状态页面。 */
+export const navigationGroups: { id: string; pages: ProductPage[] }[] = [
+  { id: 'ledger', pages: ['overview', 'import', 'review', 'relations'] },
+  { id: 'analysis', pages: ['agent', 'audit'] },
+  { id: 'planning', pages: ['reports', 'recurring', 'budgets'] },
+]

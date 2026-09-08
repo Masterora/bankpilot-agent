@@ -1,408 +1,286 @@
 <!doctype html>
 <!--
-文件职责：BankPilot 最终产品形态的单文件界面，完整呈现产品范围与任务流。
-
-页面内容：
-- 总览：展示由已导入账单计算的收支、待核查事项、趋势和任务入口。
-- Agent 工作台：展示任务解析、受控工具调用、证据引用、执行状态和需确认的本地操作。
-- 账单导入：提供多来源字段映射、归一化、去重、跨账户转账匹配和确认写入。
-- 账单核查：展示确定性统计、异常依据、交易分类修正和月度核查报告。
-- 周期扣款：展示识别依据、可信度、预计扣款时间和本地提醒状态。
-- 预算监控：展示预算偏差、使用进度和预警，并支持确认修改后立即重算。
-- 数据与审计：说明账单、模型、账户和密钥边界，展示 Agent 运行记录和数据导出入口。
-
-交互约束：
-- 本文件使用内置静态数据，交互状态保存在当前浏览器内存中。
-- 页面不访问 API、数据库、银行或第三方服务，不执行转账、代扣取消、卡片或理财操作。
-- Agent 包含查询、核查、解释、报告与需确认的本地操作；金额由确定性逻辑计算。
+文件职责：BankPilot 最终产品形态的独立交互页面，供产品需求与界面验收使用。
+页面内容：总览、账户与导入、账本、交易关系、只读 Agent、月度报告、周期扣款、
+预算与审计；提供中英切换、证据详情、确认/排除/撤销、分类修改和快照导出。
+数据边界：全部数据为合成数据，保存在当前页面内存；刷新恢复初始状态。
+计算约束：金额以整数分计算；仅已确认关系调整收支；退款按到账日冲减流出；
+跨期证据不移入本期；币种独立；分类统计明确采用原始口径。
+交互边界：不连接 API、模型、银行或数据库，不读取用户文件，不执行资金操作。
+静态输入仅演示指定日期任务，不将任意文本映射为已执行的模型计划。
+维护约束：快照深拷贝保存，账本变更只提示更新，不修改历史结果。
 -->
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
-  <link rel="icon" type="image/svg+xml" href="../web/public/bankpilot-mark.svg?v=2">
-  <title>BankPilot · 财务核查</title>
-  <style>
-    :root {
-      --bg:#070908;
-      --sidebar:#090b0a;
-      --surface:#101311;
-      --raised:#171b18;
-      --hover:#1b201c;
-      --line:#272c28;
-      --line-strong:#414942;
-      --text:#f2f1eb;
-      --muted:#a3aaa4;
-      --subtle:#737b75;
-      --accent:#c7d6a5;
-      --accent-soft:#20281c;
-      --accent-ink:#12160f;
-      --blue:#8eb4c5;
-      --amber:#d2b274;
-      --danger:#f39b91;
-      --sidebar-width:224px;
-      font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;
-      color:var(--text);
-      background:var(--bg);
-      font-synthesis:none;
-    }
-    *{box-sizing:border-box}
-    body{margin:0;min-width:320px;min-height:100vh;background:radial-gradient(circle at 68% -12%,rgba(81,101,72,.18) 0,transparent 30%),var(--bg);font-size:14px}
-    button,input,select{font:inherit}
-    button{cursor:pointer}
-    button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-    .icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-    .app{display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);min-height:100vh}
-
-    .sidebar{position:fixed;inset:0 auto 0 0;z-index:40;width:var(--sidebar-width);display:flex;flex-direction:column;padding:24px 14px;border-right:1px solid var(--line);background:rgba(9,11,10,.97)}
-    .brand{display:flex;align-items:center;gap:10px;padding:0 8px 30px;font-size:16px;font-weight:680;letter-spacing:-.02em}
-    .logo{width:32px;height:32px;display:block;flex:0 0 auto}
-    .orb{display:grid;place-items:center;color:var(--accent-ink);background:var(--accent)}
-    .nav-label{margin:8px 11px;color:var(--subtle);font-size:11px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
-    nav{display:grid;gap:4px}
-    .nav-item{width:100%;display:flex;align-items:center;gap:11px;padding:11px;border:0;border-radius:8px;color:#9ca39d;background:transparent;text-align:left;transition:background .16s,color .16s}
-    .nav-item:hover{color:var(--text);background:var(--surface)}
-    .nav-item.active{color:var(--text);background:var(--raised);box-shadow:inset 2px 0 var(--accent)}
-    .nav-item.active .icon{color:var(--accent)}
-    .nav-item span{font-size:13px;font-weight:650}
-
-    main{grid-column:2;min-width:0}
-    .topbar{position:sticky;top:0;z-index:30;height:68px;display:flex;align-items:center;gap:12px;padding:0 38px;border-bottom:1px solid rgba(39,44,40,.72);background:rgba(7,9,8,.84);backdrop-filter:blur(18px)}
-    .search{position:relative;flex:1;max-width:560px}
-    .search .icon{position:absolute;left:13px;top:11px;color:var(--subtle)}
-    .search input{width:100%;height:40px;padding:0 54px 0 42px;border:1px solid var(--line);border-radius:10px;color:var(--text);background:rgba(16,22,19,.9)}
-    .search input::placeholder{color:#748078}
-    .search kbd{position:absolute;right:10px;top:9px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;color:var(--subtle);background:var(--raised);font-size:10px}
-    .top-actions{display:flex;gap:8px;margin-left:auto}
-    .icon-btn,.lang{height:38px;display:grid;place-items:center;border:1px solid var(--line);border-radius:9px;color:var(--muted);background:var(--surface)}
-    .icon-btn{width:38px}.lang{padding:0 11px;font-size:11px;font-weight:750}
-    .icon-btn:hover,.lang:hover{color:var(--text);border-color:var(--line-strong);background:var(--raised)}
-    .menu{display:none}
-
-    .content{width:min(1200px,100%);margin:auto;padding:50px 42px 88px}
-    .page{display:none;animation:enter .24s cubic-bezier(.22,1,.36,1) both}
-    .page.active{display:block}
-    .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;margin-bottom:32px}
-    .eyebrow{margin:0 0 10px;color:var(--accent);font-size:10px;font-weight:750;letter-spacing:.16em;text-transform:uppercase}
-    h1{margin:0;font-size:clamp(31px,3vw,42px);font-weight:560;line-height:1.08;letter-spacing:-.045em}
-    h2{margin:0;font-size:16px;font-weight:620;letter-spacing:-.02em}
-    h3{margin:0;font-size:14px}
-    .page-head p:last-child{max-width:680px;margin:9px 0 0;color:var(--muted);font-size:13px;line-height:1.6}
-    .actions{display:flex;gap:9px;flex-wrap:wrap}
-
-    .button{min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:9px 15px;border:1px solid var(--line);border-radius:8px;color:#d8dcd8;background:var(--surface);font-size:11px;font-weight:680;letter-spacing:.01em;transition:transform .15s,border-color .15s,background .15s}
-    .button:hover{border-color:var(--line-strong);background:var(--raised);transform:translateY(-1px)}
-    .button.primary{border-color:var(--accent);color:var(--accent-ink);background:var(--accent)}
-    .button.primary:hover{background:#caf09f}
-    .button.ghost{border-color:transparent;background:transparent}
-    .button:disabled{opacity:.48;cursor:not-allowed;transform:none}
-    .button .icon{width:15px;height:15px}
-    .grid{display:grid;gap:15px}.grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}.grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
-    .main-grid{grid-template-columns:minmax(0,1.45fr) minmax(300px,.72fr);align-items:start}
-    .panel,.metric,.budget,.subscription{border:1px solid var(--line);background:linear-gradient(145deg,rgba(17,21,18,.97),rgba(13,16,14,.97));box-shadow:0 24px 70px rgba(0,0,0,.12)}
-    .panel{border-radius:14px}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:13px;padding:20px 20px 0}.panel-head p{margin:5px 0 0;color:var(--muted);font-size:12px}.panel-body{padding:20px}
-    .metric{min-height:132px;padding:20px;border-radius:12px;transition:transform .16s,border-color .16s}
-    .metric:hover{transform:translateY(-2px);border-color:var(--line-strong)}
-    .metric-label{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}.metric-label .icon{width:16px;color:var(--subtle)}
-    .metric-value{margin:24px 0 8px;font-size:27px;font-weight:600;letter-spacing:-.035em;font-variant-numeric:tabular-nums}
-    .delta{color:var(--accent);font-size:11px}.delta.warn{color:var(--amber)}
-
-    .line-chart{width:100%;height:220px;margin-top:8px;overflow:visible}.line-chart .gridline{stroke:#27342d;stroke-width:1}.line-chart .line{fill:none;stroke:var(--accent);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}.line-chart .second{stroke:var(--blue);stroke-width:1.8;stroke-dasharray:5 6}.line-chart .area{fill:url(#area)}.line-chart text{fill:var(--subtle);font-size:10px}
-    .legend{display:flex;gap:15px;color:var(--muted);font-size:11px}.legend i{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--accent)}.legend span:last-child i{background:var(--blue)}
-    .agent-card{padding:20px;border-color:#3a4b40;background:linear-gradient(145deg,#111b14,#0f1612)}
-    .agent-title{display:flex;align-items:center;gap:11px}.orb{width:38px;height:38px;border-radius:11px}.agent-title p{margin:4px 0 0;color:var(--muted);font-size:11px}.agent-card>p{margin:18px 0;color:#c1ccc5;font-size:13px;line-height:1.65}
-    .agent-input{display:grid;grid-template-columns:1fr 40px;gap:8px}.agent-input input{min-width:0;height:41px;padding:0 12px;border:1px solid var(--line);border-radius:9px;color:var(--text);background:#0b100d}
-    .suggestions{display:grid;gap:8px;margin-top:13px}.suggestions button{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:9px;color:var(--muted);background:transparent;text-align:left;font-size:11px}.suggestions button:hover{color:var(--text);background:var(--raised)}
-    .quick{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.quick button{min-height:92px;display:grid;gap:10px;padding:15px;border:1px solid var(--line);border-radius:11px;color:var(--text);background:var(--surface);text-align:left;transition:.16s}.quick button:hover{border-color:var(--line-strong);background:var(--raised);transform:translateY(-2px)}.quick .icon{color:var(--accent)}.quick strong{font-size:13px}.quick span{color:var(--muted);font-size:11px}
-    .agent-query{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px}.agent-query input{min-width:0;height:42px;padding:0 13px;border:1px solid var(--line);border-radius:9px;color:var(--text);background:#0b100d}.task-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.task-chips button{padding:7px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:transparent;font-size:11px}.task-chips button:hover{color:var(--text);border-color:var(--line-strong);background:var(--raised)}
-    .agent-workspace{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(310px,.85fr);gap:15px;margin-top:15px}.agent-summary{display:grid;gap:14px}.result-lead{margin:0;color:#d5dfd9;font-size:14px;line-height:1.7}.evidence-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.evidence-card{padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--raised)}.evidence-card span{display:block;color:var(--muted);font-size:10px}.evidence-card strong{display:block;margin-top:6px;font-size:15px}.tool-list{display:grid;gap:9px}.tool-step{display:grid;grid-template-columns:28px 1fr auto;align-items:center;gap:10px;padding:11px;border:1px solid var(--line);border-radius:9px;background:var(--raised)}.tool-step b{width:25px;height:25px;display:grid;place-items:center;border-radius:7px;color:var(--accent);background:var(--accent-soft);font-size:10px}.tool-step strong{display:block;font-size:11px}.tool-step span{display:block;margin-top:3px;color:var(--muted);font-size:10px}.tool-step code{color:var(--accent);font-size:10px}.confirmation{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px;border:1px solid #574329;border-radius:9px;background:#21190f}.confirmation strong{display:block;font-size:12px}.confirmation span{display:block;margin-top:4px;color:#c6ad86;font-size:10px}.capabilities{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:15px}.capability{padding:15px;border:1px solid var(--line);border-radius:11px;background:var(--surface)}.capability .icon{color:var(--accent)}.capability strong{display:block;margin-top:12px;font-size:12px}.capability span{display:block;margin-top:5px;color:var(--muted);font-size:10px;line-height:1.5}
-
-    .donut-wrap{display:grid;grid-template-columns:154px 1fr;align-items:center;gap:24px}.donut{width:150px;aspect-ratio:1;position:relative;display:grid;place-items:center;border-radius:50%;background:conic-gradient(var(--accent) 0 34%,#75b7ec 34% 58%,#e2af64 58% 75%,#ad86df 75% 88%,#64736b 88%)}.donut:after{content:"";position:absolute;inset:25px;border-radius:50%;background:var(--surface)}.donut div{z-index:1;display:grid;gap:3px;text-align:center}.donut strong{font-size:20px}.donut span{color:var(--muted);font-size:11px}.legend-list{display:grid;gap:11px}.legend-row{display:grid;grid-template-columns:8px 1fr auto;align-items:center;gap:9px;font-size:12px}.legend-row i{width:8px;height:8px;border-radius:50%}.legend-row span{color:var(--muted)}
-    .rows{display:grid}.row{display:grid;grid-template-columns:38px minmax(150px,1fr) 135px 105px;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--line)}.row:last-child{border-bottom:0}.merchant{width:37px;height:37px;display:grid;place-items:center;border-radius:9px;color:var(--accent);background:var(--raised);font-size:11px;font-weight:800}.copy{min-width:0;display:grid;gap:4px}.copy strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.copy span{color:var(--muted);font-size:11px}.select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;color:#c8d2cc;background:var(--raised);font-size:11px}.amount{text-align:right;font-size:12px;font-weight:750;font-variant-numeric:tabular-nums}.amount.income{color:var(--accent)}
-
-    .dropzone{min-height:228px;display:grid;place-items:center;align-content:center;gap:12px;padding:28px;border:1px dashed var(--line-strong);border-radius:13px;color:var(--muted);background:#0c120e;text-align:center;transition:.16s}.dropzone:hover,.dropzone.drag{border-color:var(--accent);background:#111a12}.dropzone .upload-icon{width:48px;height:48px;display:grid;place-items:center;border-radius:13px;color:var(--accent);background:var(--raised)}.dropzone h3{color:var(--text)}.dropzone p{max-width:440px;margin:0;font-size:12px;line-height:1.55}.dropzone input{display:none}
-    .import-review{display:none}.import-review.ready{display:block}.review-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:13px}.review-summary div{padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--raised)}.review-summary span{display:block;color:var(--muted);font-size:11px}.review-summary strong{display:block;margin-top:5px;font-size:14px}
-    .notice{display:grid;grid-template-columns:18px 1fr;gap:10px;padding:12px;border:1px solid #3d472f;border-radius:9px;color:#cbd5bd;background:#151b12;font-size:11px;line-height:1.55}.notice.warn{border-color:#574329;color:#e0c69c;background:#21190f}.notice .icon{width:16px}
-    .mapping{display:grid;gap:1px;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:var(--line)}.mapping div{display:grid;grid-template-columns:1fr 22px 1fr;align-items:center;gap:8px;padding:11px;background:var(--raised);font-size:11px}.mapping span{color:var(--muted)}.mapping .icon{width:13px;color:var(--subtle)}
-    .history{width:100%;border-collapse:collapse;font-size:11px}.history th{padding:10px;text-align:left;color:var(--muted);font-weight:650;white-space:nowrap}.history td{padding:13px 10px;border-top:1px solid var(--line);white-space:nowrap}.status{display:inline-flex;padding:4px 7px;border-radius:999px;color:var(--accent);background:var(--accent-soft);font-size:10px;font-weight:700}.status.warn{color:var(--amber);background:#2b2112}
-    .anomalies{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}.anomaly{padding:16px;border:1px solid #4c3b25;border-radius:11px;background:#1d1710}.anomaly small{display:inline-flex;padding:4px 7px;border-radius:999px;color:var(--amber);background:#302311;font-size:10px;font-weight:800}.anomaly h3{margin-top:13px}.anomaly p{margin:7px 0 13px;color:#c0b19a;font-size:11px;line-height:1.55}.anomaly button{padding:0;border:0;color:var(--amber);background:transparent;font-size:11px;font-weight:750}
-    .subscription{display:grid;grid-template-columns:42px minmax(150px,1fr) 105px 105px 100px;align-items:center;gap:13px;padding:15px;border-radius:11px}.sub-logo{width:41px;height:41px;display:grid;place-items:center;border-radius:10px;background:var(--raised);font-size:11px;font-weight:800}.subscription strong{font-size:12px}.subscription p,.subscription span{margin:4px 0 0;color:var(--muted);font-size:11px}.soon{color:var(--amber)!important}.reminder{min-height:34px;padding:6px 9px}.reminder.on{color:var(--accent-ink);border-color:var(--accent);background:var(--accent)}
-    .budget{padding:18px;border-radius:11px}.budget-top{display:flex;justify-content:space-between;gap:10px}.budget-top span{color:var(--muted);font-size:11px}.budget-values{display:flex;align-items:baseline;gap:6px;margin:17px 0 11px}.budget-values strong{font-size:22px}.budget-values span{color:var(--muted);font-size:11px}.bar{height:7px;overflow:hidden;border-radius:6px;background:#29342e}.bar i{display:block;height:100%;border-radius:6px;background:var(--accent);transition:width .25s}.bar.warn i{background:var(--amber)}.budget-foot{display:flex;justify-content:space-between;margin-top:9px;color:var(--muted);font-size:11px}
-    .boundary{display:grid;grid-template-columns:38px 1fr;gap:11px;padding:14px;border-bottom:1px solid var(--line)}.boundary:last-child{border-bottom:0}.boundary-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:9px;color:var(--accent);background:var(--raised)}.boundary h3{margin-bottom:5px}.boundary p{margin:0;color:var(--muted);font-size:11px;line-height:1.55}
-    .timeline{list-style:none;margin:0;padding:0}.timeline li{position:relative;display:grid;grid-template-columns:92px 12px 1fr auto;gap:11px;min-height:70px;color:var(--muted);font-size:11px}.timeline li:after{content:"";position:absolute;left:107px;top:17px;bottom:-4px;width:1px;background:var(--line)}.timeline li:last-child:after{display:none}.dot{z-index:1;width:8px;height:8px;margin-top:5px;border:2px solid var(--surface);border-radius:50%;background:var(--accent);box-shadow:0 0 0 1px var(--accent)}.timeline strong{display:block;margin-bottom:5px;color:var(--text);font-size:12px}.timeline code{display:block;margin-top:5px;color:var(--subtle);font-size:10px}
-
-    .scrim{position:fixed;inset:0;z-index:35;display:none;background:rgba(0,0,0,.56);backdrop-filter:blur(3px)}.scrim.open{display:block}
-    .modal-bg{position:fixed;inset:0;z-index:90;display:none;place-items:center;padding:18px;background:rgba(0,0,0,.7);backdrop-filter:blur(6px)}.modal-bg.open{display:grid}.modal{width:min(480px,100%);max-height:min(720px,92vh);overflow:auto;border:1px solid var(--line-strong);border-radius:15px;background:var(--surface);box-shadow:0 28px 80px #0009;animation:modal .2s both}.modal-head{display:flex;align-items:center;justify-content:space-between;padding:19px 21px;border-bottom:1px solid var(--line)}.modal-head button{border:0;color:var(--muted);background:transparent}.modal-body{display:grid;gap:14px;padding:21px}.field{display:grid;gap:8px}.field label{color:#c8d2cc;font-size:12px;font-weight:650}.field input,.field select{height:42px;padding:0 11px;border:1px solid var(--line);border-radius:9px;color:var(--text);background:#0b100d}.field-error{min-height:16px;color:var(--danger);font-size:11px}.modal-actions{display:flex;justify-content:flex-end;gap:9px;padding:0 21px 21px}
-    .drawer{position:fixed;inset:0 0 0 auto;z-index:80;width:min(420px,100vw);display:grid;grid-template-rows:auto 1fr auto;border-left:1px solid var(--line);background:var(--sidebar);box-shadow:-24px 0 70px #0008;transform:translateX(100%);transition:transform .26s}.drawer.open{transform:none}.drawer-head{display:flex;align-items:center;justify-content:space-between;padding:19px;border-bottom:1px solid var(--line)}.drawer-head>div{display:flex;align-items:center;gap:11px}.drawer-head button{border:0;color:var(--muted);background:transparent}.chat{overflow:auto;display:grid;align-content:start;gap:12px;padding:19px}.message{max-width:90%;padding:11px 12px;border:1px solid var(--line);border-radius:11px;color:#cad4ce;background:var(--surface);font-size:12px;line-height:1.6}.message.user{justify-self:end;color:var(--accent-ink);border-color:var(--accent);background:var(--accent)}.message small{display:block;margin-top:6px;color:var(--subtle);font-size:10px}.message .button{width:100%;margin-top:9px}.drawer-form{display:grid;grid-template-columns:1fr auto;gap:8px;padding:15px;border-top:1px solid var(--line)}.drawer-form input{min-width:0;height:43px;padding:0 11px;border:1px solid var(--line);border-radius:9px;color:var(--text);background:var(--surface)}
-    .toast{position:fixed;right:22px;bottom:22px;z-index:110;max-width:360px;display:flex;align-items:center;gap:9px;padding:12px 14px;border:1px solid #40553f;border-radius:10px;color:#d9e6d7;background:#162117;box-shadow:0 15px 45px #0007;font-size:12px;opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s}.toast.show{opacity:1;transform:none}.toast .icon{color:var(--accent)}
-
-    @keyframes enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-    @keyframes modal{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
-    @media(max-width:1040px){.grid-4{grid-template-columns:repeat(2,1fr)}.grid-3,.anomalies{grid-template-columns:1fr 1fr}.main-grid,.agent-workspace{grid-template-columns:1fr}.subscription{grid-template-columns:42px 1fr 100px 95px}.subscription>div:nth-child(3){display:none}}
-    @media(max-width:760px){:root{--sidebar-width:0px}.app{display:block}.sidebar{width:min(285px,86vw);transform:translateX(-100%);transition:.2s}.sidebar.open{transform:none;box-shadow:18px 0 60px #0009}main{grid-column:1}.menu{display:grid}.topbar{padding:0 14px}.search{display:none}.content{padding:28px 16px 52px}.page-head{align-items:flex-start;flex-direction:column}.grid-3,.grid-2,.anomalies{grid-template-columns:1fr}.quick,.capabilities{grid-template-columns:repeat(2,1fr)}.donut-wrap{grid-template-columns:1fr;justify-items:center}.legend-list{width:100%}.row{grid-template-columns:38px minmax(0,1fr) auto}.row .select{grid-column:2/4;grid-row:2;width:100%}.subscription{grid-template-columns:42px 1fr auto}.subscription>div:nth-child(3),.subscription>div:nth-child(4){display:none}.timeline li{grid-template-columns:64px 12px 1fr}.timeline li:after{left:79px}.timeline .status{display:none}.review-summary,.evidence-grid{grid-template-columns:1fr}.history{min-width:690px}}
-    @media(max-width:440px){.grid-4{grid-template-columns:1fr}.actions{width:100%}.actions .button{flex:1}.mapping div{grid-template-columns:1fr}.mapping .icon{display:none}.quick,.capabilities,.agent-query{grid-template-columns:1fr}.toast{right:12px;bottom:12px;left:12px}}
-    @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<link rel="icon" type="image/svg+xml" href="../web/public/bankpilot-mark.svg?v=2">
+<title>BankPilot · 账单核查</title>
+<style>
+:root{color-scheme:dark;--bg:#171819;--panel:#1b1c1e;--raised:#27292c;--line:#303235;--text:#e5e5e5;--muted:#a0a2a6;--accent:#b9cbbf;--mint:#91beae;--amber:#e1bc83;--red:#e1a39b;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:var(--text);background:var(--bg);font-synthesis:none}
+*{box-sizing:border-box}body{margin:0;font-size:14px;min-width:320px}button,input,select{font:inherit}button,a,input,select{touch-action:manipulation}button{cursor:pointer}button,input,select{border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--text);padding:10px 13px}button{transition:background .16s,transform .16s}button:hover{background:var(--raised)}button:active{transform:translateY(1px)}button:disabled{opacity:.4;cursor:not-allowed}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button.primary{color:#172016;background:var(--accent);border-color:var(--accent);font-weight:650}button.ghost{border-color:transparent;background:transparent}button.small{padding:7px 10px;font-size:12px}.danger{color:var(--red)}a{color:var(--accent)}svg{vertical-align:middle}.icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+aside{position:fixed;inset:0 auto 0 0;width:218px;border-right:1px solid var(--line);padding:27px 16px;display:flex;flex-direction:column;background:#131415;z-index:20}.brand{display:flex;align-items:center;gap:10px;padding:0 10px 32px;font-size:19px;letter-spacing:-.5px;font-weight:650}.brand img{width:30px;height:30px}.nav-label{padding:18px 12px 9px;font-size:10px;color:var(--muted);letter-spacing:1.5px}nav{display:grid;gap:4px}nav button{border:0;display:flex;align-items:center;gap:12px;color:var(--muted);background:transparent;text-align:left;font-size:13px;min-height:43px}nav button.active{color:var(--accent);background:#1c2524}nav button:hover{color:var(--text)}.sidebar-foot{margin-top:auto;padding:22px 10px 0;color:var(--muted);font-size:11px;line-height:1.8}.live-dot{width:6px;height:6px;border-radius:50%;display:inline-block;background:var(--mint);margin-right:7px}
+main{margin-left:218px;min-width:0}.topbar{height:52px;display:flex;align-items:center;gap:12px;padding:0 40px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:10}.breadcrumb{color:var(--muted);font-size:12px;flex:1}.topbar button{font-size:12px}.avatar{border-radius:50%;width:32px;height:32px;padding:0;color:var(--accent)}.menu{display:none}#content{max-width:1300px;margin:auto;padding:42px 40px 70px;animation:enter .22s ease}header.page-head{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:30px}.eyebrow{color:var(--accent);font-size:10px;letter-spacing:2px;margin-bottom:10px}h1{font-size:24px;font-weight:550;letter-spacing:-1px;margin:0}h2{font-size:16px;font-weight:600;margin:0}h3{font-size:14px;margin:0}p{line-height:1.7;margin:8px 0;color:var(--muted)}.subtitle{font-size:12px}.actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.stack{display:grid;gap:18px}.grid{display:grid;gap:18px}.two{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}.equal{grid-template-columns:repeat(2,minmax(0,1fr))}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:5px;overflow:hidden;margin-bottom:24px}.metric{padding:23px;background:var(--panel)}.metric small{color:var(--muted);font-size:12px}.metric strong{display:block;font-size:27px;font-weight:500;letter-spacing:-.8px;margin:14px 0 9px;font-variant-numeric:tabular-nums}.metric span{font-size:11px;color:var(--muted)}.panel{background:var(--panel);border:1px solid var(--line);border-radius:5px;min-width:0;overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;padding:20px 22px;border-bottom:1px solid var(--line);gap:10px}.panel-body{padding:22px}.hero{padding:16px 0;background:transparent;border-block:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:25px}.hero h2{font-size:16px;line-height:1.5;font-weight:500}.hero p{font-size:12px;max-width:480px}.badge{display:inline-flex;align-items:center;gap:5px;font-size:10px;padding:5px 8px;border-radius:5px;background:#20302b;color:var(--mint);white-space:nowrap}.badge.warn{color:var(--amber);background:#32291e}.badge.neutral{color:var(--muted);background:var(--raised)}.muted{color:var(--muted)}.tiny{font-size:11px}.number{font-variant-numeric:tabular-nums;white-space:nowrap}.notice{border-left:2px solid var(--amber);padding:9px 13px;background:#211e18;color:var(--amber);font-size:12px;line-height:1.6;margin:16px 0}.notice.calm{border-color:var(--mint);color:var(--muted);background:#18221f}.row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:16px 0;border-bottom:1px solid var(--line)}.row:last-child{border-bottom:0}.row p{font-size:11px;margin:5px 0 0}.row-title{display:flex;align-items:center;gap:12px}.tile{width:36px;height:36px;border-radius:5px;background:var(--raised);color:var(--accent);display:grid;place-items:center}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left;font-size:12px}th{color:var(--muted);font-weight:400;font-size:11px;padding:14px 18px;background:var(--bg);white-space:nowrap}td{padding:16px 18px;border-top:1px solid var(--line);white-space:nowrap}td small{display:block;color:var(--muted);font-size:10px;margin-top:5px}.right{text-align:right}td select{max-width:135px;font-size:11px;padding:6px}.filters{display:flex;gap:10px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid var(--line)}.filters input{min-width:150px;flex:1}.filters select{font-size:12px}.empty{padding:45px 20px;text-align:center;color:var(--muted)}.flow{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:11px;flex-wrap:wrap;margin:0 0 22px}.flow .current{color:var(--accent)}.dropzone{padding:44px 20px;border:1px dashed #3a484a;border-radius:5px;text-align:center;background:#101a1c}.dropzone .icon{width:32px;height:32px;color:var(--accent);margin-bottom:14px}.dropzone p{font-size:12px;margin:14px 0 20px}.label{display:grid;gap:8px;font-size:12px;color:var(--muted);margin-bottom:16px}.label input,.label select{width:100%}.pair{display:grid;grid-template-columns:1fr 32px 1fr;gap:10px;align-items:center;margin:18px 0}.evidence{padding:15px;border:1px solid var(--line);border-radius:5px;background:var(--bg);line-height:1.8;font-size:12px}.evidence strong{display:block}.evidence small{display:block;color:var(--muted);font-size:10px}.relation{padding:22px;border-bottom:1px solid var(--line)}.relation:last-child{border-bottom:0}.relation-top{display:flex;justify-content:space-between;gap:10px;align-items:center}.relation-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.bridge .row strong{font-weight:500}.bridge .total{border-top:1px solid var(--line);color:var(--accent)}details{margin-top:16px;font-size:12px;color:var(--muted)}summary{cursor:pointer;padding:8px 0;color:var(--text)}.timeline{display:grid;gap:24px;padding:4px 0}.step{display:flex;gap:14px;align-items:flex-start}.step b{border:1px solid #3b5148;color:var(--accent);font-size:11px;border-radius:50%;width:25px;height:25px;display:grid;place-items:center;flex-shrink:0}.step p{font-size:11px;margin:5px 0 0}.query{display:flex;gap:10px}.query input{flex:1;min-width:0}.chart{width:100%;height:200px;display:block}.chart text{fill:var(--muted);font-size:11px}.chart .guide{stroke:var(--line);stroke-width:1}.bar{height:6px;background:#273039;border-radius:6px;overflow:hidden;margin:18px 0 10px}.bar i{height:100%;display:block;background:var(--accent);border-radius:6px;transition:width .3s}.bar.warn i{background:var(--amber)}.budget-value{font-size:26px;letter-spacing:-.6px;margin:22px 0 0}.budget-value small{font-size:12px;color:var(--muted)}dialog{background:var(--panel);color:var(--text);border:1px solid #3b474e;border-radius:5px;padding:0;width:min(640px,calc(100% - 32px));max-height:85vh;box-shadow:0 30px 100px #0008}dialog::backdrop{background:#030609b8;backdrop-filter:blur(5px)}.dialog-body{padding:24px;overflow:auto}.dialog-foot{padding:18px 24px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}#toast{position:fixed;bottom:24px;left:calc(50% + 109px);transform:translateX(-50%);background:#29362e;border:1px solid #465b4a;color:var(--accent);padding:12px 20px;border-radius:5px;z-index:50;font-size:12px;max-width:90vw}#toast:empty{display:none}.mobile-shade{display:none}.section-gap{margin-top:22px}.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;overflow-wrap:anywhere}.auth-tabs{display:flex;gap:8px;margin-bottom:20px}.report-paper{padding:28px}.report-paper h2{font-size:24px;margin:8px 0 20px}footer.note{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;margin-top:22px;gap:10px}.pill-group{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.pill-group button{font-size:11px;padding:6px 9px}.positive{color:var(--mint)}
+@keyframes enter{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(min-width:1500px){#content{padding-top:52px}}
+@media(max-width:1100px){aside{width:190px}main{margin-left:190px}#content{padding:30px 25px}.topbar{padding:0 25px}.metric{padding:18px}.metric strong{font-size:23px}.two{grid-template-columns:1fr}#toast{left:calc(50% + 95px)}}
+@media(max-width:700px){aside{transform:translateX(-100%);width:235px;transition:transform .2s}body.nav-open aside{transform:translateX(0)}body.nav-open .mobile-shade{display:block;position:fixed;inset:0;background:#0009;z-index:19;border:0;border-radius:0}main{margin:0}.menu{display:block}#content{padding:25px 16px 50px}.topbar{height:60px;padding:0 16px}.topbar .scope{display:none}h1{font-size:27px}header.page-head{align-items:flex-start;flex-direction:column;gap:16px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metric strong{font-size:23px}.equal{grid-template-columns:1fr}.hero{padding:22px;display:block}.hero button{margin-top:15px}.hero h2{font-size:20px}.pair{grid-template-columns:1fr}.pair>svg{transform:rotate(90deg);justify-self:center}.query{flex-wrap:wrap}.query input{flex-basis:100%}.query button{width:100%}.panel-head,.panel-body{padding:18px}.relation{padding:18px}.relation-top{align-items:flex-start}.breadcrumb{font-size:11px}#toast{left:50%}.report-paper{padding:18px}.filters{padding:14px}.filters select{max-width:100%}footer.note{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar" id="sidebar" aria-label="主导航">
-      <div class="brand"><img class="logo" src="../web/public/bankpilot-mark.svg?v=2" alt="">BankPilot</div>
-      <p class="nav-label" data-zh="工作区" data-en="Workspace">工作区</p>
-      <nav>
-        <button class="nav-item active" data-page="home"><svg class="icon"><use href="#home"></use></svg><span data-zh="总览" data-en="Overview">总览</span></button>
-        <button class="nav-item" data-page="agent"><svg class="icon"><use href="#spark"></use></svg><span data-zh="Agent 工作台" data-en="Agent workspace">Agent 工作台</span></button>
-        <button class="nav-item" data-page="import"><svg class="icon"><use href="#upload"></use></svg><span data-zh="账单导入" data-en="Statement import">账单导入</span></button>
-        <button class="nav-item" data-page="bills"><svg class="icon"><use href="#chart"></use></svg><span data-zh="账单核查" data-en="Statement review">账单核查</span></button>
-        <button class="nav-item" data-page="subscriptions"><svg class="icon"><use href="#repeat"></use></svg><span data-zh="周期扣款" data-en="Recurring charges">周期扣款</span></button>
-        <button class="nav-item" data-page="budgets"><svg class="icon"><use href="#target"></use></svg><span data-zh="预算监控" data-en="Budget monitoring">预算监控</span></button>
-      </nav>
-      <p class="nav-label" data-zh="系统" data-en="System">系统</p>
-      <nav><button class="nav-item" data-page="security"><svg class="icon"><use href="#shield"></use></svg><span data-zh="数据与审计" data-en="Data & audit">数据与审计</span></button></nav>
-    </aside>
+<button class="mobile-shade" id="shade" aria-label="关闭导航"></button>
+<aside>
+<div class="brand"><img src="../web/public/bankpilot-mark.svg?v=2" alt="">BankPilot</div>
+<div class="nav-label" id="nav-label"></div><nav id="nav"></nav>
+<div class="sidebar-foot" id="sidebar-foot"></div>
+</aside>
+<main>
+<div class="topbar"><button class="menu small" id="menu" aria-label="打开导航">☰</button><span class="breadcrumb" id="crumb"></span><span class="tiny muted scope">Asia/Shanghai · CNY</span><button id="lang">EN</button><button class="avatar" id="profile" aria-label="账户">L</button></div>
+<div id="content"></div>
+</main>
+<dialog id="dialog"><div class="panel-head"><h2 id="dialog-title"></h2><button class="ghost small" id="close-dialog" aria-label="关闭">✕</button></div><div class="dialog-body" id="dialog-body"></div><div class="dialog-foot" id="dialog-foot"></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+'use strict';
+// 展示数据：金额使用整数分，日期使用固定业务时区；来源与关系共享同一份交易集合。
+const paths={home:'M3 10l9-7 9 7M5 9v12h14V9M9 21v-8h6v8',import:'M12 16V3m-4 4 4-4 4 4M4 14v7h16v-7',ledger:'M5 3h14v18H5zM8 8h8M8 12h8M8 16h5',relations:'M10 7H7a5 5 0 0 0 0 10h3m4-10h3a5 5 0 0 1 0 10h-3M8 12h8',agent:'m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3z',reports:'M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h5',recurring:'M4 7h13l-3-3M20 17H7l3 3M20 7a8 8 0 0 1 0 7M4 17a8 8 0 0 1 0-7',budgets:'M21 12a9 9 0 1 1-9-9M17 12a5 5 0 1 1-5-5M12 12l9-9M16 3h5v5',audit:'M12 3 3 7v5c0 5 9 9 9 9s9-4 9-9V7zM8 12l3 3 5-6',arrow:'M4 12h16m-5-5 5 5-5 5',check:'m5 12 4 4L19 6'};
+const icon=(name)=>'<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="'+paths[name]+'"/></svg>';
+const t=(zh,en)=>state.lang==='zh'?zh:en;
+const escapeHTML=(value)=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const initialTransactions=[
+{id:'T01',at:'2026-09-01 09:00:12',merchant:'工资',en:'Salary',amount:2156000,direction:'in',account:'bank',category:'income',batch:'B01',row:2},
+{id:'T02',at:'2026-09-02 08:30:05',merchant:'本人转出',en:'Own transfer out',amount:200000,direction:'out',account:'bank',category:'transfer',batch:'B01',row:3},
+{id:'T03',at:'2026-09-02 08:30:09',merchant:'本人转入',en:'Own transfer in',amount:200000,direction:'in',account:'wallet',category:'transfer',batch:'B02',row:2},
+{id:'T04',at:'2026-09-03 10:00:00',merchant:'房租',en:'Rent',amount:360000,direction:'out',account:'bank',category:'housing',batch:'B01',row:4},
+{id:'T05',at:'2026-09-05 12:36:18',merchant:'鲜食集市',en:'Fresh Market',amount:28640,direction:'out',account:'wallet',category:'daily',batch:'B02',row:3},
+{id:'T06',at:'2026-09-06 09:12:30',merchant:'Coffee Lab',en:'Coffee Lab',amount:3800,direction:'out',account:'bank',category:'food',batch:'B01',row:5},
+{id:'T07',at:'2026-09-06 09:12:30',merchant:'Coffee Lab',en:'Coffee Lab',amount:3800,direction:'out',account:'wallet',category:'food',batch:'B02',row:4},
+{id:'T08',at:'2026-09-07 07:00:02',merchant:'StreamPlus',en:'StreamPlus',amount:6800,direction:'out',account:'bank',category:'digital',batch:'B01',row:6},
+{id:'T09',at:'2026-09-08 14:22:06',merchant:'山野装备 · 退款',en:'Trail Supply · Refund',amount:12000,direction:'in',account:'bank',category:'other',batch:'B01',row:7},
+{id:'T10',at:'2026-08-28 16:42:11',merchant:'山野装备',en:'Trail Supply',amount:30000,direction:'out',account:'bank',category:'daily',batch:'B00',row:2},
+{id:'T11',at:'2026-08-07 07:00:03',merchant:'StreamPlus',en:'StreamPlus',amount:6800,direction:'out',account:'bank',category:'digital',batch:'B00',row:3},
+{id:'T12',at:'2026-07-07 07:00:01',merchant:'StreamPlus',en:'StreamPlus',amount:6800,direction:'out',account:'bank',category:'digital',batch:'B00',row:4}
+];
+const state={lang:'zh',page:'home',revision:1,hide:false,search:'',accountFilter:'all',categoryFilter:'all',relationFilter:'all',
+accounts:[{id:'bank',name:'日常账户',en:'Daily account'},{id:'wallet',name:'支付账户',en:'Payment account'}],
+transactions:structuredClone(initialTransactions),
+relations:[{id:'R01',kind:'duplicate',first:'T06',second:'T07',status:'pending',version:1},{id:'R02',kind:'transfer',first:'T02',second:'T03',status:'confirmed',version:1},{id:'R03',kind:'refund',first:'T10',second:'T09',status:'confirmed',version:1}],
+batches:[{id:'B01',file:'bank_2026-09.csv',account:'bank',at:'2026-09-08 14:30:00',active:true},{id:'B02',file:'payment_2026-09.xlsx',account:'wallet',at:'2026-09-08 14:32:10',active:true},{id:'B00',file:'bank_2026-07_08.csv',account:'bank',at:'2026-09-01 10:20:30',active:true}],
+preview:false,importAccount:'wallet',snapshot:null,runs:[],reports:[],selectedReport:null,recurringStatus:'pending',reminder:false,budget:500000,budgetBasis:'adjusted',budgetAlert:true,
+audit:[{at:'2026-09-08 14:35:20',zh:'确认跨期退款',en:'Cross-period refund confirmed',detail:'R03 · T10 / T09'},{at:'2026-09-08 14:34:02',zh:'确认本人转账',en:'Own transfer confirmed',detail:'R02 · T02 / T03'}]};
+const pages=[['home','总览','Overview'],['import','账户与导入','Accounts & import'],['ledger','账本','Ledger'],['relations','关系核对','Relationships'],['agent','Agent 核查','Agent review'],['reports','月度报告','Monthly reports'],['recurring','周期扣款','Recurring charges'],['budgets','预算','Budgets'],['audit','审计记录','Audit trail']];
+const categories={income:['收入','Income'],transfer:['转账','Transfer'],housing:['居住','Housing'],daily:['日用','Groceries'],food:['餐饮','Dining'],digital:['数字服务','Digital services'],other:['其他','Other']};
+const kindLabels={duplicate:['重复记录','Duplicate'],transfer:['本人转账','Own transfer'],refund:['跨期退款','Cross-period refund']};
+const statusLabels={pending:['待核对','Pending'],confirmed:['已确认','Confirmed'],excluded:['已排除','Excluded']};
+const name=(item)=>t(item.merchant,item.en);
+const accountName=(id)=>{const a=state.accounts.find(x=>x.id===id);return a?t(a.name,a.en):'—'};
+const categoryName=(id)=>t(...categories[id]);
+const money=(cents)=>state.hide?'••••••':new Intl.NumberFormat(state.lang==='zh'?'zh-CN':'en-US',{style:'currency',currency:'CNY',minimumFractionDigits:2}).format((cents||0)/100);
+const now=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date());
+const button=(label,action,arg='',primary=false)=>'<button class="'+(primary?'primary':'small')+'" data-action="'+action+'" data-arg="'+escapeHTML(arg)+'">'+label+'</button>';
+const badge=(label,kind='')=>'<span class="badge '+kind+'">'+label+'</span>';
+const panel=(title,body,extra='')=>'<article class="panel"><div class="panel-head"><h2>'+title+'</h2>'+extra+'</div><div class="panel-body">'+body+'</div></article>';
+const notice=(text,calm=false)=>'<div class="notice'+(calm?' calm':'')+'">'+text+'</div>';
+const header=(title,sub,actions='')=>'<header class="page-head"><div><h1>'+title+'</h1><p class="subtitle">'+sub+'</p></div><div class="actions">'+actions+'</div></header>';
+const scope=()=>t('2026-09-01 — 2026-09-30 · 人民币','2026-09-01 — 2026-09-30 · CNY');
+const currentTransactions=()=>state.transactions.filter(x=>x.at.startsWith('2026-09'));
+function audit(zh,en,detail){state.audit.unshift({at:now(),zh,en,detail})}
+function changed(zh,en,detail){state.revision++;audit(zh,en,detail)}
+// 统计只读取指定数据集合。重复、转账分别排除记录；退款在本期从流入转为冲减流出。
+function totals(transactions=state.transactions,relations=state.relations){
+ const rows=transactions.filter(x=>x.at.startsWith('2026-09'));
+ const rawIn=rows.filter(x=>x.direction==='in').reduce((sum,x)=>sum+x.amount,0);
+ const rawOut=rows.filter(x=>x.direction==='out').reduce((sum,x)=>sum+x.amount,0);
+ let income=rawIn,outflow=rawOut,duplicate=0,transferOut=0,refund=0;
+ const excluded=new Set(),refunds=new Set();
+ for(const r of relations.filter(x=>x.status==='confirmed')){
+  if(r.kind==='duplicate')excluded.add(r.second);
+  if(r.kind==='transfer'){excluded.add(r.first);excluded.add(r.second)}
+  if(r.kind==='refund')refunds.add(r.second);
+ }
+ for(const x of rows){
+  if(excluded.has(x.id)){if(x.direction==='in')income-=x.amount;else{outflow-=x.amount;if(relations.some(r=>r.status==='confirmed'&&r.kind==='duplicate'&&r.second===x.id))duplicate+=x.amount;else transferOut+=x.amount}}
+  else if(refunds.has(x.id)){income-=x.amount;outflow-=x.amount;refund+=x.amount}
+ }
+ return {rawIn,rawOut,income,outflow,net:income-outflow,duplicate,transferOut,refund,count:rows.length};
+}
+function metric(label,value,note){return '<div class="metric"><small>'+label+'</small><strong>'+value+'</strong><span>'+note+'</span></div>'}
+function metrics(s){return '<div class="metrics">'+metric(t('调整后流入','Adjusted inflow'),money(s.income),t('已确认关系口径','Confirmed relationships'))+metric(t('调整后流出','Adjusted outflow'),money(s.outflow),t('退款按到账日冲减','Refunds by receipt date'))+metric(t('调整后净流入','Adjusted net flow'),money(s.net),t('非账户余额','Not an account balance'))+metric(t('期间流水','Period transactions'),s.count,t('账期完整性未验证','Coverage unverified'))+'</div>'}
+function bridge(s){return '<div class="bridge">'+[[t('原始流出','Raw outflow'),s.rawOut],[t('排除本人转账','Own transfers excluded'),-s.transferOut],[t('排除重复记录','Duplicates excluded'),-s.duplicate],[t('退款冲减','Refunds deducted'),-s.refund],[t('调整后流出','Adjusted outflow'),s.outflow]].map(([label,value],i)=>'<div class="row '+(i===4?'total':'')+'"><span>'+label+'</span><strong class="number">'+money(value)+'</strong></div>').join('')+'</div>'}
+function coverage(rows=currentTransactions()){return notice(t(rows.length+' 笔流水 · '+new Set(rows.map(x=>x.batch)).size+' 个来源批次 · 账期完整性未验证',rows.length+' transactions · '+new Set(rows.map(x=>x.batch)).size+' batches · Coverage unverified'),true)}
+function evidence(x){return x?'<div class="evidence"><strong>'+escapeHTML(name(x))+' <span class="number">'+(x.direction==='out'?'−':'+')+money(x.amount)+'</span></strong><span>'+escapeHTML(x.accountLabel?t(...x.accountLabel):accountName(x.account))+'</span><small>'+x.at+' · Asia/Shanghai</small><small>'+x.id+' · '+x.batch+' · '+t('原始行 ','Source row ')+x.row+'</small>'+(x.at.startsWith('2026-09')?'':badge(t('期间外证据','Outside-period evidence'),'neutral'))+'</div>':''}
+function relationCard(r,readonly=false,transactions=state.transactions){
+ const first=transactions.find(x=>x.id===r.first),second=transactions.find(x=>x.id===r.second);
+ return '<div class="relation"><div class="relation-top"><h3>'+t(...kindLabels[r.kind])+' <span class="muted tiny">'+r.id+'</span></h3>'+badge(t(...statusLabels[r.status]),r.status==='pending'?'warn':r.status==='excluded'?'neutral':'')+'</div><div class="pair">'+evidence(first)+icon('arrow')+evidence(second)+'</div><div class="relation-bottom"><span class="tiny muted">'+t(r.kind==='duplicate'?'左侧保留，右侧排除':r.kind==='transfer'?'排除双边收支':'按退款到账日冲减流出',r.kind==='duplicate'?'Retain left, exclude right':r.kind==='transfer'?'Exclude both cash-flow legs':'Deduct on refund receipt date')+' · v'+r.version+'</span><div class="actions">'+(readonly?'':r.status==='pending'?button(t('排除','Exclude'),'relation',r.id+':excluded')+button(t('确认关系','Confirm'),'relation',r.id+':confirmed',true)+(r.kind==='duplicate'?button(t('交换保留记录','Swap retained entry'),'swap-duplicate',r.id):''):button(t('撤销决定','Undo decision'),'relation',r.id+':pending'))+'</div></div></div>';
+}
+function chart(){
+ const rows=currentTransactions().filter(x=>x.direction==='out'),values=Array.from({length:8},(_,i)=>rows.filter(x=>Number(x.at.slice(8,10))===i+1).reduce((s,x)=>s+x.amount,0));
+ const max=Math.max(...values,1);
+ return '<svg class="chart" viewBox="0 0 560 200" role="img" aria-label="'+t('九月一日至八日原始流出','Raw outflows, September 1–8')+'"><line class="guide" x1="40" y1="160" x2="550" y2="160"/><line class="guide" x1="40" y1="85" x2="550" y2="85"/><text x="0" y="20">'+(state.hide?'••••':Math.ceil(max/100))+'</text><text x="14" y="160">0</text>'+values.map((v,i)=>'<rect x="'+(55+i*62)+'" y="'+(160-v/max*140)+'" width="22" height="'+(v/max*140)+'" rx="3" fill="'+(i===3?'#cedeb1':'#507166')+'"><title>09-'+String(i+1).padStart(2,'0')+': '+money(v)+'</title></rect><text x="'+(54+i*62)+'" y="190">0'+(i+1)+'</text>').join('')+'</svg>';
+}
+function home(){
+ const s=totals(),pending=state.relations.filter(x=>x.status==='pending').length;
+ return header(t('账单总览','Statement overview'),scope(),button(t('导入账单','Import statement'),'nav','import',true))+metrics(s)+'<div class="stack"><div class="hero"><div>'+''+'<h2 style="margin-top:12px">'+t(pending+' 项关系待核对',pending+' relationship to review')+'</h2><p>'+t('确认后更新账本统计，历史报告保持不变。','Confirm to update ledger totals. Saved reports stay unchanged.')+'</p></div>'+button(t('查看交易证据','Review evidence')+' '+icon('arrow'),'nav','relations',true)+'</div><div class="grid two">'+panel(t('本期原始流出','Raw outflows this period'),chart(),'<span class="tiny muted">09.01 — 09.08 · CNY</span>')+panel(t('从流水到实际收支','From entries to adjusted flows'),bridge(s))+'</div>'+coverage()+'</div>';
+}
+function imports(){
+ const accounts=state.accounts.map(a=>'<div class="row"><div class="row-title"><span class="tile">'+icon('ledger')+'</span><div><h3>'+escapeHTML(accountName(a.id))+'</h3><p>'+state.transactions.filter(x=>x.account===a.id).length+' '+t('笔流水 · 人民币','entries · CNY')+'</p></div></div>'+button(t('编辑','Edit'),'account',a.id)+'</div>').join('');
+ const previewRows=[{...initialTransactions[4],id:'P01',merchant:'城市书店',en:'City Books',amount:8800,at:'2026-09-08 16:10:05',category:'other'}];
+ return header(t('账户与导入','Accounts & import'),t('预览账单，再确认入账','Preview statements before importing'))+'<div class="grid equal">'+panel(t('导入账单','Import statement'),'<div class="flow"><span class="current">01 '+t('文件','File')+'</span>→<span>02 '+t('预览','Preview')+'</span>→<span>03 '+t('确认','Confirm')+'</span></div><div class="dropzone">'+icon('import')+'<h3>'+t('银行与支付账单','Bank & payment statements')+'</h3><p>CSV / XLSX · 10 MB · '+t('最多 5,000 笔','Up to 5,000 entries')+'</p>'+button(t('选择账单','Choose statement'),'choose','',true)+'</div>')+panel(t('账本账户','Ledger accounts'),accounts,button(t('添加账户','Add account'),'account','new'))+'</div>'+
+ (state.preview?'<article class="panel section-gap"><div class="panel-head"><h2>'+t('导入预览','Import preview')+'</h2>'+badge(t('待确认','Awaiting confirmation'),'warn')+'</div><div class="panel-body"><div class="grid equal"><label class="label">'+t('账单文件','Statement file')+'<input value="payment_2026-09-08.csv" readonly></label><label class="label">'+t('归属账户','Account')+'<select id="import-account">'+state.accounts.map(a=>'<option value="'+a.id+'" '+(a.id===state.importAccount?'selected':'')+'>'+escapeHTML(accountName(a.id))+'</option>').join('')+'</select></label></div>'+evidence({...previewRows[0],account:state.importAccount,batch:'B03',row:2})+notice(t('1 笔可导入 · 0 笔重复 · 关系候选需另行确认','1 entry ready · 0 duplicates · Relationship candidates require confirmation'),true)+'<div class="actions">'+button(t('取消','Cancel'),'cancel-import')+button(t('确认导入','Confirm import'),'confirm-import','',true)+'</div></div></article>':'')+
+ '<article class="panel section-gap"><div class="panel-head"><h2>'+t('导入历史','Import history')+'</h2><span class="tiny muted">'+t('原始行号可追溯','Traceable source rows')+'</span></div><div class="table-wrap"><table><thead><tr>'+[t('文件 / 批次','File / batch'),t('账户','Account'),t('导入时间','Imported at'),t('状态','Status'),''].map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+state.batches.map(b=>'<tr><td>'+b.file+'<small>'+b.id+'</small></td><td>'+escapeHTML(accountName(b.account))+'</td><td>'+b.at+'</td><td>'+badge(b.active?t('已导入','Imported'):t('已撤销','Reverted'),b.active?'':'neutral')+'</td><td>'+(b.active?button(t('撤销','Revert'),'revert-import',b.id):'—')+'</td></tr>').join('')+'</tbody></table></div></article>';
+}
+function ledgerRows(){
+ return currentTransactions().filter(x=>(state.accountFilter==='all'||x.account===state.accountFilter)&&(state.categoryFilter==='all'||x.category===state.categoryFilter)&&[x.merchant,x.en,x.id].join(' ').toLowerCase().includes(state.search.toLowerCase()));
+}
+function ledgerTable(){
+ const rows=ledgerRows();return rows.length?'<div class="table-wrap"><table><thead><tr>'+[t('交易 / 时间','Transaction / time'),t('账户','Account'),t('分类','Category'),t('原始金额','Raw amount'),t('来源','Source')].map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+rows.map(x=>'<tr><td>'+escapeHTML(name(x))+'<small>'+x.at+'</small></td><td>'+escapeHTML(accountName(x.account))+'</td><td><select data-category="'+x.id+'" aria-label="'+escapeHTML(name(x))+' '+t('分类','category')+'">'+Object.keys(categories).map(c=>'<option value="'+c+'" '+(x.category===c?'selected':'')+'>'+categoryName(c)+'</option>').join('')+'</select></td><td class="number '+(x.direction==='in'?'positive':'')+'">'+(x.direction==='out'?'−':'+')+money(x.amount)+'</td><td>'+button(x.batch+' / '+x.row,'evidence',x.id)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">'+t('没有符合条件的流水','No matching entries')+'</div>';
+}
+function ledger(){return header(t('账本','Ledger'),scope(),button(t('导出当前筛选','Export filtered entries'),'export-ledger'))+'<article class="panel"><div class="filters"><input id="ledger-search" aria-label="'+t('搜索交易','Search transactions')+'" placeholder="'+t('搜索交易或编号','Search transaction or ID')+'" value="'+escapeHTML(state.search)+'"><select id="account-filter" aria-label="'+t('账户筛选','Account filter')+'"><option value="all">'+t('全部账户','All accounts')+'</option>'+state.accounts.map(a=>'<option value="'+a.id+'" '+(state.accountFilter===a.id?'selected':'')+'>'+escapeHTML(accountName(a.id))+'</option>').join('')+'</select><select id="category-filter" aria-label="'+t('分类筛选','Category filter')+'"><option value="all">'+t('全部分类','All categories')+'</option>'+Object.keys(categories).map(c=>'<option value="'+c+'" '+(state.categoryFilter===c?'selected':'')+'>'+categoryName(c)+'</option>').join('')+'</select></div><div id="ledger-table">'+ledgerTable()+'</div></article>'+notice(t('金额保留原值；分类修改不改变已保存的核查结果。','Source amounts stay unchanged. Category edits do not alter saved reviews.'),true)}
+function relationships(){const rows=state.relations.filter(r=>state.relationFilter==='all'||r.status===state.relationFilter);return header(t('关系核对','Relationships'),scope(),button(t('手动关联','Link entries'),'manual-relation'))+'<div class="grid two"><article class="panel"><div class="filters"><select id="relation-filter" aria-label="'+t('关系状态','Relationship status')+'">'+[['all','全部状态','All statuses'],['pending','待核对','Pending'],['confirmed','已确认','Confirmed'],['excluded','已排除','Excluded']].map(([id,zh,en])=>'<option value="'+id+'" '+(state.relationFilter===id?'selected':'')+'>'+t(zh,en)+'</option>').join('')+'</select></div>'+ (rows.map(r=>relationCard(r)).join('')||'<div class="empty">'+t('暂无关系','No relationships')+'</div>')+'</article>'+panel(t('调整明细','Adjustments'),bridge(totals())+notice(t('跨期交易仅作证据，不计入本期原始流水。','Outside-period entries are evidence, not raw entries for this period.'),true))+'</div>'}
+function snapshotView(s){
+ const rows=s.transactions.filter(x=>x.at.startsWith('2026-09'));
+ return '<div class="panel-body">'+coverage(rows)+'<div class="tiny muted">'+t('生成时间','Generated at')+' '+s.at+' · Asia/Shanghai</div><div class="section-gap">'+metrics(s.totals)+'</div><div class="row"><span>'+t('原始流入','Raw inflow')+'</span><strong class="number">'+money(s.totals.rawIn)+'</strong></div>'+bridge(s.totals)+'<details><summary>'+t('关系证据','Relationship evidence')+' · '+s.relations.length+'</summary>'+s.relations.map(r=>relationCard(r,true,s.transactions)).join('')+'</details><details><summary>'+t('原始交易','Source entries')+' · '+rows.length+'</summary>'+rows.map(evidence).join('')+'</details><details><summary>'+t('计算口径','Calculation basis')+'</summary><p>'+t('仅确认关系调整收支。退款按到账日冲减流出；币种独立，净额不是余额。分类分析采用原始流水。','Only confirmed relationships adjust totals. Refunds reduce outflow on receipt. Currencies stay separate; net flow is not a balance. Categories use raw entries.')+'</p><span class="mono">ledger-rules/1 · '+s.id+' · revision '+s.revision+'</span></details></div>';
+}
+function agent(){const s=state.snapshot;return header(t('Agent 核查','Agent review'),t('日期查询 · 确定性统计 · 来源证据','Date query · Deterministic totals · Source evidence'))+panel(t('核查任务','Review task'),'<form id="agent-form" class="query"><input id="agent-query" aria-label="'+t('核查任务','Review task')+'" value="'+t('核查 2026 年 9 月账单','Review September 2026 statements')+'"><button class="primary">'+icon('agent')+' '+t('开始核查','Run review')+'</button></form><p class="tiny">'+t('查询日期内全部账单；单独筛选请使用账本。','Queries all entries in the period. Use the ledger for filters.')+'</p>')+
+ '<div class="grid two section-gap"><article class="panel"><div class="panel-head"><h2>'+t('核查结果','Review result')+'</h2>'+(s?badge(t('已保存','Saved')):badge(t('待运行','Ready'),'neutral'))+'</div>'+(s?((s.revision!==state.revision?'<div style="padding:0 22px">'+notice(t('账本已变更。重新核查生成新结果。','Ledger changed. Run again to create a new result.'))+'</div>':'')+snapshotView(s)):'<div class="empty">'+icon('agent')+'<p>'+t('运行后查看收支与关系证据','Run a review to inspect totals and relationship evidence')+'</p></div>')+'</article>'+panel(t('执行记录','Execution record'),'<div class="timeline">'+[[t('解析日期范围','Resolve date range'),'2026-09-01 — 2026-09-30'],[t('查询账本','Query ledger'),'query_transactions'],[t('核对交易关系','Review relationships'),t('用户确认状态 · 统一读取快照','Confirmed states · Consistent read snapshot')],[t('保存结果与证据','Save result & evidence'),t('原始与调整统计 · 规则版本','Raw and adjusted totals · Rule version')]].map(([title,sub],i)=>'<div class="step"><b>'+(s?'✓':i+1)+'</b><div><h3>'+title+'</h3><p>'+sub+'</p></div></div>').join('')+'</div>'+notice(t('Agent 只读。分类与关系由用户在账本中修改。','Agent is read-only. Edit categories and relationships in the ledger.'),true),s?button(t('查看审计','View audit'),'nav','audit'):'')+'</div>'}
+function reports(){
+ const selected=state.reports.find(x=>x.id===state.selectedReport);
+ return header(t('月度报告','Monthly reports'),scope(),button(t('生成报告','Generate report'),'generate-report','',true))+
+ (state.reports.length?'<div class="grid two"><article class="panel report-paper"><div class="eyebrow">MONTHLY REVIEW / CNY</div><h2>'+t('2026 年 9 月','September 2026')+'</h2><div class="actions">'+badge(selected.revision===state.revision?t('与账本一致','Matches ledger'):t('账本已变更','Ledger changed'),selected.revision===state.revision?'':'warn')+button(t('导出报告','Export report'),'export-report',selected.id)+'</div>'+snapshotView(selected)+'</article>'+panel(t('保存的报告','Saved reports'),state.reports.map(r=>'<div class="row"><div><h3>'+r.id+'</h3><p>'+r.at+'</p></div>'+button(r.id===state.selectedReport?t('当前查看','Viewing'):t('查看','View'),'view-report',r.id)+'</div>').join('')+notice(t('重新生成会保存新报告，不覆盖原报告。','Regeneration saves a new report without overwriting previous reports.'),true))+'</div>':
+ panel(t('本月核查报告','This month’s review'),'<div class="empty">'+icon('reports')+'<p>'+t('保存收支、待核对事项与来源证据','Save totals, open review items, and source evidence')+'</p></div>'))}
+function recurring(){
+ const rows=state.transactions.filter(x=>x.merchant==='StreamPlus').sort((a,b)=>a.at.localeCompare(b.at)),valid=rows.length>=3;
+ return header(t('周期扣款','Recurring charges'),t('基于已导入流水识别','Detected from imported entries'))+panel('StreamPlus',valid?'<div class="row"><div><h3>'+money(6800)+' / '+t('月','month')+'</h3><p>'+t('3 次同额扣款 · 间隔 31 天','3 equal charges · 31-day intervals')+'</p></div>'+badge(t(...statusLabels[state.recurringStatus]),state.recurringStatus==='pending'?'warn':'neutral')+'</div><div class="row"><span class="muted">'+t('下次预计日期','Next estimated date')+'</span><strong>2026-10-07</strong></div><details open><summary>'+t('识别依据','Detection evidence')+'</summary>'+rows.map(evidence).join('')+'</details><div class="actions section-gap">'+(state.recurringStatus==='pending'?button(t('排除','Exclude'),'recurring','excluded')+button(t('确认为周期扣款','Confirm recurrence'),'recurring','confirmed',true):button(t('撤销决定','Undo decision'),'recurring','pending'))+(state.recurringStatus==='confirmed'?button(state.reminder?t('关闭站内提醒','Disable in-app reminder'):t('开启站内提醒','Enable in-app reminder'),'reminder'):'')+'</div>':'<div class="empty">'+t('记录不足，暂无法识别周期','Not enough entries to establish a cycle')+'</div>')+notice(t('预计日期不代表实际续费；提醒在打开应用时核对，不操作代扣。','Estimated dates are not confirmed renewals. Reminders are checked when opening the app; no payment changes.'),true);
+}
+function budgets(){
+ const s=totals(),spent=state.budgetBasis==='adjusted'?s.outflow:s.rawOut,percent=Math.round(spent/state.budget*100),left=state.budget-spent;
+ return header(t('预算','Budgets'),scope(),button(t('编辑预算','Edit budget'),'edit-budget','',true))+'<div class="grid equal">'+panel(t('月度总预算','Monthly total budget'),'<div class="actions">'+badge(state.budgetBasis==='adjusted'?t('调整口径','Adjusted basis'):t('原始口径','Raw basis'),'neutral')+badge(percent>=80?t('接近或超过额度','Near or over limit'):t('额度内','Within limit'),percent>=80?'warn':'')+'</div><div class="budget-value">'+money(spent)+' <small>/ '+money(state.budget)+'</small></div><div class="bar '+(percent>=80?'warn':'')+'"><i style="width:'+Math.max(0,Math.min(100,percent))+'%"></i></div><div class="row"><span class="tiny muted">'+percent+'% '+t('已使用','used')+'</span><strong class="number">'+t(left>=0?'剩余 ':'超出 ',left>=0?'Remaining ':'Over ')+money(Math.abs(left))+'</strong></div><div class="row"><div><h3>'+t('站内预警','In-app alert')+'</h3><p>'+t('达到额度 80% 时提示','Shown at 80% of the limit')+'</p></div>'+button(state.budgetAlert?t('已开启','Enabled'):t('已关闭','Disabled'),'budget-alert')+'</div>')+panel(t('支出依据','Spending basis'),bridge(s)+button(t('核对交易关系','Review relationships'),'nav','relations'))+'</div>'+notice(t('预算仅覆盖已导入流水，不代表完整账期；确认关系后按所选口径重算。','Budgets cover imported entries only, not a verified full period. Confirmed relationships recalculate the selected basis.'),true);
+}
+function auditPage(){return header(t('审计记录','Audit trail'),t('操作时间 · 关联对象 · 保存结果','Operation time · Related records · Saved results'),button(t('导出记录','Export audit'),'export-audit'))+panel(t('数据边界','Data boundaries'),'<div class="grid equal"><div><h3>'+t('账单留在账本','Statements stay in the ledger')+'</h3><p class="tiny">'+t('模型接收任务描述，不接收原始账单。','The model receives task descriptions, not source statements.')+'</p></div><div><h3>'+t('结果保留生成时证据','Results retain their original evidence')+'</h3><p class="tiny">'+t('账本更新不重写历史核查结果。','Ledger updates never rewrite saved review results.')+'</p></div></div>')+'<article class="panel section-gap"><div class="table-wrap"><table><thead><tr><th>'+t('操作','Action')+'</th><th>'+t('关联对象','Reference')+'</th><th>'+t('时间 · Asia/Shanghai','Time · Asia/Shanghai')+'</th></tr></thead><tbody>'+state.audit.map(a=>'<tr><td>'+escapeHTML(t(a.zh,a.en))+'</td><td class="mono">'+(state.runs.some(r=>r.id===a.detail)?button(escapeHTML(a.detail),'view-run',a.detail):escapeHTML(a.detail))+'</td><td>'+a.at+'</td></tr>').join('')+'</tbody></table></div></article>'}
+const renderers={home,import:imports,ledger,relations:relationships,agent,reports,recurring,budgets,audit:auditPage};
+// 页面状态与语言共享；切换语言不触发任务、不重置用户决定或覆盖快照。
+function render(){
+ document.documentElement.lang=state.lang==='zh'?'zh-CN':'en';
+ document.title=t('BankPilot · 账单核查','BankPilot · Statement review');
+ document.getElementById('nav').innerHTML=pages.map(([id,zh,en])=>'<button class="'+(state.page===id?'active':'')+'" data-action="nav" data-arg="'+id+'" '+(state.page===id?'aria-current="page"':'')+'>'+icon(id)+'<span>'+t(zh,en)+'</span></button>').join('');
+ document.getElementById('nav-label').textContent='' ;
+ document.getElementById('sidebar-foot').innerHTML='<span class="live-dot"></span>'+t('仅分析已导入账单','Imported statements only')+'<br>'+t('不连接银行 · 不执行资金操作','No bank access or money movement');
+ document.getElementById('crumb').textContent=t('工作区 / ','Workspace / ')+t(...pages.find(x=>x[0]===state.page).slice(1));
+ document.getElementById('lang').textContent=state.lang==='zh'?'EN':'中文';
+ document.getElementById('lang').setAttribute('aria-label',t('切换至英文','Switch to Chinese'));
+ document.getElementById('profile').setAttribute('aria-label',t('账户设置','Account settings'));
+ document.getElementById('menu').setAttribute('aria-label',t('打开导航','Open navigation'));
+ document.getElementById('shade').setAttribute('aria-label',t('关闭导航','Close navigation'));
+ document.getElementById('close-dialog').setAttribute('aria-label',t('关闭','Close'));
+ document.getElementById('content').innerHTML=renderers[state.page]()+'<footer class="note"><span>'+t('已导入数据 · 不代表银行余额','Imported data · Not a bank balance')+'</span><span>BankPilot / CNY / UTC+08:00</span></footer>';
+}
+let toastTimer;
+function notify(text){const node=document.getElementById('toast');node.textContent=text;clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.textContent='',3500)}
+function navigate(page){state.page=page;document.body.classList.remove('nav-open');render();window.scrollTo(0,0)}
+let focusBeforeDialog;
+function dialog(title,body,actions=''){focusBeforeDialog=document.activeElement;document.getElementById('dialog-title').textContent=title;document.getElementById('dialog-body').innerHTML=body;document.getElementById('dialog-foot').innerHTML=actions||button(t('关闭','Close'),'close');document.getElementById('dialog').showModal()}
+function closeDialog(){document.getElementById('dialog').close();if(focusBeforeDialog?.isConnected)focusBeforeDialog.focus()}
+function confirm(title,body,action,arg){dialog(title,body,button(t('取消','Cancel'),'close')+button(t('确认','Confirm'),action,arg,true))}
+function makeSnapshot(prefix){return {id:prefix+'-'+String(state.audit.length+1).padStart(3,'0'),at:now(),revision:state.revision,currency:'CNY',period:{start:'2026-09-01',end:'2026-09-30'},coverage:'unverified',ruleVersion:'ledger-rules/1',totals:totals(),transactions:state.transactions.map(x=>({...structuredClone(x),accountLabel:(()=>{const a=state.accounts.find(a=>a.id===x.account);return [a.name,a.en]})()})),relations:structuredClone(state.relations)}}
+function download(filename,data){
+ const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'}));
+ const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);notify(t('文件已生成','File generated'));
+}
+function accountEditor(id){
+ const a=state.accounts.find(x=>x.id===id);
+ dialog(t(a?'编辑账户':'添加账户',a?'Edit account':'Add account'),'<label class="label">'+t('账户名称','Account name')+'<input id="account-name" maxlength="40" value="'+escapeHTML(a?accountName(id):'')+'"></label><p class="tiny">'+t('用于归属账单，不连接银行账户。','Organizes statements; does not connect to a bank.')+'</p>',button(t('取消','Cancel'),'close')+button(t('保存','Save'),'save-account',id,true));
+}
+function auth(mode='login'){
+ const signup=mode==='signup';
+ dialog(t(signup?'注册账户':'登录账户',signup?'Create account':'Sign in'),'<div class="auth-tabs">'+button(t('登录','Sign in'),'auth','login')+button(t('注册','Register'),'auth','signup')+'</div><form id="auth-form"><label class="label">'+t('邮箱','Email')+'<input type="email" required autocomplete="email" placeholder="name@example.com"></label><label class="label">'+t('密码','Password')+'<input type="password" required minlength="8" maxlength="128" ' + (signup?'pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,128}"':'') + ' autocomplete="'+(signup?'new-password':'current-password')+'"></label><p class="tiny">'+t('8–128 位，包含大小写字母、数字与符号。','8–128 characters with uppercase, lowercase, numbers and symbols.')+'</p>'+(signup?'<label class="label">'+t('确认密码','Confirm password')+'<input id="password-confirmation" type="password" required minlength="8" maxlength="128" autocomplete="new-password"></label>':'')+'<button class="primary" style="width:100%">'+t(signup?'注册':'登录',signup?'Register':'Sign in')+'</button></form>');
+}
 
-    <main>
-      <header class="topbar">
-        <button class="icon-btn menu" id="menu" aria-label="打开导航" data-aria-zh="打开导航" data-aria-en="Open navigation"><svg class="icon"><use href="#menu-icon"></use></svg></button>
-        <div class="search"><svg class="icon"><use href="#search"></use></svg><input id="globalInput" placeholder="核查账单" data-placeholder-zh="核查账单" data-placeholder-en="Review statements"><kbd>⌘ K</kbd></div>
-        <div class="top-actions"><button class="lang" id="lang" aria-label="切换语言" data-aria-zh="切换语言" data-aria-en="Switch language">EN</button><button class="icon-btn" id="openAgent" aria-label="打开 Agent" data-aria-zh="打开 Agent" data-aria-en="Open Agent"><svg class="icon"><use href="#spark"></use></svg></button><button class="icon-btn" data-notification aria-label="查看提醒" data-aria-zh="查看提醒" data-aria-en="View reminders"><svg class="icon"><use href="#bell"></use></svg></button></div>
-      </header>
+// 手动关联复用同币种、等额、方向与时间约束；待确认关系不改变统计。
+function manualRelation(){
+ const options=state.transactions.map(x=>'<option value="'+x.id+'">'+x.id+' · '+escapeHTML(name(x))+' · '+money(x.amount)+' · '+x.at+'</option>').join('');
+ dialog(t('手动关联','Link entries'),'<label class="label">'+t('关系类型','Relationship type')+'<select id="manual-kind">'+Object.keys(kindLabels).map(k=>'<option value="'+k+'">'+t(...kindLabels[k])+'</option>').join('')+'</select></label><label class="label">'+t('第一笔 · 保留记录 / 转出 / 原消费','First · Retained / Outgoing / Purchase')+'<select id="manual-first">'+options+'</select></label><label class="label">'+t('第二笔 · 副本 / 转入 / 退款','Second · Copy / Incoming / Refund')+'<select id="manual-second">'+options+'</select></label><p class="tiny">'+t('支持跨期关联，保存后仍需确认。','Cross-period links supported. Confirmation is required after saving.')+'</p>',button(t('取消','Cancel'),'close')+button(t('保存候选','Save candidate'),'save-manual','',true));
+}
+function saveManual(){
+ const kind=document.getElementById('manual-kind').value;
+ const first=state.transactions.find(x=>x.id===document.getElementById('manual-first').value);
+ const second=state.transactions.find(x=>x.id===document.getElementById('manual-second').value);
+ const days=(Date.parse(second.at.replace(' ','T')+'+08:00')-Date.parse(first.at.replace(' ','T')+'+08:00'))/86400000;
+ const valid=first.id!==second.id&&(kind==='duplicate'?first.batch!==second.batch&&first.direction===second.direction&&first.amount===second.amount&&Math.abs(days)<=1:kind==='transfer'?first.account!==second.account&&first.direction==='out'&&second.direction==='in'&&first.amount===second.amount&&Math.abs(days)<=3:first.direction==='out'&&second.direction==='in'&&second.amount<=first.amount&&days>=0&&days<=90);
+ if(!valid){notify(t('交易不符合金额、方向或时间条件','Entries do not meet amount, direction, or time constraints'));return}
+ if(state.relations.some(r=>[r.first,r.second].includes(first.id)||[r.first,r.second].includes(second.id))){notify(t('交易已有关系，请先核对现有关系','Entries already have relationships. Review the existing links first.'));return}
+ const id='R'+String(state.audit.length+1).padStart(2,'0');
+ state.relations.push({id,kind,first:first.id,second:second.id,status:'pending',version:1});
+ changed('添加关系候选','Relationship candidate added',id);closeDialog();render();
+}
 
-      <div class="content">
-        <section class="page active" id="page-home">
-          <div class="page-head"><div><p class="eyebrow" data-zh="2026 年 9 月" data-en="September 2026">2026 年 9 月</p><h1 data-zh="财务总览" data-en="Financial overview">财务总览</h1><p data-zh="3 个账户 · 1,284 笔归一化交易" data-en="3 accounts · 1,284 normalized transactions">3 个账户 · 1,284 笔归一化交易</p></div><div class="actions"><button class="button" id="hideMoney"><svg class="icon"><use href="#eye"></use></svg><span data-role="money-label" data-zh="隐藏金额" data-en="Hide amounts">隐藏金额</span></button><button class="button primary" data-jump="agent"><svg class="icon"><use href="#spark"></use></svg><span data-zh="Agent 核查" data-en="Agent review">Agent 核查</span></button></div></div>
-          <div class="grid grid-4">
-            <article class="metric"><div class="metric-label"><span data-zh="本月净额" data-en="Net">本月净额</span><svg class="icon"><use href="#wallet"></use></svg></div><div class="metric-value money">¥12,917.70</div><span class="delta" data-zh="收入 − 支出" data-en="Income − spend">收入 − 支出</span></article>
-            <article class="metric"><div class="metric-label"><span data-zh="支出" data-en="Spend">支出</span><svg class="icon"><use href="#down"></use></svg></div><div class="metric-value money">¥8,642.30</div><span class="delta" data-zh="环比 −12%" data-en="MoM −12%">环比 −12%</span></article>
-            <article class="metric"><div class="metric-label"><span data-zh="收入" data-en="Income">收入</span><svg class="icon"><use href="#up"></use></svg></div><div class="metric-value money">¥21,560.00</div><span class="delta" data-zh="储蓄率 59.9%" data-en="Savings rate 59.9%">储蓄率 59.9%</span></article>
-            <article class="metric"><div class="metric-label"><span data-zh="待核查" data-en="To review">待核查</span><svg class="icon"><use href="#alert"></use></svg></div><div class="metric-value">3</div><span class="delta warn" data-zh="2 周期 · 1 异常" data-en="2 recurring · 1 anomaly">2 周期 · 1 异常</span></article>
-          </div>
-          <div class="grid main-grid" style="margin-top:15px">
-            <article class="panel"><div class="panel-head"><div><h2 data-zh="七个月收支" data-en="Seven-month cash flow">七个月收支</h2><p data-zh="按入账日" data-en="By posting date">按入账日</p></div><div class="legend"><span><i></i><b data-zh="收入" data-en="Income">收入</b></span><span><i></i><b data-zh="支出" data-en="Spend">支出</b></span></div></div><div class="panel-body"><svg class="line-chart" viewBox="0 0 700 220" preserveAspectRatio="none"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c7d6a5" stop-opacity=".18"/><stop offset="1" stop-color="#c7d6a5" stop-opacity="0"/></linearGradient></defs><line class="gridline" x1="20" y1="30" x2="680" y2="30"/><line class="gridline" x1="20" y1="90" x2="680" y2="90"/><line class="gridline" x1="20" y1="150" x2="680" y2="150"/><line class="gridline" x1="20" y1="195" x2="680" y2="195"/><path class="area" d="M20 125C80 90 108 98 130 84S220 100 240 74S335 82 350 55S445 86 460 71S555 82 570 45S650 59 680 40L680 195L20 195Z"/><path class="line" d="M20 125C80 90 108 98 130 84S220 100 240 74S335 82 350 55S445 86 460 71S555 82 570 45S650 59 680 40"/><path class="line second" d="M20 151C80 133 110 148 130 135S215 127 240 143S330 115 350 124S440 105 460 119S550 101 570 113S650 95 680 107"/><text x="20" y="214" data-zh="3月" data-en="Mar">3月</text><text x="128" y="214" data-zh="4月" data-en="Apr">4月</text><text x="237" y="214" data-zh="5月" data-en="May">5月</text><text x="347" y="214" data-zh="6月" data-en="Jun">6月</text><text x="457" y="214" data-zh="7月" data-en="Jul">7月</text><text x="567" y="214" data-zh="8月" data-en="Aug">8月</text><text x="665" y="214" data-zh="9月" data-en="Sep">9月</text></svg></div></article>
-            <article class="panel agent-card"><div class="agent-title"><span class="orb"><svg class="icon"><use href="#spark"></use></svg></span><div><h2>BankPilot Agent</h2><p data-zh="受控工具 · 可查证据" data-en="Governed tools · Traceable evidence">受控工具 · 可查证据</p></div></div><p data-zh="3 项待核查 · 重复扣款 / 周期扣款 / 预算偏差" data-en="3 items · duplicate / recurring / budget variance">3 项待核查 · 重复扣款 / 周期扣款 / 预算偏差</p><div class="agent-input"><input id="homeInput" placeholder="核查异常交易" data-placeholder-zh="核查异常交易" data-placeholder-en="Review anomalies"><button class="icon-btn" id="homeSend" aria-label="发送" data-aria-zh="发送" data-aria-en="Send"><svg class="icon"><use href="#send"></use></svg></button></div><div class="suggestions"><button data-command-zh="核查本月异常交易" data-command-en="Review unusual transactions this month"><span data-zh="异常交易" data-en="Anomalies">异常交易</span></button><button data-command-zh="分析近期周期扣款" data-command-en="Analyze recent recurring charges"><span data-zh="周期扣款" data-en="Recurring charges">周期扣款</span></button><button data-command-zh="检查餐饮预算偏差" data-command-en="Check dining budget variance"><span data-zh="预算偏差" data-en="Budget variance">预算偏差</span></button></div></article>
-          </div>
-          <div style="margin-top:20px"><p class="eyebrow" data-zh="常用任务" data-en="Quick actions">常用任务</p><div class="quick"><button data-jump="agent"><svg class="icon"><use href="#spark"></use></svg><strong data-zh="启动核查" data-en="Start review">启动核查</strong><span data-zh="任务、工具与证据" data-en="Tasks, tools and evidence">任务、工具与证据</span></button><button data-jump="import"><svg class="icon"><use href="#upload"></use></svg><strong data-zh="导入账单" data-en="Import statement">导入账单</strong><span data-zh="归一化与去重" data-en="Normalize and deduplicate">归一化与去重</span></button><button data-jump="bills"><svg class="icon"><use href="#chart"></use></svg><strong data-zh="核查账单" data-en="Review statements">核查账单</strong><span data-zh="异常与原始依据" data-en="Signals and source evidence">异常与原始依据</span></button><button data-report="monthly"><svg class="icon"><use href="#down"></use></svg><strong data-zh="生成月报" data-en="Generate report">生成月报</strong><span data-zh="结论与核查清单" data-en="Findings and checklist">结论与核查清单</span></button></div></div>
-        </section>
-
-        <section class="page" id="page-agent">
-          <div class="page-head"><div><p class="eyebrow" data-zh="受控财务 Agent" data-en="Governed finance Agent">受控财务 Agent</p><h1 data-zh="Agent 核查" data-en="Agent review">Agent 核查</h1><p data-zh="模型规划与解释 · 本地规则控制计算、权限与变更" data-en="Model-led planning · Local control of calculations, permissions and changes">模型规划与解释 · 本地规则控制计算、权限与变更</p></div><div class="actions"><button class="button" data-jump="security"><svg class="icon"><use href="#shield"></use></svg><span data-zh="审计记录" data-en="Audit trail">审计记录</span></button></div></div>
-          <article class="panel"><div class="panel-body"><form class="agent-query" id="workspaceAgentForm"><input id="workspaceAgentInput" value="核查 9 月异常交易" data-placeholder-zh="输入核查任务" data-placeholder-en="Enter a review task"><button class="button primary"><svg class="icon"><use href="#spark"></use></svg><span data-zh="开始" data-en="Run">开始</span></button></form><div class="task-chips"><button type="button" data-agent-task="anomaly" data-zh="9 月异常" data-en="September anomalies">9 月异常</button><button type="button" data-agent-task="recurring" data-zh="近期周期扣款" data-en="Recent recurring charges">近期周期扣款</button><button type="button" data-agent-task="budget" data-zh="餐饮预算偏差" data-en="Dining budget variance">餐饮预算偏差</button><button type="button" data-agent-task="report" data-zh="9 月核查报告" data-en="September review">9 月核查报告</button></div></div></article>
-          <div class="agent-workspace">
-            <article class="panel"><div class="panel-head"><div><h2 data-zh="核查结果" data-en="Review result">核查结果</h2><p id="workspaceTaskLabel" data-zh="9 月异常" data-en="September anomalies">9 月异常</p></div><span class="status" id="workspaceRunStatus" data-zh="完成" data-en="Complete">完成</span></div><div class="panel-body agent-summary"><p class="result-lead" id="workspaceAgentResult" data-zh="Coffee Lab · ¥38.00 × 2 · 间隔 4 分钟。疑似重复，待确认。" data-en="Coffee Lab · ¥38.00 × 2 · 4-minute interval. Possible duplicate; review required.">Coffee Lab · ¥38.00 × 2 · 间隔 4 分钟。疑似重复，待确认。</p><div class="evidence-grid"><div class="evidence-card"><span data-zh="范围" data-en="Scope">范围</span><strong data-zh="24 笔" data-en="24 items">24 笔</strong></div><div class="evidence-card"><span data-zh="信号" data-en="Signals">信号</span><strong data-zh="3 项" data-en="3 items">3 项</strong></div><div class="evidence-card"><span data-zh="证据覆盖" data-en="Evidence">证据覆盖</span><strong>100%</strong></div></div><div class="notice"><svg class="icon"><use href="#shield"></use></svg><span id="workspaceEvidence" data-zh="TXN-0902-014 / 015 · possible_duplicate_v1" data-en="TXN-0902-014 / 015 · possible_duplicate_v1">TXN-0902-014 / 015 · possible_duplicate_v1</span></div><div class="confirmation"><div><strong id="agentActionTitle" data-zh="创建复核提醒" data-en="Create review reminder">创建复核提醒</strong><span id="agentActionDetail" data-zh="本地操作 · 需确认" data-en="Local action · Confirmation required">本地操作 · 需确认</span></div><button class="button" id="agentConfirmAction" data-zh="确认" data-en="Confirm">确认</button></div></div></article>
-            <article class="panel"><div class="panel-head"><div><h2 data-zh="执行链" data-en="Execution">执行链</h2><p>run_01J7F9A2</p></div></div><div class="panel-body tool-list" id="agentPlan"><div class="tool-step"><b>01</b><div><strong data-zh="范围约束" data-en="Scope">范围约束</strong><span data-zh="账户 · 期间 · 用户" data-en="Account · Period · User">账户 · 期间 · 用户</span></div><code>done</code></div><div class="tool-step"><b>02</b><div><strong>query_transactions</strong><span data-zh="归一化交易" data-en="Normalized transactions">归一化交易</span></div><code>done</code></div><div class="tool-step"><b>03</b><div><strong>explain_anomaly</strong><span data-zh="规则 · 阈值 · 证据" data-en="Rule · Threshold · Evidence">规则 · 阈值 · 证据</span></div><code>done</code></div><div class="tool-step"><b>04</b><div><strong data-zh="结论" data-en="Finding">结论</strong><span data-zh="依据 · 后续操作" data-en="Evidence · Next action">依据 · 后续操作</span></div><code>done</code></div><div class="notice"><svg class="icon"><use href="#database"></use></svg><span data-zh="原始账单不进入模型上下文 · 调用全程留痕" data-en="Source statements stay outside model context · Full audit trail">原始账单不进入模型上下文 · 调用全程留痕</span></div></div></article>
-          </div>
-          <div class="capabilities"><article class="capability"><svg class="icon"><use href="#search"></use></svg><strong data-zh="跨账户" data-en="Cross-account">跨账户</strong><span data-zh="归一化 · 转账匹配" data-en="Normalize · Match transfers">归一化 · 转账匹配</span></article><article class="capability"><svg class="icon"><use href="#alert"></use></svg><strong data-zh="主动核查" data-en="Proactive review">主动核查</strong><span data-zh="异常 · 周期 · 预算" data-en="Anomaly · Recurring · Budget">异常 · 周期 · 预算</span></article><article class="capability"><svg class="icon"><use href="#shield"></use></svg><strong data-zh="受控变更" data-en="Governed changes">受控变更</strong><span data-zh="确认 · 幂等 · 审计" data-en="Confirm · Idempotent · Audit">确认 · 幂等 · 审计</span></article><article class="capability"><svg class="icon"><use href="#chart"></use></svg><strong data-zh="月度收口" data-en="Monthly close">月度收口</strong><span data-zh="复算 · 证据 · 报告" data-en="Reconcile · Evidence · Report">复算 · 证据 · 报告</span></article></div>
-        </section>
-
-        <section class="page" id="page-import">
-          <div class="page-head"><div><p class="eyebrow" data-zh="多来源归一化" data-en="Multi-source normalization">多来源归一化</p><h1 data-zh="账单导入" data-en="Statement import">账单导入</h1><p data-zh="字段映射 · 去重 · 转账匹配" data-en="Field mapping · Deduplication · Transfer matching">字段映射 · 去重 · 转账匹配</p></div></div>
-          <div class="grid grid-2">
-            <article class="panel"><div class="panel-body"><label class="dropzone" id="dropzone"><input type="file" id="fileInput" accept=".csv,.xlsx,.xls"><span class="upload-icon"><svg class="icon"><use href="#upload"></use></svg></span><h3 data-zh="导入账单" data-en="Import statement">导入账单</h3><p data-zh="CSV / XLSX · 10 MB · 本地处理" data-en="CSV / XLSX · 10 MB · Local processing">CSV / XLSX · 10 MB · 本地处理</p><span class="button primary" data-zh="选择文件" data-en="Choose file">选择文件</span></label></div></article>
-            <article class="panel"><div class="panel-head"><div><h2 data-zh="归一化结果" data-en="Normalization result">归一化结果</h2><p id="importHint" data-zh="尚未选择文件" data-en="No file selected">尚未选择文件</p></div><span class="status" id="importStatus" data-zh="待导入" data-en="Pending">待导入</span></div><div class="panel-body"><div class="import-review" id="importReview"><div class="review-summary"><div><span data-zh="有效" data-en="Valid">有效</span><strong>24</strong></div><div><span data-zh="重复" data-en="Duplicates">重复</span><strong>1</strong></div><div><span data-zh="转账匹配" data-en="Transfer matches">转账匹配</span><strong>2</strong></div></div><div class="mapping"><div><span data-zh="交易日期" data-en="Transaction date">交易日期</span><svg class="icon"><use href="#right"></use></svg><strong>occurred_at</strong></div><div><span data-zh="交易对方" data-en="Merchant">交易对方</span><svg class="icon"><use href="#right"></use></svg><strong>merchant</strong></div><div><span data-zh="金额（元）" data-en="Amount">金额（元）</span><svg class="icon"><use href="#right"></use></svg><strong>amount</strong></div><div><span data-zh="收支方向" data-en="Direction">收支方向</span><svg class="icon"><use href="#right"></use></svg><strong>direction</strong></div></div><button class="button primary" id="confirmImport" style="width:100%;margin-top:13px" data-zh="确认写入 · 24" data-en="Commit · 24">确认写入 · 24</button></div><div class="notice" id="importEmpty"><svg class="icon"><use href="#shield"></use></svg><span data-zh="文件与行级指纹去重 · 转账不计入收支" data-en="File and row fingerprints · Transfers excluded from cash flow">文件与行级指纹去重 · 转账不计入收支</span></div></div></article>
-          </div>
-          <article class="panel" style="margin-top:15px"><div class="panel-head"><div><h2 data-zh="导入历史" data-en="Import history">导入历史</h2><p data-zh="本地批次与校验结果" data-en="Local batches and validation results">本地批次与校验结果</p></div></div><div class="panel-body" style="overflow:auto"><table class="history"><thead><tr><th data-zh="文件" data-en="File">文件</th><th data-zh="账户" data-en="Account">账户</th><th data-zh="时间范围" data-en="Period">时间范围</th><th data-zh="有效 / 总数" data-en="Valid / total">有效 / 总数</th><th data-zh="重复" data-en="Duplicates">重复</th><th data-zh="状态" data-en="Status">状态</th></tr></thead><tbody id="importHistory"><tr><td>城市银行_2026-08.csv</td><td data-zh="日常账户" data-en="Daily account">日常账户</td><td>08-01 — 08-31</td><td>86 / 86</td><td>0</td><td><span class="status" data-zh="已完成" data-en="Completed">已完成</span></td></tr><tr><td>旅行卡_2026-Q2.xlsx</td><td data-zh="旅行卡 7789" data-en="Travel card 7789">旅行卡 7789</td><td>04-01 — 06-30</td><td>123 / 126</td><td>3</td><td><span class="status warn" data-zh="含重复" data-en="Duplicates">含重复</span></td></tr></tbody></table></div></article>
-        </section>
-
-        <section class="page" id="page-bills">
-          <div class="page-head"><div><p class="eyebrow" data-zh="证据化分析" data-en="Evidence-grounded analysis">证据化分析</p><h1 data-zh="账单核查" data-en="Statement review">账单核查</h1><p data-zh="规则 · 批次 · 原始交易" data-en="Rule · Batch · Source transaction">规则 · 批次 · 原始交易</p></div><div class="actions"><button class="button primary" data-report="monthly"><span data-zh="月度报告" data-en="Monthly report">月度报告</span></button></div></div>
-          <div class="grid grid-4"><article class="metric"><div class="metric-label"><span data-zh="总收入" data-en="Income">总收入</span></div><div class="metric-value">¥21,560</div><span class="delta" data-zh="1 笔入账" data-en="1 credit">1 笔入账</span></article><article class="metric"><div class="metric-label"><span data-zh="总支出" data-en="Spend">总支出</span></div><div class="metric-value">¥8,642</div><span class="delta" data-zh="24 笔支出" data-en="24 debits">24 笔支出</span></article><article class="metric"><div class="metric-label"><span data-zh="本月净额" data-en="Net this month">本月净额</span></div><div class="metric-value">¥12,918</div><span class="delta" data-zh="储蓄率 59.9%" data-en="Savings rate 59.9%">储蓄率 59.9%</span></article><article class="metric"><div class="metric-label"><span data-zh="异常信号" data-en="Anomaly signals">异常信号</span></div><div class="metric-value">3</div><span class="delta warn" data-zh="等待确认" data-en="Awaiting review">等待确认</span></article></div>
-          <div class="grid grid-2" style="margin-top:15px"><article class="panel"><div class="panel-head"><div><h2 data-zh="每日支出" data-en="Daily spend">每日支出</h2><p data-zh="9 月 1 日至 30 日" data-en="September 1–30">9 月 1 日至 30 日</p></div><select class="select" style="width:96px" aria-label="统计周期" data-aria-zh="统计周期" data-aria-en="Reporting period"><option data-zh="本月" data-en="This month">本月</option><option data-zh="上月" data-en="Last month">上月</option></select></div><div class="panel-body"><svg class="line-chart" viewBox="0 0 700 220" preserveAspectRatio="none"><line class="gridline" x1="20" y1="35" x2="680" y2="35"/><line class="gridline" x1="20" y1="95" x2="680" y2="95"/><line class="gridline" x1="20" y1="155" x2="680" y2="155"/><line class="gridline" x1="20" y1="195" x2="680" y2="195"/><path class="line" d="M20 172L62 158L104 168L146 93L188 148L230 133L272 156L314 125L356 144L398 56L440 135L482 127L524 162L566 113L608 146L650 91L680 121"/></svg></div></article><article class="panel"><div class="panel-head"><div><h2 data-zh="分类构成" data-en="Category breakdown">分类构成</h2><p data-zh="修正分类后立即重算" data-en="Updates after category corrections">修正分类后立即重算</p></div></div><div class="panel-body donut-wrap"><div class="donut" id="categoryDonut"><div><strong>24</strong><span data-zh="笔交易" data-en="transactions">笔交易</span></div></div><div class="legend-list"><div class="legend-row"><i style="background:var(--accent)"></i><span data-zh="日用百货" data-en="Groceries">日用百货</span><strong id="totalDaily">¥2,938</strong></div><div class="legend-row"><i style="background:#75b7ec"></i><span data-zh="餐饮" data-en="Dining">餐饮</span><strong id="totalFood">¥1,987</strong></div><div class="legend-row"><i style="background:#e2af64"></i><span data-zh="交通" data-en="Transport">交通</span><strong id="totalTransport">¥1,469</strong></div><div class="legend-row"><i style="background:#ad86df"></i><span data-zh="旅行及其他" data-en="Travel & other">旅行及其他</span><strong id="totalOther">¥2,248</strong></div></div></div></article></div>
-          <div style="margin-top:18px"><p class="eyebrow" data-zh="待核查" data-en="To review">待核查</p><div class="anomalies"><article class="anomaly"><small data-zh="疑似重复" data-en="Possible duplicate">疑似重复</small><h3>RideNow · ¥86.00 × 2</h3><p data-zh="同商户 · 同金额 · 间隔 4 分钟" data-en="Same merchant · Same amount · 4-minute interval">同商户 · 同金额 · 间隔 4 分钟</p><button data-evidence="duplicate"><span data-zh="交易证据 →" data-en="Evidence →">交易证据 →</span></button></article><article class="anomaly"><small data-zh="陌生周期扣款" data-en="Unknown recurring charge">陌生周期扣款</small><h3>StreamPlus · ¥68.00</h3><p data-zh="连续 3 月 · 日期相近 · 用途未标注" data-en="3 consecutive months · Similar dates · Unlabeled">连续 3 月 · 日期相近 · 用途未标注</p><button data-jump="subscriptions"><span data-zh="周期证据 →" data-en="Recurrence →">周期证据 →</span></button></article><article class="anomaly"><small data-zh="大额支出" data-en="Large expense">大额支出</small><h3>远山旅行 · ¥3,680.00</h3><p data-zh="近 90 天单笔支出 P95 以上" data-en="Above the 90-day P95">近 90 天单笔支出 P95 以上</p><button data-evidence="large"><span data-zh="规则证据 →" data-en="Rule →">规则证据 →</span></button></article></div></div>
-          <article class="panel" style="margin-top:15px"><div class="panel-head"><div><h2 data-zh="交易明细" data-en="Transactions">交易明细</h2><p data-zh="原始交易只读 · 修正独立存储" data-en="Read-only source · Corrections stored separately">原始交易只读 · 修正独立存储</p></div><button class="button" data-filter><span data-zh="筛选" data-en="Filter">筛选</span></button></div><div class="panel-body rows"><div class="row" data-amount="286.4"><span class="merchant">盒</span><div class="copy"><strong>盒马鲜生</strong><span data-zh="今天 12:36 · 尾号 1024" data-en="Today 12:36 · ••1024">今天 12:36 · 尾号 1024</span></div><select class="select category" aria-label="交易分类"><option value="daily" data-zh="日用百货" data-en="Groceries">日用百货</option><option value="food" data-zh="餐饮" data-en="Dining">餐饮</option><option value="other" data-zh="其他" data-en="Other">其他</option></select><span class="amount">-¥286.40</span></div><div class="row" data-amount="3680"><span class="merchant">行</span><div class="copy"><strong>远山旅行</strong><span data-zh="9 月 3 日 · 尾号 7789" data-en="Sep 3 · ••7789">9 月 3 日 · 尾号 7789</span></div><select class="select category" aria-label="交易分类"><option value="other" data-zh="旅行及其他" data-en="Travel & other">旅行及其他</option><option value="transport" data-zh="交通" data-en="Transport">交通</option></select><span class="amount">-¥3,680.00</span></div><div class="row" data-amount="86"><span class="merchant">R</span><div class="copy"><strong>RideNow</strong><span data-zh="9 月 2 日 · 尾号 1024" data-en="Sep 2 · ••1024">9 月 2 日 · 尾号 1024</span></div><select class="select category" aria-label="交易分类"><option value="transport" data-zh="交通" data-en="Transport">交通</option><option value="other" data-zh="其他" data-en="Other">其他</option></select><span class="amount">-¥86.00</span></div></div></article>
-        </section>
-
-        <section class="page" id="page-subscriptions">
-          <div class="page-head"><div><p class="eyebrow" data-zh="周期核查" data-en="Recurring review">周期核查</p><h1 data-zh="周期扣款" data-en="Recurring charges">周期扣款</h1><p data-zh="间隔 · 金额波动 · 可信度" data-en="Interval · Amount variance · Confidence">间隔 · 金额波动 · 可信度</p></div><div class="actions"><button class="button" data-rescan><span data-zh="重新核查" data-en="Review again">重新核查</span></button></div></div>
-          <div class="grid grid-3" style="margin-bottom:15px"><article class="metric"><div class="metric-label"><span data-zh="月度订阅" data-en="Monthly subscriptions">月度订阅</span></div><div class="metric-value">¥326</div><span class="delta" data-zh="5 项可能订阅" data-en="5 likely subscriptions">5 项可能订阅</span></article><article class="metric"><div class="metric-label"><span data-zh="7 天内续费" data-en="Renewing in 7 days">7 天内续费</span></div><div class="metric-value">2</div><span class="delta warn" data-zh="其中 1 项待确认" data-en="1 needs review">其中 1 项待确认</span></article><article class="metric"><div class="metric-label"><span data-zh="预计年支出" data-en="Estimated annual spend">预计年支出</span></div><div class="metric-value">¥3,912</div><span class="delta" data-zh="按当前周期估算" data-en="Based on current cycles">按当前周期估算</span></article></div>
-          <div class="grid"><article class="subscription"><span class="sub-logo">SP</span><div><strong>StreamPlus</strong><p data-zh="影音会员 · 每月 · 可信度 96%" data-en="Streaming · Monthly · 96% confidence">影音会员 · 每月 · 可信度 96%</p></div><div><strong>¥68.00</strong><p data-zh="每月" data-en="Monthly">每月</p></div><div><strong class="soon" data-zh="9 月 7 日" data-en="Sep 7">9 月 7 日</strong><p data-zh="预计续费" data-en="Expected">预计续费</p></div><button class="button reminder" aria-pressed="false"><span data-zh="设置提醒" data-en="Remind me">设置提醒</span></button></article><article class="subscription"><span class="sub-logo">CB</span><div><strong>CloudBox</strong><p data-zh="云存储 · 每月 · 可信度 99%" data-en="Cloud storage · Monthly · 99% confidence">云存储 · 每月 · 可信度 99%</p></div><div><strong>¥58.00</strong><p data-zh="每月" data-en="Monthly">每月</p></div><div><strong class="soon" data-zh="9 月 9 日" data-en="Sep 9">9 月 9 日</strong><p data-zh="预计续费" data-en="Expected">预计续费</p></div><button class="button reminder on" aria-pressed="true"><span data-zh="已提醒" data-en="Reminder on">已提醒</span></button></article><article class="subscription"><span class="sub-logo">FT</span><div><strong>FitTime</strong><p data-zh="健身课程 · 每年 · 可信度 88%" data-en="Fitness · Annual · 88% confidence">健身课程 · 每年 · 可信度 88%</p></div><div><strong>¥1,188</strong><p data-zh="每年" data-en="Annual">每年</p></div><div><strong data-zh="12 月 18 日" data-en="Dec 18">12 月 18 日</strong><p data-zh="预计续费" data-en="Expected">预计续费</p></div><button class="button reminder" aria-pressed="false"><span data-zh="设置提醒" data-en="Remind me">设置提醒</span></button></article><article class="subscription"><span class="sub-logo">WS</span><div><strong>WorkSuite</strong><p data-zh="办公套件 · 每月 · 可信度 93%" data-en="Office suite · Monthly · 93% confidence">办公套件 · 每月 · 可信度 93%</p></div><div><strong>¥128</strong><p data-zh="每月" data-en="Monthly">每月</p></div><div><strong data-zh="9 月 22 日" data-en="Sep 22">9 月 22 日</strong><p data-zh="预计续费" data-en="Expected">预计续费</p></div><button class="button reminder" aria-pressed="false"><span data-zh="设置提醒" data-en="Remind me">设置提醒</span></button></article></div>
-          <div class="notice warn" style="margin-top:15px"><svg class="icon"><use href="#alert"></use></svg><span data-zh="StreamPlus · 用途待确认 · 本地提醒" data-en="StreamPlus · Review required · Local reminder">StreamPlus · 用途待确认 · 本地提醒</span></div>
-        </section>
-
-        <section class="page" id="page-budgets">
-          <div class="page-head"><div><p class="eyebrow" data-zh="预算偏差" data-en="Budget variance">预算偏差</p><h1 data-zh="预算监控" data-en="Budget monitoring">预算监控</h1><p data-zh="已入账支出 · 确认后变更 · 全程审计" data-en="Posted spend · Confirmed changes · Full audit trail">已入账支出 · 确认后变更 · 全程审计</p></div><div class="actions"><button class="button primary" id="editBudget"><span data-zh="调整预算" data-en="Edit budget">调整预算</span></button></div></div>
-          <div class="grid grid-3"><article class="budget" data-budget="daily" data-spent="2938"><div class="budget-top"><h3 data-zh="日用百货" data-en="Groceries">日用百货</h3><span data-zh="本月" data-en="This month">本月</span></div><div class="budget-values"><strong>¥2,938</strong><span>/ <b class="budget-limit">¥4,000</b></span></div><div class="bar"><i style="width:73%"></i></div><div class="budget-foot"><span class="budget-percent">已用 73%</span><span class="budget-left">剩余 ¥1,062</span></div></article><article class="budget" data-budget="food" data-spent="1987"><div class="budget-top"><h3 data-zh="餐饮" data-en="Dining">餐饮</h3><span data-zh="本月" data-en="This month">本月</span></div><div class="budget-values"><strong>¥1,987</strong><span>/ <b class="budget-limit">¥2,400</b></span></div><div class="bar warn"><i style="width:83%"></i></div><div class="budget-foot"><span class="budget-percent">已用 83%</span><span class="budget-left">剩余 ¥413</span></div></article><article class="budget" data-budget="transport" data-spent="1469"><div class="budget-top"><h3 data-zh="交通" data-en="Transport">交通</h3><span data-zh="本月" data-en="This month">本月</span></div><div class="budget-values"><strong>¥1,469</strong><span>/ <b class="budget-limit">¥2,000</b></span></div><div class="bar"><i style="width:73%"></i></div><div class="budget-foot"><span class="budget-percent">已用 73%</span><span class="budget-left">剩余 ¥531</span></div></article></div>
-          <div class="grid grid-2" style="margin-top:15px"><article class="panel"><div class="panel-head"><div><h2 data-zh="偏差摘要" data-en="Variance summary">偏差摘要</h2><p data-zh="3 个分类预算" data-en="3 category budgets">3 个分类预算</p></div><span class="status warn" data-zh="1 项预警" data-en="1 warning">1 项预警</span></div><div class="panel-body"><div class="row" style="grid-template-columns:1fr auto"><span data-zh="预算内" data-en="Within budget">预算内</span><strong>2</strong></div><div class="row" style="grid-template-columns:1fr auto"><span data-zh="接近阈值" data-en="Near threshold">接近阈值</span><strong>1</strong></div><div class="row" style="grid-template-columns:1fr auto"><span data-zh="已超支" data-en="Over budget">已超支</span><strong>0</strong></div></div></article><article class="panel"><div class="panel-head"><div><h2 data-zh="核查建议" data-en="Review suggestion">核查建议</h2><p data-zh="预算 · 已入账支出" data-en="Budget · Posted spend">预算 · 已入账支出</p></div></div><div class="panel-body"><div class="notice"><svg class="icon"><use href="#spark"></use></svg><span data-zh="餐饮已用 83% · 剩余 ¥413 · 未来 12 天日均上限 ¥34" data-en="Dining 83% used · ¥413 remaining · ¥34 daily ceiling for 12 days">餐饮已用 83% · 剩余 ¥413 · 未来 12 天日均上限 ¥34</span></div><button class="button" style="width:100%;margin-top:13px" data-budget-alert><span data-zh="90% 阈值提醒" data-en="90% threshold alert">90% 阈值提醒</span></button></div></article></div>
-        </section>
-
-        <section class="page" id="page-security">
-          <div class="page-head"><div><p class="eyebrow" data-zh="系统治理" data-en="System governance">系统治理</p><h1 data-zh="数据与审计" data-en="Data & audit">数据与审计</h1><p data-zh="数据边界 · Agent 调用 · 本地变更" data-en="Data boundary · Agent calls · Local changes">数据边界 · Agent 调用 · 本地变更</p></div><div class="actions"><button class="button" data-export="audit"><span data-zh="导出审计" data-en="Export audit">导出审计</span></button></div></div>
-          <div class="grid grid-2"><article class="panel"><div class="panel-head"><div><h2 data-zh="数据边界" data-en="Data boundaries">数据边界</h2><p data-zh="个人自托管" data-en="Personal self-hosted">个人自托管</p></div><span class="status" data-zh="已隔离" data-en="Isolated">已隔离</span></div><div class="panel-body" style="padding-top:11px"><div class="boundary"><span class="boundary-icon"><svg class="icon"><use href="#database"></use></svg></span><div><h3 data-zh="原始账单" data-en="Source statements">原始账单</h3><p data-zh="自托管 PostgreSQL · 不进入模型上下文" data-en="Self-hosted PostgreSQL · Outside model context">自托管 PostgreSQL · 不进入模型上下文</p></div></div><div class="boundary"><span class="boundary-icon"><svg class="icon"><use href="#spark"></use></svg></span><div><h3>OpenRouter</h3><p data-zh="仅接收任务与最小聚合信息" data-en="Task and minimum aggregate context only">仅接收任务与最小聚合信息</p></div></div><div class="boundary"><span class="boundary-icon"><svg class="icon"><use href="#card"></use></svg></span><div><h3 data-zh="账户信息" data-en="Account data">账户信息</h3><p data-zh="名称与脱敏尾号" data-en="Name and masked suffix only">名称与脱敏尾号</p></div></div><div class="boundary"><span class="boundary-icon"><svg class="icon"><use href="#key"></use></svg></span><div><h3 data-zh="模型密钥" data-en="Model key">模型密钥</h3><p data-zh="服务端环境注入 · 不进入代码与镜像" data-en="Server environment only · Excluded from code and images">服务端环境注入 · 不进入代码与镜像</p></div></div></div></article><article class="panel"><div class="panel-head"><div><h2 data-zh="本地数据" data-en="Local data">本地数据</h2><p data-zh="账户范围" data-en="Account scope">账户范围</p></div></div><div class="panel-body"><div class="row" style="grid-template-columns:1fr auto"><span data-zh="交易记录" data-en="Transactions">交易记录</span><strong>1,284</strong></div><div class="row" style="grid-template-columns:1fr auto"><span data-zh="导入批次" data-en="Import batches">导入批次</span><strong>14</strong></div><div class="row" style="grid-template-columns:1fr auto"><span data-zh="分类修正" data-en="Category corrections">分类修正</span><strong>22</strong></div><div class="row" style="grid-template-columns:1fr auto"><span data-zh="本地提醒" data-en="Local reminders">本地提醒</span><strong>3</strong></div><button class="button" style="width:100%;margin-top:15px" data-export="data"><span data-zh="导出数据" data-en="Export data">导出数据</span></button></div></article></div>
-          <article class="panel" style="margin-top:15px"><div class="panel-head"><div><h2 data-zh="Agent 审计" data-en="Agent audit">Agent 审计</h2><p data-zh="按时间倒序" data-en="Newest first">按时间倒序</p></div></div><div class="panel-body"><ol class="timeline" id="timeline"><li><time>10:26:41</time><span class="dot"></span><div><strong data-zh="账单分析完成" data-en="Bill analysis completed">账单分析完成</strong><span data-zh="24 笔交易 · 3 项信号" data-en="24 transactions · 3 signals">24 笔交易 · 3 项信号</span><code>run_01J7 · analysis.completed</code></div><span class="status" data-zh="成功" data-en="Success">成功</span></li><li><time>10:26:39</time><span class="dot"></span><div><strong data-zh="只读交易查询完成" data-en="Read-only query completed">只读交易查询完成</strong><span data-zh="9 月归一化交易" data-en="Normalized September transactions">9 月归一化交易</span><code>req_8F2A · query_transactions</code></div><span class="status" data-zh="成功" data-en="Success">成功</span></li><li><time>09:18:12</time><span class="dot"></span><div><strong data-zh="导入批次完成" data-en="Import completed">导入批次完成</strong><span data-zh="86 行有效 · 文件哈希已记录" data-en="86 valid rows · File hash recorded">86 行有效 · 文件哈希已记录</span><code>import_1C91 · statement.committed</code></div><span class="status" data-zh="成功" data-en="Success">成功</span></li></ol></div></article>
-        </section>
-      </div>
-    </main>
-  </div>
-
-  <div class="scrim" id="scrim"></div>
-  <div class="modal-bg" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal"><div class="modal-head"><h2 id="modalTitle">调整预算</h2><button id="closeModal" aria-label="关闭" data-aria-zh="关闭" data-aria-en="Close"><svg class="icon"><use href="#x"></use></svg></button></div><div class="modal-body" id="modalBody"></div><div class="modal-actions" id="modalActions"></div></div></div>
-  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="agentTitle"><div class="drawer-head"><div><span class="orb"><svg class="icon"><use href="#spark"></use></svg></span><div><h2 id="agentTitle">BankPilot Agent</h2><p class="eyebrow" style="margin:4px 0 0" data-zh="受控工具 · 可查证据" data-en="Governed tools · Traceable evidence">受控工具 · 可查证据</p></div></div><button id="closeAgent" aria-label="关闭 Agent" data-aria-zh="关闭 Agent" data-aria-en="Close Agent"><svg class="icon"><use href="#x"></use></svg></button></div><div class="chat" id="chat"><div class="message"><span data-zh="跨账户 · 异常 · 周期 · 预算 · 报告" data-en="Cross-account · Anomaly · Recurring · Budget · Report">跨账户 · 异常 · 周期 · 预算 · 报告</span><small>Agent · <span data-zh="当前" data-en="Now">当前</span></small></div></div><form class="drawer-form" id="chatForm"><input id="chatInput" placeholder="核查任务" data-placeholder-zh="核查任务" data-placeholder-en="Review task"><button class="button primary" aria-label="发送" data-aria-zh="发送" data-aria-en="Send"><svg class="icon"><use href="#send"></use></svg></button></form></aside>
-  <div class="toast" id="toast" role="status" aria-live="polite"><svg class="icon"><use href="#check"></use></svg><span></span></div>
-
-  <svg style="position:absolute;width:0;height:0" aria-hidden="true">
-    <symbol id="home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z"/></symbol><symbol id="upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></symbol><symbol id="chart" viewBox="0 0 24 24"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></symbol><symbol id="repeat" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4M3 11V9a3 3 0 0 1 3-3h15m-14 16-4-4 4-4m14-1v2a3 3 0 0 1-3 3H3"/></symbol><symbol id="target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol><symbol id="shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></symbol><symbol id="spark" viewBox="0 0 24 24"><path d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5zM19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z"/></symbol><symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol><symbol id="bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol><symbol id="eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></symbol><symbol id="wallet" viewBox="0 0 24 24"><path d="M3 6h16a2 2 0 0 1 2 2v10H5a2 2 0 0 1-2-2z"/><path d="M3 7V5a2 2 0 0 1 2-2h13v3"/></symbol><symbol id="down" viewBox="0 0 24 24"><path d="M12 4v16m-6-6 6 6 6-6"/></symbol><symbol id="up" viewBox="0 0 24 24"><path d="M12 20V4m-6 6 6-6 6 6"/></symbol><symbol id="alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20zM12 9v5m0 3h.01"/></symbol><symbol id="send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4zM22 2 11 13"/></symbol><symbol id="right" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol><symbol id="database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></symbol><symbol id="card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h3"/></symbol><symbol id="key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9m-4 4 3 3"/></symbol><symbol id="menu-icon" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol><symbol id="x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol><symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
-  </svg>
-
-  <script>
-    /* 页面状态、确定性金额更新和本地静态数据交互；不调用任何外部服务。 */
-    const state={lang:'zh',moneyVisible:true,importReady:false,imported:false,lastFocus:null,agentTask:'anomaly',agentActionDone:false,categoryTotals:{daily:2938,food:1987,transport:1469,other:2248}};
-    const pages=[...document.querySelectorAll('.page')];
-    const nav=[...document.querySelectorAll('.nav-item[data-page]')];
-    const toast=document.getElementById('toast');
-    const drawer=document.getElementById('drawer');
-    const modal=document.getElementById('modal');
-    const scrim=document.getElementById('scrim');
-    const money=new Intl.NumberFormat('zh-CN',{maximumFractionDigits:0});
-    const copy=(zh,en)=>state.lang==='zh'?zh:en;
-
-    function showPage(name){pages.forEach(page=>page.classList.toggle('active',page.id===`page-${name}`));nav.forEach(item=>item.classList.toggle('active',item.dataset.page===name));closeLayers();window.scrollTo({top:0,behavior:'smooth'})}
-    function notify(zh,en=zh){toast.querySelector('span').textContent=copy(zh,en);toast.classList.add('show');clearTimeout(notify.timer);notify.timer=setTimeout(()=>toast.classList.remove('show'),2600)}
-    function openScrim(){scrim.classList.add('open')}
-    function closeLayers(){drawer.classList.remove('open');document.getElementById('sidebar').classList.remove('open');scrim.classList.remove('open')}
-    function openDrawer(){state.lastFocus=document.activeElement;drawer.classList.add('open');openScrim();setTimeout(()=>document.getElementById('chatInput').focus(),80)}
-    function closeModal(){modal.classList.remove('open');state.lastFocus?.focus?.()}
-    function openModal(title,body,actions){state.lastFocus=document.activeElement;document.getElementById('modalTitle').textContent=title;document.getElementById('modalBody').replaceChildren(...body);document.getElementById('modalActions').replaceChildren(...actions);modal.classList.add('open');setTimeout(()=>modal.querySelector('input,select,button')?.focus(),50)}
-    function el(tag,className,text){const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node}
-    function button(text,className='button'){const node=el('button',className,text);node.type='button';return node}
-    function addAudit(zhTitle,enTitle,zhDetail,enDetail){const item=el('li');const time=el('time','',copy('刚刚','Now'));const dot=el('span','dot');const detail=el('div');detail.append(el('strong','',copy(zhTitle,enTitle)),document.createTextNode(copy(zhDetail,enDetail)),el('code','',`local_${Math.random().toString(16).slice(2,6).toUpperCase()} · completed`));item.append(time,dot,detail,el('span','status',copy('成功','Success')));document.getElementById('timeline').prepend(item)}
-
-    function askAgent(raw){
-      const text=raw.trim();
-      if(!text){notify('请输入核查任务','Enter a review task');return}
-      openDrawer();
-      const chat=document.getElementById('chat');
-      chat.append(el('div','message user',text));
-      let answer=copy('已导入数据 · 证据化查询','Imported data · Evidence-grounded query');
-      let target='agent';
-      if(/订阅|续费|subscription|renew/i.test(text)){
-        answer=copy('5 项周期信号 · 2 项七日内发生','5 recurring signals · 2 within seven days');
-        target='subscriptions';
-      }else if(/预算|还能花|budget|remain/i.test(text)){
-        answer=copy('餐饮 83% · 剩余 ¥413 · 未来 12 天日均上限 ¥34','Dining 83% · ¥413 remaining · ¥34 daily ceiling for 12 days');
-        target='budgets';
-      }else if(/账单|消费|异常|bill|spend|charge/i.test(text)){
-        answer=copy('24 笔支出 · 3 项待核查','24 expenses · 3 review items');
-        target='bills';
-      }else if(/导入|文件|import|file/i.test(text)){
-        answer=copy('字段映射 · 去重 · 转账匹配','Field mapping · Deduplication · Transfer matching');
-        target='import';
-      }
-      setTimeout(()=>{
-        const message=el('div','message');
-        message.append(document.createTextNode(answer));
-        const action=button(copy('详情','Details'),'button');
-        action.onclick=()=>showPage(target);
-        message.append(action,el('small','',copy('Agent · 当前','Agent · Now')));
-        chat.append(message);
-        chat.scrollTop=chat.scrollHeight;
-      },240);
-    }
-
-    /* Agent 工作台渲染受控工具结果，覆盖任务、证据和确认边界。 */
-    function runWorkspaceAgent(raw) {
-      const text=raw.trim();
-      if(!text){notify('请输入核查任务','Enter a review task');return}
-      let task='anomaly';
-      if(/订阅|续费|周期|subscription|renew|recurring/i.test(text))task='recurring';
-      else if(/预算|budget/i.test(text))task='budget';
-      else if(/报告|月报|report/i.test(text))task='report';
-      state.agentTask=task;
-      state.agentActionDone=false;
-      const result=document.getElementById('workspaceAgentResult');
-      const evidence=document.getElementById('workspaceEvidence');
-      const label=document.getElementById('workspaceTaskLabel');
-      const status=document.getElementById('workspaceRunStatus');
-      const actionTitle=document.getElementById('agentActionTitle');
-      const actionDetail=document.getElementById('agentActionDetail');
-      const action=document.getElementById('agentConfirmAction');
-      status.textContent=copy('运行中','Running');
-      status.classList.add('warn');
-      const content={
-        anomaly:{
-          label:copy('9 月异常','September anomalies'),
-          result:copy('Coffee Lab · ¥38.00 × 2 · 间隔 4 分钟。疑似重复，待确认。','Coffee Lab · ¥38.00 × 2 · 4-minute interval. Possible duplicate; review required.'),
-          evidence:'TXN-0902-014 / 015 · possible_duplicate_v1',
-          title:copy('创建复核提醒','Create review reminder'),
-          detail:copy('本地操作 · 需确认','Local action · Confirmation required'),
-          action:copy('确认','Confirm')
-        },
-        recurring:{
-          label:copy('近期周期扣款','Recent recurring charges'),
-          result:copy('5 项周期信号 · 2 项七日内发生 · StreamPlus 可信度 96%','5 recurring signals · 2 within seven days · StreamPlus confidence 96%'),
-          evidence:copy('近 12 月 · 同商户 11 笔 · recurring_charge_v1','12 months · 11 same-merchant items · recurring_charge_v1'),
-          title:copy('创建续费提醒','Create renewal reminder'),
-          detail:copy('本地操作 · 不触发服务取消','Local action · No service cancellation'),
-          action:copy('确认','Confirm')
-        },
-        budget:{
-          label:copy('餐饮预算偏差','Dining budget variance'),
-          result:copy('已用 83% · 剩余 ¥413 · 未来 12 天日均上限 ¥34','83% used · ¥413 remaining · ¥34 daily ceiling for 12 days'),
-          evidence:copy('已入账 ¥1,987 · 预算 ¥2,400','Posted ¥1,987 · Budget ¥2,400'),
-          title:copy('调整预算','Edit budget'),
-          detail:copy('确认后重算 · 保留变更记录','Recalculate on confirmation · Change logged'),
-          action:copy('调整','Edit')
-        },
-        report:{
-          label:copy('9 月核查报告','September review'),
-          result:copy('收支 · 分类 · 3 项待核查 · 预算偏差。全部结论已绑定证据。','Cash flow · Categories · 3 review items · Budget variance. Evidence linked.'),
-          evidence:copy('3 个账户 · 14 个批次 · 1,284 笔交易','3 accounts · 14 batches · 1,284 transactions'),
-          title:copy('报告摘要','Report summary'),
-          detail:copy('脱敏内容 · 本地生成','Redacted · Generated locally'),
-          action:copy('打开','Open')
-        }
-      }[task];
-      label.textContent=content.label;
-      result.textContent=content.result;
-      evidence.textContent=content.evidence;
-      actionTitle.textContent=content.title;
-      actionDetail.textContent=content.detail;
-      action.textContent=content.action;
-      setTimeout(()=>{status.textContent=copy('完成','Complete');status.classList.remove('warn');notify('核查完成','Review complete')},260);
-    }
-
-    function prepareImport(fileName){state.importReady=true;document.getElementById('importReview').classList.add('ready');document.getElementById('importEmpty').style.display='none';document.getElementById('importStatus').textContent=copy('待核对','Review');document.getElementById('importStatus').classList.add('warn');document.getElementById('importHint').textContent=fileName;notify('文件已解析 · 待核对','File parsed · Review pending')}
-    function confirmImport(){if(!state.importReady)return;if(!state.imported){const row=document.createElement('tr');row.id='importedRow';['城市银行_2026-09.csv',copy('日常账户','Daily account'),'09-01 — 09-30','24 / 25','1'].forEach(value=>row.append(el('td','',value)));const statusCell=el('td');statusCell.append(el('span','status',copy('已完成','Completed')));row.append(statusCell);document.getElementById('importHistory').prepend(row);state.imported=true;addAudit('账单已导入','Import complete','24 条写入 · 1 条重复跳过','24 committed · 1 duplicate skipped')}document.getElementById('importStatus').textContent=copy('已导入','Imported');document.getElementById('importStatus').classList.remove('warn');document.getElementById('confirmImport').disabled=true;notify('已写入 24 条','24 records committed')}
-
-    function updateCategorySummary(){const values=state.categoryTotals;document.getElementById('totalDaily').textContent=`¥${money.format(values.daily)}`;document.getElementById('totalFood').textContent=`¥${money.format(values.food)}`;document.getElementById('totalTransport').textContent=`¥${money.format(values.transport)}`;document.getElementById('totalOther').textContent=`¥${money.format(values.other)}`;const total=Object.values(values).reduce((sum,value)=>sum+value,0);const a=values.daily/total*100,b=a+values.food/total*100,c=b+values.transport/total*100;document.getElementById('categoryDonut').style.background=`conic-gradient(var(--accent) 0 ${a}%,#75b7ec ${a}% ${b}%,#e2af64 ${b}% ${c}%,#ad86df ${c}% 100%)`}
-    function updateBudgetCard(key,limit){const card=document.querySelector(`[data-budget="${key}"]`);const spent=Number(card.dataset.spent);const percent=Math.round(spent/limit*100);const remaining=limit-spent;card.querySelector('.budget-limit').textContent=`¥${money.format(limit)}`;card.querySelector('.budget-percent').textContent=copy(`已用 ${percent}%`,`${percent}% used`);card.querySelector('.budget-left').textContent=remaining>=0?copy(`剩余 ¥${money.format(remaining)}`,`¥${money.format(remaining)} left`):copy(`超出 ¥${money.format(Math.abs(remaining))}`,`¥${money.format(Math.abs(remaining))} over`);const bar=card.querySelector('.bar');bar.classList.toggle('warn',percent>=80);bar.querySelector('i').style.width=`${Math.min(percent,100)}%`}
-    function openBudgetEditor(){const wrapper=el('div','field');wrapper.append(el('label','',copy('预算分类','Category')));const select=el('select');select.id='budgetCategory';[['food','餐饮','Dining'],['daily','日用百货','Groceries'],['transport','交通','Transport']].forEach(([value,zh,en])=>{const option=el('option','',copy(zh,en));option.value=value;select.append(option)});wrapper.append(select);const amountField=el('div','field');amountField.append(el('label','',copy('每月预算金额','Monthly limit')));const input=el('input');input.id='budgetValue';input.inputMode='decimal';input.value='2400';amountField.append(input);const error=el('div','field-error');const note=el('div','notice',copy('本地预算 · 不涉及资金操作','Local budget · No movement of funds'));select.onchange=()=>{const value=document.querySelector(`[data-budget="${select.value}"] .budget-limit`).textContent.replace(/[^\d]/g,'');input.value=value};const cancel=button(copy('取消','Cancel'));cancel.onclick=closeModal;const save=button(copy('确认变更','Confirm change'),'button primary');save.onclick=()=>{const value=Number(input.value);if(!Number.isFinite(value)||value<=0){error.textContent=copy('金额须大于 0','Amount must be greater than 0');input.focus();return}updateBudgetCard(select.value,value);const label=select.options[select.selectedIndex].textContent;closeModal();notify(`${label}预算已更新`,`${label} budget updated`);addAudit('本地预算已更新','Local budget updated',`${label}调整为 ¥${money.format(value)}`,`${label} set to ¥${money.format(value)}`)};openModal(copy('调整预算','Edit budget'),[wrapper,amountField,error,note],[cancel,save])}
-
-    function openReport(kind){const title=copy('9 月核查报告','September review report');const summary=el('div','notice',copy('收支 · 分类 · 异常 · 预算 · 已脱敏','Cash flow · Categories · Anomalies · Budget · Redacted'));const summaryGrid=el('div','review-summary');[[copy('收入','Income'),'¥21,560'],[copy('支出','Spend'),'¥8,642'],[copy('待核查','Review items'),'3']].forEach(([label,value])=>{const box=el('div');box.append(el('span','',label),el('strong','',value));summaryGrid.append(box)});const close=button(copy('关闭','Close'));close.onclick=closeModal;const download=button(copy('导出报告','Export report'),'button primary');download.onclick=()=>{downloadText(`bankpilot-${kind}.txt`,`${title}\n\n${copy('收入','Income')}: ¥21,560\n${copy('支出','Spend')}: ¥8,642\n${copy('待核查','Review items')}: 3\n`);addAudit('报告已导出','Report exported',title,title);closeModal()};openModal(title,[summary,summaryGrid],[close,download])}
-    function downloadText(name,content){const url=URL.createObjectURL(new Blob([content],{type:'text/plain;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);notify('文件已生成','File generated')}
-
-    nav.forEach(item=>item.onclick=()=>showPage(item.dataset.page));
-    document.querySelectorAll('[data-jump]').forEach(item=>item.onclick=()=>showPage(item.dataset.jump));
-    document.querySelectorAll('[data-agent]').forEach(item=>item.onclick=openDrawer);
-    document.getElementById('openAgent').onclick=openDrawer;
-    document.getElementById('closeAgent').onclick=closeLayers;
-    document.getElementById('menu').onclick=()=>{document.getElementById('sidebar').classList.add('open');openScrim()};
-    scrim.onclick=closeLayers;
-    document.getElementById('closeModal').onclick=closeModal;
-    modal.onclick=event=>{if(event.target===modal)closeModal()};
-    document.getElementById('hideMoney').onclick=event=>{state.moneyVisible=!state.moneyVisible;document.querySelectorAll('.money').forEach(node=>{node.dataset.value??=node.textContent;node.textContent=state.moneyVisible?node.dataset.value:'¥••••••'});event.currentTarget.querySelector('[data-role="money-label"]').textContent=state.moneyVisible?copy('隐藏金额','Hide amounts'):copy('显示金额','Show amounts')};
-    document.querySelectorAll('.category').forEach(select=>{select.dataset.previous=select.value;select.onchange=()=>{const amount=Number(select.closest('.row').dataset.amount);state.categoryTotals[select.dataset.previous]-=amount;state.categoryTotals[select.value]+=amount;select.dataset.previous=select.value;updateCategorySummary();notify('分类已修正 · 统计已重算','Category corrected · Totals recalculated');addAudit('交易分类已修正','Category corrected','统计已重算 · 原始账单只读','Totals recalculated · Source read-only')}});
-    document.querySelectorAll('.reminder').forEach(item=>item.onclick=()=>{const enabled=item.getAttribute('aria-pressed')!=='true';item.setAttribute('aria-pressed',String(enabled));item.classList.toggle('on',enabled);item.querySelector('span').textContent=enabled?copy('已提醒','Reminder on'):copy('设置提醒','Remind me');notify(enabled?'本地提醒已开启':'本地提醒已关闭',enabled?'Local reminder enabled':'Local reminder disabled')});
-    document.querySelectorAll('[data-report]').forEach(item=>item.onclick=()=>openReport(item.dataset.report));
-    document.getElementById('confirmImport').onclick=confirmImport;
-    document.getElementById('fileInput').onchange=event=>{if(event.target.files.length)prepareImport(`${event.target.files[0].name} · ${copy('本地文件','Local file')}`)};
-    const drop=document.getElementById('dropzone');drop.ondragover=event=>{event.preventDefault();drop.classList.add('drag')};drop.ondragleave=()=>drop.classList.remove('drag');drop.ondrop=event=>{event.preventDefault();drop.classList.remove('drag');const file=event.dataTransfer.files[0];if(file)prepareImport(`${file.name} · ${copy('本地文件','Local file')}`)};
-    document.getElementById('editBudget').onclick=openBudgetEditor;
-    document.querySelector('[data-budget-alert]').onclick=event=>{event.currentTarget.classList.toggle('primary');notify(event.currentTarget.classList.contains('primary')?'预算提醒已开启':'预算提醒已关闭',event.currentTarget.classList.contains('primary')?'Budget alert enabled':'Budget alert disabled')};
-    document.querySelector('[data-notification]').onclick=()=>notify('2 项订阅将在 7 天内续费','Two subscriptions renew within seven days');
-    document.querySelector('[data-rescan]').onclick=()=>notify('近 12 月 · 无新增信号','Last 12 months · No new signals');
-    document.querySelector('[data-filter]').onclick=()=>notify('9 月 · 全部账户 · 全部分类','September · All accounts · All categories');
-    document.querySelectorAll('[data-evidence]').forEach(item=>item.onclick=()=>notify(item.dataset.evidence==='duplicate'?'possible_duplicate_v1 · 同商户 · 同金额 · 4 分钟':'large_outflow_v1 · 近 90 天 P95 以上',item.dataset.evidence==='duplicate'?'possible_duplicate_v1 · Same merchant · Same amount · 4 min':'large_outflow_v1 · Above 90-day P95'));
-    document.querySelectorAll('[data-export]').forEach(item=>item.onclick=()=>downloadText(`bankpilot-${item.dataset.export}.json`,JSON.stringify({generatedAt:new Date().toISOString(),transactions:1284,imports:14,categoryCorrections:22,reminders:3},null,2)));
-    document.querySelectorAll('[data-command-zh]').forEach(item=>item.onclick=()=>askAgent(state.lang==='zh'?item.dataset.commandZh:item.dataset.commandEn));
-    document.querySelectorAll('[data-agent-task]').forEach(item=>item.onclick=()=>{document.getElementById('workspaceAgentInput').value=item.textContent;runWorkspaceAgent(item.dataset.agentTask)});
-    document.getElementById('workspaceAgentForm').onsubmit=event=>{event.preventDefault();runWorkspaceAgent(document.getElementById('workspaceAgentInput').value)};
-    document.getElementById('agentConfirmAction').onclick=()=>{if(state.agentTask==='budget'){openBudgetEditor();return}if(state.agentTask==='report'){openReport('monthly');return}if(state.agentActionDone){notify('提醒已存在','Reminder already exists');return}state.agentActionDone=true;document.getElementById('agentConfirmAction').textContent=copy('已创建','Created');document.getElementById('agentConfirmAction').classList.add('primary');addAudit('Agent 提醒已确认','Agent reminder confirmed',state.agentTask==='recurring'?'周期扣款提醒已创建':'异常交易复核提醒已创建',state.agentTask==='recurring'?'Recurring charge reminder created':'Anomaly review reminder created');notify('提醒已创建 · 审计已记录','Reminder created · Audit recorded')};
-    document.getElementById('homeSend').onclick=()=>{const input=document.getElementById('homeInput');askAgent(input.value);input.value=''};
-    document.getElementById('chatForm').onsubmit=event=>{event.preventDefault();const input=document.getElementById('chatInput');askAgent(input.value);input.value=''};
-    document.getElementById('globalInput').onkeydown=event=>{if(event.key==='Enter'){askAgent(event.currentTarget.value);event.currentTarget.value=''}};
-    document.getElementById('lang').onclick=event=>{state.lang=state.lang==='zh'?'en':'zh';document.documentElement.lang=state.lang==='zh'?'zh-CN':'en-US';event.currentTarget.textContent=state.lang==='zh'?'EN':'中文';document.querySelectorAll('[data-zh][data-en]').forEach(node=>node.textContent=state.lang==='zh'?node.dataset.zh:node.dataset.en);document.querySelectorAll('[data-placeholder-zh]').forEach(node=>node.placeholder=state.lang==='zh'?node.dataset.placeholderZh:node.dataset.placeholderEn);document.querySelectorAll('[data-aria-zh]').forEach(node=>node.setAttribute('aria-label',state.lang==='zh'?node.dataset.ariaZh:node.dataset.ariaEn));document.querySelectorAll('.reminder').forEach(item=>item.querySelector('span').textContent=item.getAttribute('aria-pressed')==='true'?copy('已提醒','Reminder on'):copy('设置提醒','Remind me'));document.querySelectorAll('[data-budget]').forEach(card=>{const limit=Number(card.querySelector('.budget-limit').textContent.replace(/[^\d]/g,''));updateBudgetCard(card.dataset.budget,limit)});notify('已切换为中文','Interface switched to English')};
-    document.getElementById('lang').addEventListener('click',()=>{const actionDone=state.agentActionDone;runWorkspaceAgent(state.agentTask);state.agentActionDone=actionDone;if(actionDone){document.getElementById('agentConfirmAction').textContent=copy('已创建','Created');document.getElementById('agentConfirmAction').classList.add('primary')}});
-    document.addEventListener('keydown',event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();document.getElementById('globalInput').focus()}if(event.key==='Escape'){closeModal();closeLayers()}});
-  </script>
+// 所有操作仅改变本页面数据；破坏性动作二次确认，历史快照以独立副本保留。
+const actions={
+ nav:navigate,close:closeDialog,
+ 'manual-relation':manualRelation,'save-manual':saveManual,
+ 'swap-duplicate':id=>{const r=state.relations.find(x=>x.id===id);[r.first,r.second]=[r.second,r.first];r.version++;changed('更换保留记录','Retained entry changed',id);render()},
+ 'view-run':id=>{state.snapshot=state.runs.find(r=>r.id===id);navigate('agent')},
+ choose:()=>dialog(t('选择账单','Choose statement'),'<div class="row"><div><h3>payment_2026-09-08.csv</h3><p>'+t('支付账户 · 1 笔流水','Payment account · 1 entry')+'</p></div>'+badge('CSV','neutral')+'</div>',button(t('取消','Cancel'),'close')+button(t('预览账单','Preview statement'),'preview','',true)),
+ preview:()=>{state.preview=true;closeDialog();render()},
+ 'cancel-import':()=>{state.preview=false;render()},
+ 'confirm-import':()=>{if(state.batches.some(b=>b.id==='B03'&&b.active)){notify(t('该账单已导入','Statement already imported'));return}state.transactions.push({id:'T13',at:'2026-09-08 16:10:05',merchant:'城市书店',en:'City Books',amount:8800,direction:'out',account:state.importAccount,category:'other',batch:'B03',row:2});state.batches=state.batches.filter(b=>b.id!=='B03');state.batches.unshift({id:'B03',file:'payment_2026-09-08.csv',account:state.importAccount,at:now(),active:true});state.preview=false;changed('导入账单','Statement imported','B03 · T13');render();notify(t('已导入 1 笔流水','1 entry imported'))},
+ 'revert-import':id=>confirm(t('撤销导入','Revert import'),notice(t('删除此批次流水及关联关系，已保存报告不变。','Removes batch entries and their relationships. Saved reports remain unchanged.')),'apply-revert',id),
+ 'apply-revert':id=>{const ids=new Set(state.transactions.filter(x=>x.batch===id).map(x=>x.id));state.transactions=state.transactions.filter(x=>!ids.has(x.id));state.relations=state.relations.filter(r=>!ids.has(r.first)&&!ids.has(r.second));state.batches.find(b=>b.id===id).active=false;changed('撤销导入','Import reverted',id);closeDialog();render()},
+ account:accountEditor,
+ 'save-account':id=>{const value=document.getElementById('account-name').value.trim();if(!value){notify(t('请输入账户名称','Enter an account name'));return}if(state.accounts.some(x=>x.id!==id&&(x.name===value||x.en===value))){notify(t('账户名称已存在','Account name already exists'));return}const a=state.accounts.find(x=>x.id===id);if(a){a.name=value;a.en=value}else state.accounts.push({id:'account-'+state.accounts.length,name:value,en:value});changed('保存账本账户','Ledger account saved',value);closeDialog();render()},
+ relation:value=>{const [id,status]=value.split(':');const r=state.relations.find(x=>x.id===id);confirm(t(...statusLabels[status]),relationCard({...r,status},true),'apply-relation',value)},
+ 'apply-relation':value=>{const [id,status]=value.split(':');const r=state.relations.find(x=>x.id===id);r.status=status;r.version++;changed('更新交易关系','Relationship updated',id+' · '+status+' · v'+r.version);closeDialog();render();notify(t('关系已更新','Relationship updated'))},
+ evidence:id=>dialog(t('来源证据','Source evidence'),evidence(state.transactions.find(x=>x.id===id))),
+ 'export-ledger':()=>download('bankpilot-ledger.json',{currency:'CNY',period:'2026-09',exportedAt:now(),entries:ledgerRows()}),
+ 'generate-report':()=>{const report=makeSnapshot('REPORT');state.reports.unshift(report);state.selectedReport=report.id;audit('生成月度报告','Monthly report generated',report.id);render()},
+ 'view-report':id=>{state.selectedReport=id;render()},
+ 'export-report':id=>{const report=state.reports.find(x=>x.id===id);download('bankpilot-'+id+'.json',report);audit('导出报告','Report exported',id)},
+ recurring:status=>{state.recurringStatus=status;if(status!=='confirmed')state.reminder=false;audit('更新周期识别','Recurrence updated','StreamPlus · '+status);render()},
+ reminder:()=>{state.reminder=!state.reminder;audit('设置周期提醒','Recurring reminder changed',String(state.reminder));render()},
+ 'budget-alert':()=>{state.budgetAlert=!state.budgetAlert;audit('设置预算预警','Budget alert changed',String(state.budgetAlert));render()},
+ 'edit-budget':()=>dialog(t('编辑预算','Edit budget'),'<label class="label">'+t('月度额度 · CNY','Monthly limit · CNY')+'<input id="budget-value" type="number" min="0.01" max="100000000" step="0.01" value="'+state.budget/100+'"></label><label class="label">'+t('统计口径','Calculation basis')+'<select id="budget-basis"><option value="adjusted" '+(state.budgetBasis==='adjusted'?'selected':'')+'>'+t('调整后流出','Adjusted outflow')+'</option><option value="raw" '+(state.budgetBasis==='raw'?'selected':'')+'>'+t('原始流出','Raw outflow')+'</option></select></label>',button(t('取消','Cancel'),'close')+button(t('保存','Save'),'save-budget','',true)),
+ 'save-budget':()=>{const input=document.getElementById('budget-value');if(!input.reportValidity()||!input.value)return;state.budget=Math.round(Number(input.value)*100);state.budgetBasis=document.getElementById('budget-basis').value;audit('更新预算','Budget updated','CNY '+state.budget/100+' · '+state.budgetBasis);closeDialog();render()},
+ 'export-audit':()=>download('bankpilot-audit.json',state.audit),
+ auth:mode=>{closeDialog();auth(mode)}
+};
+document.addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(target)actions[target.dataset.action]?.(target.dataset.arg)});
+document.addEventListener('change',event=>{
+ const el=event.target;
+ if(el.id==='account-filter'){state.accountFilter=el.value;render()}
+ if(el.id==='category-filter'){state.categoryFilter=el.value;render()}
+ if(el.id==='relation-filter'){state.relationFilter=el.value;render()}
+ if(el.id==='import-account'){state.importAccount=el.value;render()}
+ if(el.dataset.category){const x=state.transactions.find(x=>x.id===el.dataset.category);x.category=el.value;changed('修正交易分类','Category corrected',x.id+' · '+x.category);notify(t('分类已更新','Category updated'))}
+});
+document.addEventListener('input',event=>{if(event.target.id==='ledger-search'){state.search=event.target.value;document.getElementById('ledger-table').innerHTML=ledgerTable()}});
+document.addEventListener('submit',event=>{
+ if(event.target.id==='agent-form'){
+  event.preventDefault();const query=document.getElementById('agent-query').value.trim();
+  if(!['核查 2026 年 9 月账单','Review September 2026 statements'].includes(query)){notify(t('此静态页面仅可运行预置日期任务','This static page runs the preset date task only'));return}
+  state.snapshot=makeSnapshot('RUN');state.runs.unshift(state.snapshot);audit('完成 Agent 核查','Agent review completed',state.snapshot.id);render();
+ }
+ if(event.target.id==='auth-form'){
+  event.preventDefault();
+  const password=event.target.querySelector('input[type="password"]');
+  const confirmation=document.getElementById('password-confirmation');
+  if(confirmation&&password.value!==confirmation.value){notify(t('两次密码不一致','Passwords do not match'));confirmation.focus();return}
+  notify(t('静态页面不提交账户信息','This static page does not submit account information'));
+ }
+});
+document.getElementById('lang').onclick=()=>{state.lang=state.lang==='zh'?'en':'zh';render()};
+document.getElementById('profile').onclick=()=>dialog(t('账户设置','Account settings'),'<div class="row"><div><h3>Lin</h3><p>lin@example.com</p></div>'+badge(t('个人工作区','Personal workspace'),'neutral')+'</div>',button(state.hide?t('显示金额','Show amounts'):t('隐藏金额','Hide amounts'),'privacy')+button(t('切换账户','Switch account'),'auth','login'));
+actions.privacy=()=>{state.hide=!state.hide;closeDialog();render()};
+document.getElementById('menu').onclick=()=>document.body.classList.toggle('nav-open');
+document.getElementById('shade').onclick=()=>document.body.classList.remove('nav-open');
+document.getElementById('close-dialog').onclick=closeDialog;
+document.getElementById('dialog').addEventListener('click',event=>{if(event.target===event.currentTarget){const rect=event.currentTarget.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)closeDialog()}});
+document.addEventListener('keydown',event=>{if(event.key==='Escape')document.body.classList.remove('nav-open')});
+// 初始即展示完整结果，避免以空页面代替最终产品；后续操作沿用同一份计算规则。
+state.snapshot=makeSnapshot('RUN');state.snapshot.id='RUN-001';state.snapshot.at='2026-09-08 14:36:10';state.runs.push(state.snapshot);
+const firstReport=makeSnapshot('REPORT');firstReport.id='REPORT-001';firstReport.at='2026-09-08 14:37:20';state.reports.push(firstReport);state.selectedReport=firstReport.id;
+state.audit.unshift({at:firstReport.at,zh:'生成月度报告',en:'Monthly report generated',detail:firstReport.id},{at:state.snapshot.at,zh:'完成 Agent 核查',en:'Agent review completed',detail:state.snapshot.id});
+render();
+</script>
 </body>
 </html>

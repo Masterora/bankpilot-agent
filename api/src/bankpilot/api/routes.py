@@ -75,6 +75,8 @@ from bankpilot.db.repositories import (
 )
 from bankpilot.domain.bill_analysis import classify_transaction
 from bankpilot.domain.contracts import (
+    CardStatus,
+    RunResult,
     RunStatus,
     TransactionResult,
 )
@@ -227,7 +229,7 @@ async def list_cards(
                 account_name=account_name,
                 display_name=card.display_name,
                 last_four=card.last_four,
-                status=card.status,
+                status=CardStatus(card.status),
             )
             for card, account_name in rows
         ]
@@ -449,7 +451,7 @@ async def _run_response(repository: RunRepository, run: RunRecord) -> RunRespons
         id=run.id,
         status=run.status,
         user_message=run.user_message,
-        result=run.result,
+        result=RunResult.model_validate(run.result) if run.result is not None else None,
         error_code=run.error_code,
         error_message=run.error_message,
         created_at=run.created_at,

@@ -5,7 +5,6 @@
 """
 
 from datetime import date
-from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import get_current_user, get_db_session
 from bankpilot.db.models import UserRecord
+from bankpilot.domain.contracts import RelationWorkspace
 from bankpilot.domain.transaction_relations import RelationKind, RelationState
 from bankpilot.services.transaction_relations import (
     RelationError,
@@ -33,18 +33,20 @@ class RelationRequest(BaseModel):
     expected_version: int = Field(ge=0)
 
 
-@router.get("")
+@router.get("", response_model=RelationWorkspace)
 async def list_relations(
     start_date: date,
     end_date: date,
     user: UserRecord = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> dict[str, Any]:
+) -> RelationWorkspace:
     """同时返回期间原流水与调整值；候选未穷尽时明确标记。"""
     if end_date < start_date or (end_date - start_date).days > 366:
         raise HTTPException(422, "invalid_period")
     try:
-        return await relation_workspace(session, user.id, start_date, end_date)
+        return RelationWorkspace.model_validate(
+            await relation_workspace(session, user.id, start_date, end_date)
+        )
     except RelationError as exc:
         raise HTTPException(exc.status, exc.code) from exc
 

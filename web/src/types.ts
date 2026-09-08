@@ -180,6 +180,24 @@ export interface RunResult {
     items: Transaction[]
   }
   analysis: BillAnalysis
+  review: BillReview | null
+}
+
+/** 核查快照包含生成时关系和来源证据；缺失表示旧快照，不从当前账本补造。 */
+export interface BillReview {
+  snapshot_at: string
+  rule_version: 'transaction_relations_v1'
+  adjusted_summaries: RelationWorkspace['summaries']
+  relations: TransactionRelation[]
+  evidence: RelationTransaction[]
+  candidates_truncated: boolean
+  coverage: {
+    status: 'unverified'
+    start_date: string
+    end_date: string
+    transaction_count: number
+    import_batch_count: number
+  }
 }
 
 export interface RunEvent {

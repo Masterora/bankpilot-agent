@@ -15,17 +15,17 @@ import logging
 from contextlib import suppress
 from datetime import UTC, datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from bankpilot.adapters.local_banking import LocalBankingGateway
 from bankpilot.agent.workflow import ReadOnlyBillWorkflow
 from bankpilot.db.models import RunRecord
 from bankpilot.db.repositories import RunRepository
 from bankpilot.domain.contracts import ModelPlan, RunStatus, SupportedAction
 from bankpilot.errors import BankPilotError
-from bankpilot.ports import ModelGateway
+from bankpilot.ports import ModelGateway, ReviewGateway
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +37,14 @@ class RunProcessor:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         model_gateway: ModelGateway,
+        review_gateway: ReviewGateway,
+        *,
+        business_timezone: str = "Asia/Shanghai",
     ) -> None:
         self.session_factory = session_factory
         self.model_gateway = model_gateway
+        self.review_gateway = review_gateway
+        self.business_timezone = ZoneInfo(business_timezone)
 
     async def process(self, run_id: UUID) -> None:
         """领取、执行并完成一条已创建的运行记录。"""
@@ -56,18 +61,17 @@ class RunProcessor:
 
         heartbeat = asyncio.create_task(self._heartbeat(run_id))
         try:
-            async with self.session_factory() as session:
-                workflow = ReadOnlyBillWorkflow(
-                    self.model_gateway,
-                    LocalBankingGateway(session),
-                    after_plan=lambda plan: self._record_plan(run_id, plan),
-                )
-                state = await workflow.run(
-                    run_id=run_id,
-                    user_id=user_id,
-                    user_message=user_message,
-                    today=datetime.now(UTC).date(),
-                )
+            workflow = ReadOnlyBillWorkflow(
+                self.model_gateway,
+                self.review_gateway,
+                after_plan=lambda plan: self._record_plan(run_id, plan),
+            )
+            state = await workflow.run(
+                run_id=run_id,
+                user_id=user_id,
+                user_message=user_message,
+                today=datetime.now(self.business_timezone).date(),
+            )
             result = state["result"]
             async with self.session_factory() as session, session.begin():
                 repository = RunRepository(session)
@@ -85,6 +89,8 @@ class RunProcessor:
                     {
                         "anomaly_count": len(result.analysis.anomalies),
                         "category_count": len(result.analysis.category_summaries),
+                        "relation_count": len(result.review.relations) if result.review else 0,
+                        "coverage": result.review.coverage.status if result.review else None,
                     },
                 )
                 await repository.succeed(run_id, result.model_dump(mode="json"))

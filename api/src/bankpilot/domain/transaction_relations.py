@@ -4,7 +4,7 @@
 关键边界：候选不代表事实；仅 confirmed 关系影响统计，退款按到账日冲减流出。
 """
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -123,20 +123,30 @@ def suggest_relations(
     period_ids: set[UUID] | None = None,
 ) -> tuple[list[Relation], bool]:
     """按商户、币种索引查找候选；工作量设上限，达到上限明确返回未穷尽标记。"""
-    merchants: dict[tuple[str, str], list[RelationTransaction]] = defaultdict(list)
-    amounts: dict[tuple[str, Decimal], list[RelationTransaction]] = defaultdict(list)
+    merchants: dict[tuple[str, str], deque[RelationTransaction]] = defaultdict(deque)
+    amounts: dict[tuple[str, Decimal], deque[RelationTransaction]] = defaultdict(deque)
+    period_merchants: dict[tuple[str, str], deque[RelationTransaction]] = defaultdict(deque)
+    period_amounts: dict[tuple[str, Decimal], deque[RelationTransaction]] = defaultdict(deque)
     result: list[Relation] = []
     inspected = 0
     for row in sorted(transactions, key=lambda t: (t.booking_date, t.occurred_at, str(t.id))):
         merchant = " ".join(row.merchant.casefold().split())
-        prior = {t.id: t for t in merchants[(row.currency, merchant)]}
-        prior.update({t.id: t for t in amounts[(row.currency, -row.amount)]})
+        # 窗口外交易只与期间内交易比较，避免无关月份耗尽搜索预算。
+        in_period = period_ids is None or row.id in period_ids
+        merchant_index = merchants if in_period else period_merchants
+        amount_index = amounts if in_period else period_amounts
+        merchant_matches = merchant_index[(row.currency, merchant)]
+        amount_matches = amount_index[(row.currency, -row.amount)]
+        # 所有关联最多跨九十天；淘汰更早记录后再构造候选集合。
+        for matches in (merchant_matches, amount_matches):
+            while matches and (row.booking_date - matches[0].booking_date).days > 90:
+                matches.popleft()
+        prior = {t.id: t for t in merchant_matches}
+        prior.update({t.id: t for t in amount_matches})
         for other in prior.values():
             inspected += 1
             if inspected > 50_000:
                 return result, True
-            if period_ids is not None and not period_ids.intersection((row.id, other.id)):
-                continue
             kinds: list[str] = []
             same_merchant = bool(merchant) and merchant == " ".join(
                 other.merchant.casefold().split()
@@ -163,6 +173,9 @@ def suggest_relations(
                     return result, True
         merchants[(row.currency, merchant)].append(row)
         amounts[(row.currency, row.amount)].append(row)
+        if in_period:
+            period_merchants[(row.currency, merchant)].append(row)
+            period_amounts[(row.currency, row.amount)].append(row)
     return result, False
 
 

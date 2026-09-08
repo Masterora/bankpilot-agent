@@ -30,6 +30,7 @@ services:
     restart: unless-stopped
     environment:
       BANKPILOT_ENV: production
+      BANKPILOT_TIMEZONE: ${BANKPILOT_TIMEZONE:-Asia/Shanghai}
       BANKPILOT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bankpilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bankpilot}
       BANKPILOT_SESSION_SECRET: ${BANKPILOT_SESSION_SECRET:?BANKPILOT_SESSION_SECRET is required}
       BANKPILOT_SESSION_TTL_SECONDS: ${BANKPILOT_SESSION_TTL_SECONDS:-28800}

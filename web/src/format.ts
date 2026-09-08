@@ -28,9 +28,16 @@ export function formatTransactionTime(item: Pick<Transaction, 'time_precision' |
 }
 
 export function formatMoney(amount: string, currency: string, locale: Locale): string {
+  const decimal = /^(-?)(\d+)(?:\.(\d+))?$/.exec(amount)
+  if (!decimal) return '—'
+  const [, sign, integer, fraction = ''] = decimal
+  // Decimal 字符串不能经过 Number；汇总金额也可能超出安全整数范围。
+  const whole = BigInt(`${sign}${integer}`)
+  const signedWhole = sign && whole === 0n ? -0 : whole
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
-  }).format(Number(amount))
+    maximumFractionDigits: Math.max(2, fraction.length),
+  }).formatToParts(signedWhole).map((part) => part.type === 'fraction' ? fraction.padEnd(2, '0') : part.value).join('')
 }

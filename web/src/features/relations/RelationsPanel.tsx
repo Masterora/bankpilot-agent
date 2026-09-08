@@ -5,7 +5,8 @@
  */
 import { useEffect, useState } from 'react'
 import { ApiError, api } from '../../api'
-import { formatTimestamp, formatTransactionTime } from '../../format'
+import { EmptyContent } from '../../shared/ui'
+import { formatMoney, formatTimestamp, formatTransactionTime } from '../../format'
 import type { RelationKind, RelationTransaction, RelationWorkspace, TransactionRelation } from '../../types'
 
 const errors: Record<string, [string, string]> = {
@@ -75,28 +76,30 @@ export function RelationsPanel({ start, end, english }: { start: string; end: st
   return <section className="relations-panel" aria-label={english ? 'Transaction relationships' : '交易关系'}>
     {error && <p role="alert" className="error">{error} <button disabled={busy} onClick={refresh}>{english ? 'Refresh' : '刷新'}</button></p>}
     {notice && <p role="status">{english ? 'Saved' : '已保存'}</p>}
-    {loading ? <p>{english ? 'Loading' : '正在读取'}</p> : data && <>
+    {loading ? <p>{english ? 'Loading' : '正在读取'}</p> : data && <div className="relation-workspace-grid"><aside className="relation-summary">
       <div className="relation-summary-head"><h2>{english ? 'Adjusted flows' : '调整后收支'}</h2><button onClick={exportSummary} disabled={!data.summaries.length || busy}>{english ? 'Export summary' : '导出汇总'}</button></div>
-      <div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Currency', 'Inflow', 'Outflow', 'Net'] : ['币种', '流入', '流出', '净额']).map((label) => <th key={label}>{label}</th>)}</tr></thead><tbody>{data.summaries.map((s) => <tr key={s.currency}><td>{s.currency}</td><td>{s.adjusted_inflow}</td><td>{s.adjusted_outflow}</td><td>{s.adjusted_net}</td></tr>)}</tbody></table></div>
+      {data.summaries.map((s) => <div key={s.currency}><p className="currency-caption">{s.currency}</p><dl className="flow-breakdown">{(english ? [['Raw inflow', s.raw_inflow], ['Raw outflow', s.raw_outflow], ['Adjusted inflow', s.adjusted_inflow], ['Adjusted outflow', s.adjusted_outflow], ['Adjusted net flow', s.adjusted_net]] : [['原始流入', s.raw_inflow], ['原始流出', s.raw_outflow], ['调整后流入', s.adjusted_inflow], ['调整后流出', s.adjusted_outflow], ['调整后净流入', s.adjusted_net]]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{formatMoney(value, s.currency, english ? 'en-US' : 'zh-CN')}</dd></div>)}</dl></div>)}
       {!data.summaries.length && <p>{english ? 'No transactions in this period' : '当前期间暂无流水'}</p>}
       <details className="scope-note"><summary>{english ? 'Adjustments' : '调整明细'}</summary>
         {data.summaries.map((s) => <p key={s.currency}>{s.currency} · {english ? 'Raw' : '原始'} {s.raw_inflow} / {s.raw_outflow} · {english ? 'Duplicates' : '重复'} {s.duplicate_excluded} · {english ? 'Transfers' : '转账'} {s.transfer_excluded} · {english ? 'Refunds' : '退款'} {s.refund_amount}</p>)}
       </details>
-      <ManualRelation transactions={data.transactions.filter((t) => t.booking_date >= start && t.booking_date <= end)} english={english} busy={busy} onConfirm={(kind, first_id, second_id) => {
+      <p className="coverage-note">{english ? 'Only confirmed relationships adjust totals. Net flow is not a balance.' : '仅确认关系调整统计，净流入不代表余额。'}</p>
+      </aside><div className="relation-main">
+      <ManualRelation transactions={data.transactions} start={start} end={end} english={english} busy={busy} onConfirm={(kind, first_id, second_id) => {
         const saved = data.items.find((r) => r.kind === kind && ((r.first_id === first_id && r.second_id === second_id) || (kind === 'duplicate' && r.first_id === second_id && r.second_id === first_id)))
         void decide({ kind, first_id, second_id, version: saved?.version ?? 0 }, 'confirmed')
       }} />
       <div className="relation-tabs" role="group" aria-label={english ? 'Relation status' : '关联状态'}>{(['pending', 'confirmed', 'rejected', 'revoked'] as const).map((s) => <button key={s} aria-pressed={filter === s} onClick={() => { setFilter(s); setPage(0) }}>{({ pending: ['待确认', 'Pending'], confirmed: ['已确认', 'Confirmed'], rejected: ['已排除', 'Rejected'], revoked: ['已撤销', 'Revoked'] })[s][english ? 1 : 0]} · {data.items.filter((i) => i.state === s).length}</button>)}</div>
       {data.truncated && <p role="status">{english ? 'Candidate search limited. Narrow the period or link records manually.' : '候选搜索已达上限，可缩短期间或手动关联。'}</p>}
-      {!rows.length && <p>{english ? 'No matching relations' : '暂无对应关系'}</p>}
+      {!rows.length && <EmptyContent kind="relations" title={english ? 'No matching relationships' : '暂无对应关系'} detail={english ? 'Relationships appear here when matching entries are available. You can also link entries manually.' : '匹配到交易后在这里核对，也可以手动关联已有流水。'} />}
       {rows.slice(safePage * 20, (safePage + 1) * 20).map((r) => <RelationCard key={`${r.kind}-${r.first_id}-${r.second_id}-${r.version}`} relation={r} first={evidence.get(r.first_id)!} second={evidence.get(r.second_id)!} busy={busy} english={english} onDecide={decide} />)}
       {rows.length > 20 && <div className="relation-tabs"><button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>{english ? 'Previous' : '上一页'}</button><span>{safePage + 1} / {Math.ceil(rows.length / 20)}</span><button disabled={(safePage + 1) * 20 >= rows.length} onClick={() => setPage(safePage + 1)}>{english ? 'Next' : '下一页'}</button></div>}
-    </>}
+    </div></div>}
   </section>
 }
 
 function Evidence({ transaction, english, label }: { transaction: RelationTransaction; english: boolean; label: string }) {
-  return <article className="relation-evidence"><small>{label}</small><strong>{transaction.amount} {transaction.currency}</strong><span>{transaction.account_name} · {transaction.merchant}</span><time>{formatTransactionTime(transaction, english ? 'en-US' : 'zh-CN')}</time><details><summary>{english ? 'Source' : '来源'}</summary><p>{transaction.description || '—'}</p><p>{english ? 'Batch' : '批次'}：{transaction.import_batch_id ?? '—'}</p><p>{english ? 'Row' : '源行'}：{transaction.source_row_number ?? '—'}</p></details></article>
+  return <article className="relation-evidence"><small>{label}</small><strong>{formatMoney(transaction.amount, transaction.currency, english ? 'en-US' : 'zh-CN')}</strong><span>{transaction.account_name} · {transaction.merchant}</span><time>{formatTransactionTime(transaction, english ? 'en-US' : 'zh-CN')}</time><details><summary>{english ? 'Source' : '来源'}</summary><p>{transaction.description || '—'}</p><p>{english ? 'Batch' : '批次'}：{transaction.import_batch_id ?? '—'}</p><p>{english ? 'Row' : '源行'}：{transaction.source_row_number ?? '—'}</p></details></article>
 }
 
 function RelationCard({ relation, first, second, busy, english, onDecide }: { relation: TransactionRelation; first: RelationTransaction; second: RelationTransaction; busy: boolean; english: boolean; onDecide: (r: TransactionRelation, state: 'confirmed' | 'rejected' | 'revoked') => Promise<void> }) {
@@ -113,7 +116,7 @@ function RelationCard({ relation, first, second, busy, english, onDecide }: { re
 }
 
 /** 用户可补充规则未命中的关联；使用已加载流水选择，服务端仍执行全部事实校验。 */
-function ManualRelation({ transactions, english, busy, onConfirm }: { transactions: RelationTransaction[]; english: boolean; busy: boolean; onConfirm: (kind: RelationKind, first: string, second: string) => void }) {
+function ManualRelation({ transactions, start, end, english, busy, onConfirm }: { transactions: RelationTransaction[]; start: string; end: string; english: boolean; busy: boolean; onConfirm: (kind: RelationKind, first: string, second: string) => void }) {
   const [kind, setKind] = useState<RelationKind>('transfer')
   const [first, setFirst] = useState('')
   const [second, setSecond] = useState('')
@@ -121,11 +124,13 @@ function ManualRelation({ transactions, english, busy, onConfirm }: { transactio
   const matches = transactions.filter((t) => `${t.account_name} ${t.merchant} ${t.amount} ${t.booking_date}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()))
   const visibleIds = new Set(matches.slice(0, 200).map((t) => t.id))
   const options = transactions.filter((t) => t.id === first || t.id === second || visibleIds.has(t.id))
-  return <details className="scope-note"><summary>{english ? 'Link transactions' : '手动关联'}</summary><form className="manual-relation" onSubmit={(event) => { event.preventDefault(); onConfirm(kind, first, second) }}>
-    <label>{english ? 'Find transactions in this period' : '查找当前期间交易'}<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={english ? 'Account, merchant, amount or date' : '账户、商户、金额或日期'} /></label>
+  const touchesPeriod = transactions.some((t) => (t.id === first || t.id === second) && t.booking_date >= start && t.booking_date <= end)
+  return <details className="scope-note"><summary>{english ? 'Link transactions' : '手动关联'}</summary><form className="manual-relation" onSubmit={(event) => { event.preventDefault(); if (!busy && first && second && first !== second && touchesPeriod) onConfirm(kind, first, second) }}>
+    <label>{english ? 'Find transactions (including 90 days before and after)' : '查找交易（含期间前后 90 天）'}<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={english ? 'Account, merchant, amount or date' : '账户、商户、金额或日期'} /></label>
     {matches.length > 200 && <p>{english ? 'Showing 200 matches. Refine your search.' : '显示前 200 条，请缩小搜索范围。'}</p>}
     <label>{english ? 'Type' : '关系类型'}<select value={kind} disabled={busy} onChange={(e) => setKind(e.target.value as RelationKind)}>{(['duplicate', 'transfer', 'refund'] as const).map((k) => <option key={k} value={k}>{kindLabel(k, english)}</option>)}</select></label>
     {([first, second] as const).map((value, index) => <label key={index}>{kind === 'duplicate' ? (english ? ['Keep', 'Exclude'] : ['保留记录', '排除记录'])[index] : (english ? ['Original outflow', 'Incoming record'] : ['原支出记录', '到账记录'])[index]}<select required value={value} disabled={busy} onChange={(e) => (index === 0 ? setFirst : setSecond)(e.target.value)}><option value="">{english ? 'Select a transaction' : '选择交易'}</option>{options.map((t) => <option key={t.id} value={t.id}>{formatTransactionTime(t, english ? 'en-US' : 'zh-CN')} · {t.account_name} · {t.merchant} · {t.amount} {t.currency} · #{t.source_row_number ?? t.id.slice(0, 8)}</option>)}</select></label>)}
-    <button disabled={busy || !first || !second || first === second}>{english ? 'Confirm relation' : '确认关联'}</button>
+    {first && second && !touchesPeriod && <p>{english ? 'At least one transaction must fall within the selected period.' : '至少一笔交易须在当前期间内。'}</p>}
+    <button disabled={busy || !first || !second || first === second || !touchesPeriod}>{english ? 'Confirm relation' : '确认关联'}</button>
   </form></details>
 }
