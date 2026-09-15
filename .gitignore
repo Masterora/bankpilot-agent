@@ -5,14 +5,10 @@
 !**/.env.example
 .venv/
 __pycache__/
-.pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.coverage
-htmlcov/
 *.py[cod]
 *.egg-info/
 *.db
 node_modules/
 dist/
-coverage/

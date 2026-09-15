@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     CheckConstraint,
     Date,
     DateTime,
@@ -35,6 +36,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from bankpilot.db.base import Base
 from bankpilot.domain.contracts import CardStatus, RunStatus
+from bankpilot.domain.reports import ReportStatus
 
 
 class UserRecord(Base):
@@ -43,9 +45,45 @@ class UserRecord(Base):
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    ledger_revision: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     accounts: Mapped[list["AccountRecord"]] = relationship(cascade="all, delete-orphan")
+
+
+class MonthlyReportRecord(Base):
+    """持久任务与一次生成结果；删除保留幂等墓碑，但清除所有快照证据。"""
+
+    __tablename__ = "monthly_reports"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    month: Mapped[date] = mapped_column(Date)
+    idempotency_key: Mapped[UUID] = mapped_column(Uuid)
+    status: Mapped[str] = mapped_column(String(16), default=ReportStatus.QUEUED)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    claim_token: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ledger_revision: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    rule_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (
+        Index("uq_monthly_reports_idempotency", "user_id", "idempotency_key", unique=True),
+        Index("ix_monthly_reports_user_created", "user_id", "created_at"),
+        Index("ix_monthly_reports_queue", "status", "available_at", "lease_until"),
+        CheckConstraint(
+            "status IN ('QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'DELETED')",
+            name="ck_monthly_reports_status",
+        ),
+        CheckConstraint("attempts >= 0 AND attempts <= 3", name="ck_monthly_reports_attempts"),
+    )
 
 
 class SessionRecord(Base):

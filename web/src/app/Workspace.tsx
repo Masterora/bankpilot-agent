@@ -7,25 +7,24 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { api } from '../api'
 import { LedgerPage } from '../features/agent/LedgerPage'
 import { AgentPage } from '../features/agent/AgentPage'
+import { useAgentRun } from '../features/agent/useAgentRun'
 import { AuditPage } from '../features/audit/AuditPage'
 import { ImportPage } from '../features/imports/ImportPage'
 import { OverviewPage } from '../features/overview/OverviewPage'
 import { RelationsPage } from '../features/relations/RelationsPage'
+import { ReportsPage } from '../features/reports/ReportsPage'
 import { useWorkspaceRoute } from './routing'
-import { isPresetQuery } from '../i18n'
 import type { Messages } from '../i18n'
 import { EmptyProductPage, LanguageSwitch, Logo, NavigationIcon } from '../shared/ui'
 import type { LanguageProps } from '../shared/ui'
-import type { ImportBatch, Run, TransactionCategory, User } from '../types'
+import type { ImportBatch, User } from '../types'
 import { navigationGroups } from './pages'
 import type { ProductPage } from './pages'
-
-const terminalStatuses = new Set(['SUCCEEDED', 'FAILED', 'UNKNOWN'])
 
 interface WorkspaceProps extends LanguageProps {
   user: User
@@ -39,20 +38,11 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   const navigationRef = useRef<HTMLDialogElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const previousPage = useRef<ProductPage>('overview')
-  const [message, setMessage] = useState(copy.defaultQuery)
+  const agent = useAgentRun(copy)
   const [imports, setImports] = useState<ImportBatch[]>([])
   const [importsLoading, setImportsLoading] = useState(true)
   const [importsFailed, setImportsFailed] = useState(false)
   const [importsAttempt, setImportsAttempt] = useState(0)
-  const [run, setRun] = useState<Run | null>(null)
-  const [error, setError] = useState('')
-  const [correctionSaved, setCorrectionSaved] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [correctingId, setCorrectingId] = useState<string | null>(null)
-  const eventSource = useRef<EventSource | null>(null)
-  const finishingRunId = useRef<string | null>(null)
-  const activeRunId = useRef<string | null>(null)
-  const correctionSequence = useRef(0)
 
   // 原生模态导航提供焦点约束与 Escape 关闭；桌面导航不参与模态状态。
   useEffect(() => {
@@ -78,11 +68,6 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   }, [activePage, copy])
 
   useEffect(() => {
-    setMessage((current) => (isPresetQuery(current) ? copy.defaultQuery : current))
-  }, [copy])
-
-
-  useEffect(() => {
     let active = true
     api.listImports()
       .then((response) => {
@@ -98,111 +83,6 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
       active = false
     }
   }, [importsAttempt])
-
-  useEffect(() => () => {
-    activeRunId.current = null
-    eventSource.current?.close()
-  }, [])
-
-  async function finishRun(runId: string) {
-    if (activeRunId.current !== runId || finishingRunId.current === runId) return
-    finishingRunId.current = runId
-    eventSource.current?.close()
-    eventSource.current = null
-    try {
-      const completed = await api.getRun(runId)
-      if (activeRunId.current === runId) setRun(completed)
-    } catch {
-      if (activeRunId.current === runId) setError(copy.queryStatusFailed)
-    } finally {
-      if (finishingRunId.current === runId) finishingRunId.current = null
-      if (activeRunId.current === runId) setSubmitting(false)
-    }
-  }
-
-  function watchRun(runId: string) {
-    eventSource.current?.close()
-    eventSource.current = api.watchRunEvents(
-      runId,
-      (event) => {
-        if (activeRunId.current !== runId) return
-        setRun((current) => {
-          if (current?.id !== runId || current.events.some((item) => item.sequence === event.sequence)) {
-            return current
-          }
-          return {
-            ...current,
-            events: [...current.events, event].sort((a, b) => a.sequence - b.sequence),
-          }
-        })
-        if (event.event_type === 'run.completed' || event.event_type === 'run.failed') {
-          void finishRun(runId)
-        }
-      },
-      () => {
-        // 网络断线交给 EventSource 自动重连；会话或接口失效时结束等待并提示。
-        if (activeRunId.current !== runId || finishingRunId.current === runId) return
-        void api.getRun(runId).then((current) => {
-          if (activeRunId.current !== runId) return
-          setRun(current)
-          if (terminalStatuses.has(current.status)) {
-            eventSource.current?.close()
-            eventSource.current = null
-            setSubmitting(false)
-          }
-        }).catch(() => {
-          if (activeRunId.current !== runId) return
-          eventSource.current?.close()
-          setError(copy.queryStatusFailed)
-          setSubmitting(false)
-        })
-      },
-    )
-  }
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (submitting || !message.trim()) return
-    // 新查询立即使旧修正和旧事件流失效，包括新运行尚未取得 ID 的阶段。
-    activeRunId.current = null
-    correctionSequence.current += 1
-    eventSource.current?.close()
-    eventSource.current = null
-    setCorrectingId(null)
-    setError('')
-    setRun(null)
-    setCorrectionSaved(false)
-    setSubmitting(true)
-    try {
-      const created = await api.createRun(message.trim())
-      activeRunId.current = created.id
-      setRun(created)
-      if (terminalStatuses.has(created.status)) setSubmitting(false)
-      else watchRun(created.id)
-    } catch {
-      setError(copy.createRunFailed)
-      setSubmitting(false)
-    }
-  }
-
-  async function correctCategory(transactionId: string, category: TransactionCategory) {
-    if (!run) return
-    const runId = run.id
-    const sequence = ++correctionSequence.current
-    const ownsResponse = () => activeRunId.current === runId && correctionSequence.current === sequence
-    setError('')
-    setCorrectingId(transactionId)
-    try {
-      const updated = await api.correctCategory(runId, transactionId, category)
-      if (!ownsResponse()) return
-      setRun((current) => current?.id === runId ? updated : current)
-      setCorrectionSaved(true)
-    } catch {
-      if (ownsResponse()) setError(copy.categoryUpdateFailed)
-    } finally {
-      if (ownsResponse()) setCorrectingId(null)
-    }
-  }
 
   async function logout() {
     // 即使远程 Cookie 已过期，也要清理本地会话界面状态。
@@ -222,17 +102,17 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     ),
     agent: (
       <AgentPage
-        correctionSaved={correctionSaved}
+        correctionSaved={agent.correctionSaved}
         copy={copy}
-        correctingId={correctingId}
-        error={error}
+        correctingId={agent.correctingId}
+        error={agent.error}
         locale={locale}
-        message={message}
-        onCategoryChange={correctCategory}
-        onMessageChange={setMessage}
-        onSubmit={submit}
-        run={run}
-        submitting={submitting}
+        message={agent.message}
+        onCategoryChange={agent.correctCategory}
+        onMessageChange={agent.setMessage}
+        onSubmit={agent.submit}
+        run={agent.run}
+        submitting={agent.submitting}
       />
     ),
     import: (
@@ -261,8 +141,8 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
       onPeriodChange={setReviewPeriod}
     />,
     relations: <RelationsPage copy={copy} english={locale === 'en-US'} period={reviewPeriod} onPeriodChange={setReviewPeriod} />,
-    reports: <EmptyProductPage copy={copy} page="reports" />,
-    audit: <AuditPage copy={copy} run={run} locale={locale} />,
+    reports: <ReportsPage copy={copy} locale={locale} initialMonth={reviewPeriod.start} />,
+    audit: <AuditPage copy={copy} run={agent.run} locale={locale} />,
     recurring: <EmptyProductPage copy={copy} page="recurring" />,
     budgets: <EmptyProductPage copy={copy} page="budgets" />,
   }
@@ -274,23 +154,25 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         <Navigation
           activePage={activePage}
           copy={copy}
+          english={locale === 'en-US'}
           onNavigate={navigate}
         />
         <div className="sidebar-account">
-          <span>{user.email}</span>
+          <span className="account-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
+          <span className="account-identity"><strong>{user.email}</strong><small>{locale === 'en-US' ? 'Workspace connected' : '工作区已连接'}</small></span>
           <button onClick={logout}>{copy.logout}</button>
         </div>
       </aside>
 
       <dialog className="mobile-navigation" ref={navigationRef} onCancel={() => setMenuOpen(false)} onClose={() => { setMenuOpen(false); menuRef.current?.focus() }} aria-label={copy.navigationLabel}>
         <div className="mobile-navigation-heading"><div className="brand"><Logo /> BankPilot</div><button type="button" onClick={() => setMenuOpen(false)} aria-label={locale === 'en-US' ? 'Close navigation' : '关闭导航'}>×</button></div>
-        <Navigation activePage={activePage} copy={copy} onNavigate={navigate} />
+        <Navigation activePage={activePage} copy={copy} english={locale === 'en-US'} onNavigate={navigate} />
       </dialog>
 
       <main className="workspace-shell">
         <header className="workspace-topbar">
           <button ref={menuRef} type="button" className="menu-toggle" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} aria-label={locale === 'en-US' ? 'Open navigation' : '打开导航'}>☰</button>
-          <div className="workspace-breadcrumb">{locale === 'en-US' ? 'Personal ledger' : '个人账本'}</div>
+          <div className="workspace-breadcrumb"><small>{locale === 'en-US' ? 'Personal ledger' : '个人账本'}</small><strong>{copy.productPages[activePage].title}</strong></div>
           <div className="header-actions">
             <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
             <div className="account-chip">
@@ -304,7 +186,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
           {/* 导入表单保持挂载，切换页面不会丢失已选文件与字段映射。 */}
           <div hidden={activePage !== 'import'} data-active-page={activePage === 'import' ? '' : undefined}>{pages.import}</div>
           {activePage !== 'import' && <div data-active-page="">{pages[activePage]}</div>}
-          {activePage === 'review' && error && <p className="error" role="alert">{error}</p>}
+          {activePage === 'review' && agent.error && <p className="error" role="alert">{agent.error}</p>}
           <footer className="workspace-footer"><span>{locale === 'en-US' ? 'Imported data · Not a bank balance' : '已导入数据 · 不代表银行余额'}</span><span>UTC+08:00</span></footer>
         </div>
       </main>
@@ -315,15 +197,21 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
 function Navigation({
   activePage,
   copy,
+  english,
   onNavigate,
 }: {
   activePage: ProductPage
   copy: Messages
+  english: boolean
   onNavigate: (page: ProductPage) => void
 }) {
+  const groupLabels = english
+    ? { ledger: 'Ledger', analysis: 'Review & control', planning: 'Planning' }
+    : { ledger: '账务管理', analysis: '核查与治理', planning: '分析规划' }
   return (
     <nav className="product-nav" aria-label={copy.navigationLabel}>
       {navigationGroups.map((group) => <div className="navigation-group" key={group.id}>
+      <p className="navigation-group-label">{groupLabels[group.id as keyof typeof groupLabels]}</p>
       {group.pages.map((page) => (
         <button
           type="button"
@@ -334,6 +222,7 @@ function Navigation({
         >
           <NavigationIcon kind={page} />
           <span>{copy.productPages[page].navigation}</span>
+          {(page === 'recurring' || page === 'budgets') && <small>{english ? 'Planned' : '规划中'}</small>}
         </button>
       ))}
       </div>)}

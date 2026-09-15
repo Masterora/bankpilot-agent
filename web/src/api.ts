@@ -44,6 +44,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  overview: (start: string, end: string) => request<import('./types').OverviewSnapshot>(`/api/v1/overview?start_date=${start}&end_date=${end}`),
+  reports: (offset = 0) => request<{ items: import('./types').MonthlyReport[]; has_more: boolean }>(`/api/v1/reports?offset=${offset}&limit=20`),
+  report: (id: string) => request<import('./types').ReportDetail>(`/api/v1/reports/${id}`),
+  reportStatus: (id: string) => request<import('./types').MonthlyReport>(`/api/v1/reports/${id}/status`),
+  createReport: (month: string, idempotency_key: string) => request<import('./types').MonthlyReport>('/api/v1/reports', { method: 'POST', body: JSON.stringify({ month, idempotency_key }) }),
+  deleteReport: (id: string) => request<void>(`/api/v1/reports/${id}/delete`, { method: 'POST' }),
+  exportReport: async (id: string) => {
+    const content = await request<unknown>(`/api/v1/reports/${id}/export`)
+    const url = URL.createObjectURL(new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `bankpilot-report-${id}.json`
+    anchor.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  },
   relations: (start: string, end: string) => request<import('./types').RelationWorkspace>(`/api/v1/relations?start_date=${start}&end_date=${end}`),
   saveRelation: (payload: { kind: import('./types').RelationKind; first_id: string; second_id: string; state: 'confirmed' | 'rejected' | 'revoked'; expected_version: number }) => request<void>('/api/v1/relations', { method: 'POST', body: JSON.stringify(payload) }),
   renameAccount: (id: string, name: string) => request<void>(`/api/v1/accounts/${id}/name`, { method: 'POST', body: JSON.stringify({ name }) }),

@@ -20,13 +20,22 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from bankpilot.adapters.local_review import LocalReviewGateway
 from bankpilot.adapters.openrouter import OpenRouterModelGateway
-from bankpilot.api.ledger import router as ledger_router
+from bankpilot.api.accounts import router as accounts_router
+from bankpilot.api.auth import router as auth_router
+from bankpilot.api.cards import router as cards_router
+from bankpilot.api.import_tools import router as import_tools_router
+from bankpilot.api.imports import router as imports_router
+from bankpilot.api.overview import router as overview_router
 from bankpilot.api.relations import router as relations_router
+from bankpilot.api.reports import router as reports_router
 from bankpilot.api.reviews import router as reviews_router
-from bankpilot.api.routes import router
+from bankpilot.api.runs import router as runs_router
+from bankpilot.api.system import router as system_router
+from bankpilot.api.transactions import router as transactions_router
 from bankpilot.config import Settings, get_settings
 from bankpilot.db.session import create_engine, create_session_factory
 from bankpilot.ports import ModelGateway, ReviewGateway
+from bankpilot.services.report_processor import ReportProcessor
 from bankpilot.services.run_processor import RunProcessor
 
 
@@ -57,18 +66,24 @@ def create_app(
 
         app.state.settings = resolved_settings
         app.state.session_factory = session_factory
+        resolved_review_gateway = review_gateway or LocalReviewGateway(session_factory)
         app.state.run_processor = RunProcessor(
             session_factory,
             resolved_gateway,
-            review_gateway or LocalReviewGateway(session_factory),
+            resolved_review_gateway,
             business_timezone=resolved_settings.business_timezone,
         )
         # 启动与周期恢复均只处理心跳过期任务，不触碰其他实例的活跃运行。
         await app.state.run_processor.reconcile_interrupted()
         recovery = asyncio.create_task(app.state.run_processor.recover_expired())
+        app.state.report_processor = ReportProcessor(session_factory, resolved_review_gateway)
+        reports = asyncio.create_task(app.state.report_processor.run())
         try:
             yield
         finally:
+            reports.cancel()
+            with suppress(asyncio.CancelledError):
+                await reports
             recovery.cancel()
             with suppress(asyncio.CancelledError):
                 await recovery
@@ -89,8 +104,16 @@ def create_app(
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "Last-Event-ID"],
     )
-    app.include_router(router)
-    app.include_router(ledger_router)
+    app.include_router(system_router)
+    app.include_router(auth_router)
+    app.include_router(cards_router)
+    app.include_router(accounts_router)
+    app.include_router(transactions_router)
+    app.include_router(imports_router)
+    app.include_router(import_tools_router)
+    app.include_router(runs_router)
     app.include_router(reviews_router)
+    app.include_router(overview_router)
     app.include_router(relations_router)
+    app.include_router(reports_router)
     return app

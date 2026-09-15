@@ -2,17 +2,17 @@
  * 文件职责：提供基于真实账本关系汇总的财务总览。
  * 主要内容：共享期间、分币种收支指标、原始/调整对比图与核对入口。
  * 关键边界：金额来自服务端，不混算币种、不把净流入当余额；
- * 日期变更隔离读取状态，失败与空数据分别展示，候选截断不宣称完整。
+ * 日期变更隔离读取状态，失败与空数据分别展示；总览不执行候选发现。
  */
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { formatMoney, formatTimestamp } from '../../format'
 import type { Messages, ProductPage } from '../../i18n'
-import { NavigationIcon, PageHeader } from '../../shared/ui'
+import { LoadingIndicator, NavigationIcon, PageHeader } from '../../shared/ui'
 import { PeriodFilter } from '../../shared/PeriodFilter'
 import { validPeriod } from '../../shared/period'
 import type { ReviewPeriod } from '../../shared/period'
-import type { RelationWorkspace } from '../../types'
+import type { OverviewSnapshot, RelationWorkspace } from '../../types'
 
 interface OverviewProps {
   english: boolean
@@ -27,27 +27,50 @@ export function OverviewPage(props: OverviewProps) {
     <div className="page-heading-actions"><PageHeader copy={copy} page="overview" /><button className="primary" onClick={() => onNavigate('import')}><NavigationIcon kind="import" />{english ? 'Import statement' : '导入账单'}</button></div>
     <PeriodFilter period={period} onChange={onPeriodChange} english={english} />
     {validPeriod(period)
-      ? <OverviewData key={period.start + period.end} {...props} />
+      ? <OverviewData {...props} />
       : <p className="error" role="alert">{english ? 'Select a valid period of at most 366 days.' : '请选择有效期间，跨度不超过 366 天。'}</p>}
   </section>
 }
 
 function OverviewData({ english, period, onNavigate }: OverviewProps) {
-  const [data, setData] = useState<RelationWorkspace | null>(null)
-  const [failed, setFailed] = useState(false)
+  const [snapshot, setSnapshot] = useState<{
+    data: OverviewSnapshot; period: ReviewPeriod; key: string
+  } | null>(null)
+  const [failedKey, setFailedKey] = useState<string | null>(null)
+  const requestKey = `${period.start}:${period.end}`
+  const failed = failedKey === requestKey
+  const updating = snapshot?.key !== requestKey && !failed
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let active = true
-    api.relations(period.start, period.end)
-      .then((value) => { if (active) setData(value) })
-      .catch(() => { if (active) setFailed(true) })
+    api.overview(period.start, period.end)
+      .then((value) => {
+        if (!active) return
+        setSnapshot({ data: value, period: { start: period.start, end: period.end }, key: requestKey })
+        setFailedKey(null)
+      })
+      .catch(() => { if (active) setFailedKey(requestKey) })
     return () => { active = false }
-  }, [period.start, period.end, attempt])
-  if (failed) return <div className="empty-state"><p role="alert">{english ? 'Unable to load overview' : '总览读取失败'}</p><button onClick={() => { setFailed(false); setAttempt((value) => value + 1) }}>{english ? 'Retry' : '重试'}</button></div>
-  if (!data) return <div className="empty-state" role="status"><p>{english ? 'Loading ledger' : '正在读取账本'}</p></div>
-  const pending = data.items.filter((item) => item.state === 'pending').length
+  }, [period.start, period.end, requestKey, attempt])
+  const failure = failed && (
+    <div className="empty-state">
+      <p role="alert">{english ? 'Unable to load overview' : '总览读取失败'}</p>
+      <button onClick={() => { setFailedKey(null); setAttempt((value) => value + 1) }}>
+        {english ? 'Retry' : '重试'}
+      </button>
+    </div>
+  )
+  if (!snapshot) return failure || <LoadingIndicator label={english ? 'Loading overview' : '正在读取总览'} />
+  const data = snapshot.data
   const locale = english ? 'en-US' : 'zh-CN'
-  return <>
+  return <div className="overview-data" aria-busy={updating}>
+    {updating && <LoadingIndicator label={english ? 'Updating overview' : '正在更新总览'} />}
+    {snapshot.key !== requestKey && (
+      <p className="overview-retained-period">
+        {english ? 'Displayed period' : '当前显示期间'}：{snapshot.period.start} — {snapshot.period.end}
+      </p>
+    )}
+    {failure}
     {!data.summaries.length && <div className="ledger-welcome"><div className="welcome-symbol" aria-hidden="true"><NavigationIcon kind="review" /></div><div><h2>{english ? 'Your ledger starts here' : '从第一份账单开始'}</h2><p>{english ? 'Import a statement to see your income and spending.' : '导入账单，查看这段时间的收入与支出。'}</p><button className="primary" onClick={() => onNavigate('import')}>{english ? 'Choose statement' : '选择账单'} <span aria-hidden="true">↗</span></button></div></div>}
     {data.summaries.map((summary) => <section key={summary.currency} className="overview-currency" aria-label={summary.currency}>
       <div className="financial-summary">
@@ -72,18 +95,17 @@ function OverviewData({ english, period, onNavigate }: OverviewProps) {
         </dl></article>
       </div>
     </section>)}
-    {data.transactions.some((item) => item.booking_date >= period.start && item.booking_date <= period.end) && <section className="recent-ledger">
+    {data.recent_transactions.length > 0 && <section className="recent-ledger">
       <header><h2>{english ? 'Latest entries' : '最近流水'}</h2><button onClick={() => onNavigate('review')}>{english ? 'View ledger' : '全部流水'} <span aria-hidden="true">↗</span></button></header>
-      {data.transactions.filter((item) => item.booking_date >= period.start && item.booking_date <= period.end).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || String(a.id).localeCompare(String(b.id))).slice(0, 5).map((item) => <div className="recent-entry" key={item.id}>
+      {data.recent_transactions.map((item) => <div className="recent-entry" key={item.id}>
         <span className="entry-initial" aria-hidden="true">{item.merchant.slice(0, 1)}</span><div><strong>{item.merchant}</strong><small>{item.account_name} · {item.time_precision === 'date' ? item.booking_date : formatTimestamp(item.occurred_at, locale)}</small></div><span className="entry-amount">{formatMoney(item.amount, item.currency, locale)}</span>
       </div>)}
     </section>}
     <section className="review-queue">
-      <h2>{english ? 'To review' : '待核对'} <span>{pending}</span></h2>
+      <h2>{english ? 'Relationship review' : '交易关系核对'}</h2>
       <button onClick={() => onNavigate('relations')}>{english ? 'View relationships' : '查看关系'} <span aria-hidden="true">→</span></button>
     </section>
-    {data.truncated && <p className="scope-note" role="status">{english ? 'Candidate list is limited. Narrow the period to review more.' : '候选未全部列出，请缩短期间核对。'}</p>}
-  </>
+  </div>
 }
 function Metric({ label, value, note }: { label: string; value: string; note: string }) {
   return <article className="overview-metric"><span>{label}</span><strong>{value}</strong><small>{note}</small></article>

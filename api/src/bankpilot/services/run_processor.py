@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bankpilot.agent.workflow import ReadOnlyBillWorkflow
 from bankpilot.db.models import RunRecord
-from bankpilot.db.repositories import RunRepository
+from bankpilot.db.run_repository import RunRepository
 from bankpilot.domain.contracts import ModelPlan, RunStatus, SupportedAction
 from bankpilot.errors import BankPilotError
 from bankpilot.ports import ModelGateway, ReviewGateway

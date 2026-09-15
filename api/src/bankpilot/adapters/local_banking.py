@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.db.models import TransactionRecord
-from bankpilot.db.repositories import TransactionRepository
+from bankpilot.db.transaction_repository import TransactionRepository
 from bankpilot.domain.bill_analysis import classify_transaction
 from bankpilot.domain.contracts import TransactionCategory, TransactionItem, TransactionResult
 

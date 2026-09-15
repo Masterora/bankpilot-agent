@@ -23,9 +23,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 
     environment: str = Field(default="development", validation_alias="BANKPILOT_ENV")
-    business_timezone: str = Field(
-        default="Asia/Shanghai", validation_alias="BANKPILOT_TIMEZONE"
-    )
+    business_timezone: str = Field(default="Asia/Shanghai", validation_alias="BANKPILOT_TIMEZONE")
     database_url: str = Field(
         repr=False,
         default="postgresql+asyncpg://bankpilot:replace-me@db.internal:5432/bankpilot",

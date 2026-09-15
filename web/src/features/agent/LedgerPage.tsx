@@ -10,7 +10,7 @@ import type { Messages } from '../../i18n'
 import type { ReviewItem, Transaction, TransactionCategory } from '../../types'
 
 import { ledgerCsv } from './ledgerExport'
-import { EmptyContent, PageHeader } from '../../shared/ui'
+import { EmptyContent, LoadingIndicator, PageHeader } from '../../shared/ui'
 import { PeriodFilter } from '../../shared/PeriodFilter'
 import { validPeriod } from '../../shared/period'
 import type { ReviewPeriod } from '../../shared/period'
@@ -80,7 +80,7 @@ export function LedgerPage({ copy, english, period, onPeriodChange }: { copy: Me
       <label>{english ? 'Merchant or note' : '商户或备注'}<input value={search} onChange={(e) => setSearch(e.target.value)} /></label>
     </div>
     {notice && <p role="status">{notice}</p>}
-    {invalid ? <p role="alert">{english ? 'Select an ordered period of at most 366 days.' : '请选择有效期间，跨度不超过 366 天。'}</p> : state === 'loading' ? <p>{english ? 'Loading' : '正在读取'}</p> : state === 'failed' ? <button onClick={() => { setState('loading'); setAttempt((a) => a + 1) }}>{english ? 'Request failed. Retry' : '读取失败，重试'}</button> : <>
+    {invalid ? <p role="alert">{english ? 'Select an ordered period of at most 366 days.' : '请选择有效期间，跨度不超过 366 天。'}</p> : state === 'loading' ? <LoadingIndicator label={english ? 'Loading ledger' : '正在读取账本'} /> : state === 'failed' ? <button onClick={() => { setState('loading'); setAttempt((a) => a + 1) }}>{english ? 'Request failed. Retry' : '读取失败，重试'}</button> : <>
       <div className="ledger-toolbar"><span>{filtered.length} {english ? 'transactions' : '笔交易'}</span><button disabled={!filtered.length} onClick={download}>{english ? 'Export CSV' : '导出 CSV'}</button></div>
       <div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant / Source', 'Amount', 'Category'] : ['时间', '账户', '商户／来源', '金额', '分类']).map((text) => <th key={text}>{text}</th>)}</tr></thead><tbody>{!filtered.length && <tr><td colSpan={5}><EmptyContent kind="review" title={english ? 'No transactions to display' : '暂无可显示的流水'} detail={items.length ? (english ? 'Try clearing the filters.' : '调整筛选条件，查看其他交易。') : (english ? 'Import a statement or select another period.' : '导入账单，或选择其他期间。')}>
         {items.length ? <button onClick={() => { setAccount(''); setCategory(''); setSearch('') }}>{english ? 'Clear filters' : '清除筛选'}</button> : <a className="primary" href="#page=import">{english ? 'Import statement' : '导入账单'}</a>}

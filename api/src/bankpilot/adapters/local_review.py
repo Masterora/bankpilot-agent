@@ -9,13 +9,15 @@
 from datetime import UTC, date, datetime
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bankpilot.adapters.local_banking import LocalBankingGateway
+from bankpilot.db.models import UserRecord
 from bankpilot.domain.contracts import BillReview, ReviewCoverage, ReviewSnapshot
-from bankpilot.errors import ToolExecutionError
-from bankpilot.services.transaction_relations import RelationError, relation_workspace
+from bankpilot.errors import RelationError, ReviewCapacityError, ToolExecutionError
+from bankpilot.services.transaction_relations import relation_workspace
 
 
 class LocalReviewGateway:
@@ -32,18 +34,22 @@ class LocalReviewGateway:
             async with self.session_factory() as session:
                 await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
                 snapshot_at = datetime.now(UTC)
+                revision = await session.scalar(
+                    select(UserRecord.ledger_revision).where(UserRecord.id == user_id)
+                )
+                if revision is None:
+                    raise ToolExecutionError("账本用户不存在。")
                 workspace = await relation_workspace(
-                    session, user_id, start_date, end_date, acquire_lock=False
+                    session, user_id, start_date, end_date
                 )
                 transactions = await LocalBankingGateway(session).query_transactions(
                     user_id=user_id, start_date=start_date, end_date=end_date
                 )
                 evidence_ids = {t.id for t in transactions.items} | {
-                    item[key]
-                    for item in workspace["items"]
-                    for key in ("first_id", "second_id")
+                    item[key] for item in workspace["items"] for key in ("first_id", "second_id")
                 }
                 return ReviewSnapshot(
+                    ledger_revision=revision,
                     transactions=transactions,
                     review=BillReview(
                         snapshot_at=snapshot_at,
@@ -65,7 +71,7 @@ class LocalReviewGateway:
                 )
         except RelationError as exc:
             if exc.code == "narrow_period":
-                raise ToolExecutionError("交易过多，请缩小查询日期范围。") from exc
+                raise ReviewCapacityError("交易过多，请缩小查询日期范围。") from exc
             raise ToolExecutionError("账单核查证据读取失败，请重试。") from exc
         except (SQLAlchemyError, OSError) as exc:
             raise ToolExecutionError("账单数据暂时不可用，请稍后重试。") from exc

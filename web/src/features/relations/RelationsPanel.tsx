@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import { ApiError, api } from '../../api'
-import { EmptyContent } from '../../shared/ui'
+import { EmptyContent, LoadingIndicator } from '../../shared/ui'
 import { formatMoney, formatTimestamp, formatTransactionTime } from '../../format'
 import type { RelationKind, RelationTransaction, RelationWorkspace, TransactionRelation } from '../../types'
 
@@ -56,6 +56,8 @@ export function RelationsPanel({ start, end, english }: { start: string; end: st
     setBusy(true); setError(''); setNotice(false)
     try {
       await api.saveRelation({ kind: relation.kind, first_id: relation.first_id, second_id: relation.second_id, state, expected_version: relation.version })
+      setFilter(state)
+      setPage(0)
       setNotice(true)
       refresh()
     } catch (reason) { setError(errorText(reason, english)) }
@@ -76,7 +78,7 @@ export function RelationsPanel({ start, end, english }: { start: string; end: st
   return <section className="relations-panel" aria-label={english ? 'Transaction relationships' : '交易关系'}>
     {error && <p role="alert" className="error">{error} <button disabled={busy} onClick={refresh}>{english ? 'Refresh' : '刷新'}</button></p>}
     {notice && <p role="status">{english ? 'Saved' : '已保存'}</p>}
-    {loading ? <p>{english ? 'Loading' : '正在读取'}</p> : data && <div className="relation-workspace-grid"><aside className="relation-summary">
+    {loading ? <LoadingIndicator label={english ? 'Loading relationships' : '正在读取交易关系'} /> : data && <div className="relation-workspace-grid"><aside className="relation-summary">
       <div className="relation-summary-head"><h2>{english ? 'Adjusted flows' : '调整后收支'}</h2><button onClick={exportSummary} disabled={!data.summaries.length || busy}>{english ? 'Export summary' : '导出汇总'}</button></div>
       {data.summaries.map((s) => <div key={s.currency}><p className="currency-caption">{s.currency}</p><dl className="flow-breakdown">{(english ? [['Raw inflow', s.raw_inflow], ['Raw outflow', s.raw_outflow], ['Adjusted inflow', s.adjusted_inflow], ['Adjusted outflow', s.adjusted_outflow], ['Adjusted net flow', s.adjusted_net]] : [['原始流入', s.raw_inflow], ['原始流出', s.raw_outflow], ['调整后流入', s.adjusted_inflow], ['调整后流出', s.adjusted_outflow], ['调整后净流入', s.adjusted_net]]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{formatMoney(value, s.currency, english ? 'en-US' : 'zh-CN')}</dd></div>)}</dl></div>)}
       {!data.summaries.length && <p>{english ? 'No transactions in this period' : '当前期间暂无流水'}</p>}

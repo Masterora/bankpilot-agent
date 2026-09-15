@@ -80,9 +80,7 @@ def _inline_local_refs(schema: dict[str, Any]) -> dict[str, Any]:
             return resolve(merged, resolving | {name})
 
         normalized = {
-            key: resolve(item, resolving)
-            for key, item in value.items()
-            if key != "$defs"
+            key: resolve(item, resolving) for key, item in value.items() if key != "$defs"
         }
         if "const" in normalized:
             # 部分模型供应商不支持 `const`，但可接受单值枚举。

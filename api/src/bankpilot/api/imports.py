@@ -1,0 +1,132 @@
+"""
+文件职责：提供账单导入生命周期接口。
+
+主要内容：包含导入历史、原子写入、批次撤销和响应转换。
+
+关键边界：来源字段必须显式存在，撤销清理交易但保留批次与历史快照。
+"""
+
+from typing import Literal, cast
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.schemas import (
+    ImportBatchListResponse,
+    ImportBatchResponse,
+    ImportRowErrorResponse,
+    ImportStatementRequest,
+)
+from bankpilot.db.import_repository import ImportRepository
+from bankpilot.db.ledger_revision import bump_revision
+from bankpilot.db.models import (
+    ImportBatchRecord,
+    TransactionRecord,
+    UserRecord,
+)
+from bankpilot.errors import ImportConflictError
+from bankpilot.services.statement_import import StatementImportService
+
+router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
+
+
+@router.get("", response_model=ImportBatchListResponse)
+async def list_imports(
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ImportBatchListResponse:
+    batches = await ImportRepository(session).list_for_user(user.id)
+    return ImportBatchListResponse(items=[_import_response(batch) for batch in batches])
+
+
+@router.post("", response_model=ImportBatchResponse, status_code=status.HTTP_201_CREATED)
+async def import_statement(
+    payload: ImportStatementRequest,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ImportBatchResponse:
+    await session.commit()
+    try:
+        batch = await StatementImportService(session).execute(
+            user_id=user.id,
+            file_name=payload.file_name,
+            content=payload.content,
+            account_name=payload.account_name,
+            account_id=payload.account_id,
+            currency=payload.currency,
+            mapping=payload.mapping,
+        )
+    except ImportConflictError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Import conflicted with another request; retry the same file",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _import_response(batch)
+
+
+@router.post("/{batch_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_import(
+    batch_id: UUID,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    await session.scalar(select(UserRecord).where(UserRecord.id == user.id).with_for_update())
+    batch = await session.scalar(
+        select(ImportBatchRecord)
+        .where(ImportBatchRecord.id == batch_id, ImportBatchRecord.user_id == user.id)
+        .with_for_update()
+    )
+    if batch is None:
+        raise HTTPException(404, "Import not found")
+    deleted_id = await session.scalar(
+        delete(TransactionRecord)
+        .where(TransactionRecord.import_batch_id == batch.id)
+        .returning(TransactionRecord.id)
+    )
+    # 外键级联清理分类与关系；只有账本事实改变才使历史报告过期。
+    batch.status = "REVOKED"
+    if deleted_id is not None:
+        await bump_revision(session, user.id)
+    await session.commit()
+
+
+def _import_response(batch: ImportBatchRecord) -> ImportBatchResponse:
+    source = batch.field_mapping.get("source")
+    if not isinstance(source, str) or not source:
+        raise RuntimeError(f"Import batch {batch.id} has no source")
+    return ImportBatchResponse(
+        source=source,
+        skipped_rows=sum(item.get("code") == "EXCLUDED" for item in batch.errors),
+        excluded=[
+            ImportRowErrorResponse.model_validate(item)
+            for item in batch.errors
+            if item.get("code") == "EXCLUDED"
+        ],
+        id=batch.id,
+        account_id=batch.account_id,
+        account_name=batch.account_name,
+        currency=batch.currency,
+        file_name=batch.file_name,
+        status=cast(
+            Literal["COMPLETED", "COMPLETED_WITH_DUPLICATES", "REJECTED", "REVOKED"],
+            batch.status,
+        ),
+        total_rows=batch.total_rows,
+        imported_rows=batch.imported_rows,
+        duplicate_rows=batch.duplicate_rows,
+        error_rows=batch.error_rows,
+        start_date=batch.start_date,
+        end_date=batch.end_date,
+        field_mapping=batch.field_mapping,
+        errors=[
+            ImportRowErrorResponse.model_validate(item)
+            for item in batch.errors
+            if item.get("code") != "EXCLUDED"
+        ],
+        created_at=batch.created_at,
+    )

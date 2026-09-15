@@ -102,6 +102,11 @@ export interface RelationWorkspace {
   }[]
 }
 
+export interface OverviewSnapshot {
+  summaries: RelationWorkspace['summaries']
+  recent_transactions: RelationTransaction[]
+}
+
 export type TransactionCategory =
   | 'income'
   | 'groceries'
@@ -170,6 +175,32 @@ export interface BillAnalysis {
   currency_summaries: CurrencySummary[]
   category_summaries: CategorySummary[]
   anomalies: BillAnomaly[]
+}
+
+export interface MonthlySnapshot {
+  month: string
+  ledger_revision: number
+  report_rule_version: string
+  transactions: RunResult['transactions']
+  analysis: BillAnalysis
+  review: BillReview
+}
+
+export interface MonthlyReport {
+  id: string
+  month: string
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'DELETED'
+  attempts: number
+  created_at: string
+  completed_at: string | null
+  ledger_revision: number | null
+  rule_version: string | null
+  error_code: string | null
+  stale: boolean
+}
+
+export interface ReportDetail extends MonthlyReport {
+  snapshot: MonthlySnapshot | null
 }
 
 export interface RunResult {

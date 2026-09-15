@@ -42,6 +42,7 @@ export function PageHeader({ copy, page }: { copy: Messages; page: ProductPage }
   const content = copy.productPages[page]
   return (
     <header className="page-header">
+      <p className="eyebrow">{content.eyebrow}</p>
       <h1>{content.title}</h1>
     </header>
   )
@@ -61,7 +62,7 @@ export function EmptyContent({ title, detail, kind, children }: {
 
 /** 保留未接入数据的产品页面结构，不模拟结果或执行操作。 */
 export function EmptyProductPage({ copy, page }: { copy: Messages; page: ProductPage }) {
-  return <section className="product-page"><PageHeader copy={copy} page={page} /><section className="module-empty"><NavigationIcon kind={page} /><h2>{copy.productPages[page].navigation}</h2><p>{copy.productPages[page].empty}</p></section></section>
+  return <section className="product-page"><PageHeader copy={copy} page={page} /><section className="module-empty"><NavigationIcon kind={page} /><p>{copy.productPages[page].empty}</p></section></section>
 }
 
 export function NavigationIcon({ kind }: { kind: ProductPage }) {
@@ -81,4 +82,12 @@ export function NavigationIcon({ kind }: { kind: ProductPage }) {
 
 export function LoadingScreen({ label }: { label: string }) {
   return <main className="loading-screen"><Logo /><p>{label}</p></main>
+}
+
+/** 轻量进度线表示请求进行中；与成功提示分离，不显示虚构进度。 */
+export function LoadingIndicator({ label }: { label: string }) {
+  return <div className="loading-indicator" role="status" aria-label={label}>
+    <span className="loading-track" aria-hidden="true"><span /></span>
+    <span className="loading-label">{label}</span>
+  </div>
 }

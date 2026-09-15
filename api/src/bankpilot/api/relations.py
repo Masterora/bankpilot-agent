@@ -11,12 +11,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.dependencies import (
+    get_current_user,
+    get_db_session,
+    get_snapshot_session,
+    get_snapshot_user,
+)
 from bankpilot.db.models import UserRecord
 from bankpilot.domain.contracts import RelationWorkspace
 from bankpilot.domain.transaction_relations import RelationKind, RelationState
+from bankpilot.errors import RelationError
 from bankpilot.services.transaction_relations import (
-    RelationError,
     relation_workspace,
     save_relation,
 )
@@ -37,8 +42,8 @@ class RelationRequest(BaseModel):
 async def list_relations(
     start_date: date,
     end_date: date,
-    user: UserRecord = Depends(get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
 ) -> RelationWorkspace:
     """同时返回期间原流水与调整值；候选未穷尽时明确标记。"""
     if end_date < start_date or (end_date - start_date).days > 366:

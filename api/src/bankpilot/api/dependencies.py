@@ -5,6 +5,7 @@
 - `get_app_settings`：从应用状态获取配置。
 - `get_db_session`：为单次请求提供异步数据库会话。
 - `get_current_user`：根据 HttpOnly Cookie 解析已认证用户。
+- `get_snapshot_user` / `get_snapshot_session`：为多次读取共用认证与业务快照。
 
 关键边界：原始会话令牌先经 HMAC 哈希再查库，缺失或过期均返回 401。
 """
@@ -17,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.config import Settings
 from bankpilot.db.models import UserRecord
-from bankpilot.db.repositories import SessionRepository
+from bankpilot.db.user_repository import SessionRepository
 from bankpilot.security import hash_session_token
 
 SESSION_COOKIE = "bankpilot_session"
@@ -29,6 +30,13 @@ def get_app_settings(request: Request) -> Settings:
 
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
     async with request.app.state.session_factory() as session:
+        yield session
+
+
+async def get_snapshot_session(request: Request) -> AsyncIterator[AsyncSession]:
+    """在认证读取前固定快照；多次查询共用一个连接，关闭会话结束事务。"""
+    async with request.app.state.session_factory() as session:
+        await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
         yield session
 
 
@@ -45,3 +53,12 @@ async def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
     return user
+
+
+async def get_snapshot_user(
+    settings: Settings = Depends(get_app_settings),
+    session: AsyncSession = Depends(get_snapshot_session),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> UserRecord:
+    """复用认证规则与快照连接，避免每个只读请求同时占用两条连接。"""
+    return await get_current_user(settings, session, session_token)

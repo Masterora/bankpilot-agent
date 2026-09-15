@@ -11,8 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bankpilot.db.import_repository import ImportRepository
+from bankpilot.db.ledger_revision import bump_revision
 from bankpilot.db.models import AccountRecord, ImportBatchRecord, UserRecord
-from bankpilot.db.repositories import ImportRepository, TransactionRepository
+from bankpilot.db.transaction_repository import TransactionRepository
 from bankpilot.domain.payment_sources import source_account
 from bankpilot.domain.statement_import import StatementFieldMapping, parse_statement_csv
 from bankpilot.errors import ImportConflictError
@@ -122,6 +124,8 @@ class StatementImportService:
                         import_batch_id=batch.id,
                         rows=new_rows,
                     )
+                    if new_rows:
+                        await bump_revision(self.session, user_id)
         except IntegrityError as exc:
             raise ImportConflictError from exc
 

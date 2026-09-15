@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bankpilot.db.ledger_revision import bump_revision
 from bankpilot.db.models import (
     AccountRecord,
     TransactionRecord,
@@ -25,13 +26,7 @@ from bankpilot.domain.transaction_relations import (
     validate_conflicts,
     validate_pair,
 )
-
-
-class RelationError(Exception):
-    """携带稳定错误代码与 HTTP 状态，页面负责本地化。"""
-
-    def __init__(self, code: str, status: int = 409):
-        self.code, self.status = code, status
+from bankpilot.errors import RelationError
 
 
 def to_transaction(row: TransactionRecord) -> RelationTransaction:
@@ -142,6 +137,7 @@ async def save_relation(
         session.add(record)
     record.first_id, record.second_id, record.state = first_id, second_id, state
     record.version += 1
+    await bump_revision(session, user_id)
     await session.commit()
 
 
@@ -150,12 +146,8 @@ async def relation_workspace(
     user_id: UUID,
     start: date,
     end: date,
-    *,
-    acquire_lock: bool = True,
 ) -> dict[str, Any]:
-    """候选窗口超限仅停止发现；期间事实与已保存关系仍完整读取。"""
-    if acquire_lock:
-        await lock_user(session, user_id)
+    """调用方提供可重复读事务；候选窗口超限仅停止发现，期间事实仍完整读取。"""
     low = date.fromordinal(max(date.min.toordinal(), start.toordinal() - 90))
     high = min(end, date.max - timedelta(days=90)) + timedelta(days=90)
     rows = list(

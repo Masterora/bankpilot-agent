@@ -157,6 +157,20 @@ class BillAnomaly(BaseModel):
     facts: dict[str, str]
 
 
+ReviewState = Literal["pending", "normal", "follow_up"]
+
+
+class ReviewItem(BillAnomaly):
+    key: str
+    state: ReviewState
+    note: str
+
+
+class ReviewList(BaseModel):
+    summaries: list[CurrencySummary]
+    items: list[ReviewItem]
+
+
 class BillAnalysis(BaseModel):
     currency_summaries: list[CurrencySummary] = Field(default_factory=list)
     category_summaries: list[CategorySummary] = Field(default_factory=list)
@@ -211,6 +225,13 @@ class RelationWorkspace(BaseModel):
     transactions: list[ReviewEvidence]
 
 
+class OverviewSnapshot(BaseModel):
+    """总览首屏契约；只返回期间汇总和最近流水，不执行关系候选发现。"""
+
+    summaries: list[AdjustedSummary]
+    recent_transactions: list[ReviewEvidence]
+
+
 class BillReview(BaseModel):
     """一次数据库快照产生的调整口径、关系证据与完整性限制。"""
 
@@ -228,6 +249,7 @@ class ReviewSnapshot(BaseModel):
 
     transactions: TransactionResult
     review: BillReview
+    ledger_revision: int = Field(ge=0)
 
 
 class RunResult(BaseModel):
