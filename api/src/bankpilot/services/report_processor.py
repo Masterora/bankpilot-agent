@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from bankpilot.db.report_repository import ReportRepository
 from bankpilot.domain.reports import build_report, month_period
 from bankpilot.errors import ReviewCapacityError, ToolExecutionError
+from bankpilot.observability import job_timing
 from bankpilot.ports import ReviewGateway
 
 logger = logging.getLogger(__name__)
@@ -32,33 +33,36 @@ class ReportProcessor:
             claim = await ReportRepository(session).claim()
         if claim is None:
             return False
-        try:
-            # 小于租约，失联 worker 不能在重新领取后提交结果。
-            async with asyncio.timeout(45):
-                start, end = month_period(claim.month)
-                snapshot = await self.gateway.review_transactions(
-                    user_id=claim.user_id,
-                    start_date=start,
-                    end_date=end,
-                )
-                report = build_report(claim.month, snapshot)
+        with job_timing(str(claim.id)):
+            try:
+                # 小于租约，失联 worker 不能在重新领取后提交结果。
+                async with asyncio.timeout(45):
+                    start, end = month_period(claim.month)
+                    snapshot = await self.gateway.review_transactions(
+                        user_id=claim.user_id,
+                        start_date=start,
+                        end_date=end,
+                    )
+                    report = build_report(claim.month, snapshot)
+                    async with self.session_factory() as session, session.begin():
+                        await ReportRepository(session).finish(claim, report)
+            except ReviewCapacityError:
                 async with self.session_factory() as session, session.begin():
-                    await ReportRepository(session).finish(claim, report)
-        except ReviewCapacityError:
-            async with self.session_factory() as session, session.begin():
-                await ReportRepository(session).fail(claim, "report_period_limit", retryable=False)
-        except (ToolExecutionError, SQLAlchemyError, OSError, TimeoutError):
-            async with self.session_factory() as session, session.begin():
-                await ReportRepository(session).fail(
-                    claim, "report_generation_failed", retryable=True
-                )
-        except Exception:
-            logger.exception("Monthly report failed", extra={"report_id": str(claim.id)})
-            async with self.session_factory() as session, session.begin():
-                await ReportRepository(session).fail(
-                    claim, "report_internal_error", retryable=False
-                )
-        return True
+                    await ReportRepository(session).fail(
+                        claim, "report_period_limit", retryable=False
+                    )
+            except (ToolExecutionError, SQLAlchemyError, OSError, TimeoutError):
+                async with self.session_factory() as session, session.begin():
+                    await ReportRepository(session).fail(
+                        claim, "report_generation_failed", retryable=True
+                    )
+            except Exception:
+                logger.exception("Monthly report failed", extra={"report_id": str(claim.id)})
+                async with self.session_factory() as session, session.begin():
+                    await ReportRepository(session).fail(
+                        claim, "report_internal_error", retryable=False
+                    )
+            return True
 
     async def run(self) -> None:
         while True:

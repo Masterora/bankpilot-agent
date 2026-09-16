@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from bankpilot.domain.contracts import CardStatus, RunResult, TransactionCategory
 from bankpilot.domain.statement_import import StatementFieldMapping
+from bankpilot.errors import StatementSizeError
 from bankpilot.security import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, validate_new_password
 
 MAX_IMPORT_BYTES = 10 * 1024 * 1024
@@ -65,7 +66,7 @@ class CardListResponse(BaseModel):
     items: list[CardResponse]
 
 
-class ImportStatementRequest(BaseModel):
+class ImportPreviewRequest(BaseModel):
     """接收浏览器读取的 CSV 文本；原文件不会保存到服务器文件系统。"""
 
     model_config = ConfigDict(extra="forbid")
@@ -93,7 +94,7 @@ class ImportStatementRequest(BaseModel):
     @classmethod
     def validate_content_size(cls, value: str) -> str:
         if len(value.encode("utf-8")) > MAX_IMPORT_BYTES:
-            raise ValueError("CSV exceeds the 10 MB limit")
+            raise StatementSizeError("CSV exceeds the 10 MB limit")
         return value
 
     @field_validator("account_name")
@@ -113,6 +114,10 @@ class ImportStatementRequest(BaseModel):
         return normalized
 
 
+class ImportStatementRequest(ImportPreviewRequest):
+    idempotency_key: UUID
+
+
 class ImportRowErrorResponse(BaseModel):
     row_number: int
     code: str
@@ -121,7 +126,13 @@ class ImportRowErrorResponse(BaseModel):
 
 class ImportBatchResponse(BaseModel):
     source: str
-    skipped_rows: int
+    parser_version: str | None
+    new_rows: int | None
+    valid_rows: int | None
+    issue_count: int | None
+    issues_truncated: bool | None
+    excluded_truncated: bool | None
+    skipped_rows: int | None
     excluded: list[ImportRowErrorResponse]
     id: UUID
     account_id: UUID | None

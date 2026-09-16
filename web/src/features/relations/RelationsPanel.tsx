@@ -4,6 +4,7 @@
  * 关键边界：金额只展示服务端 Decimal 字符串；写入携带版本，成功后重读全部结果。
  */
 import { useEffect, useState } from 'react'
+import { downloadFile } from '../../shared/download'
 import { ApiError, api } from '../../api'
 import { EmptyContent, LoadingIndicator } from '../../shared/ui'
 import { formatMoney, formatTimestamp, formatTransactionTime } from '../../format'
@@ -53,6 +54,7 @@ export function RelationsPanel({ start, end, english }: { start: string; end: st
 
   /** 写入后重新查询，确认成功但重读失败时不继续展示旧统计。 */
   async function decide(relation: Pick<TransactionRelation, 'kind' | 'first_id' | 'second_id' | 'version'>, state: 'confirmed' | 'rejected' | 'revoked') {
+    if (busy || loading) return
     setBusy(true); setError(''); setNotice(false)
     try {
       await api.saveRelation({ kind: relation.kind, first_id: relation.first_id, second_id: relation.second_id, state, expected_version: relation.version })
@@ -68,18 +70,17 @@ export function RelationsPanel({ start, end, english }: { start: string; end: st
   const safePage = Math.min(page, Math.max(0, Math.ceil(rows.length / 20) - 1))
   const evidence = new Map(data?.transactions.map((t) => [t.id, t]))
   function exportSummary() {
-    if (!data) return
+    if (!data || loading || busy) return
     const header = ['start_date', 'end_date', 'currency', 'raw_inflow', 'raw_outflow', 'adjusted_inflow', 'adjusted_outflow', 'adjusted_net', 'refund_amount', 'duplicate_excluded', 'transfer_excluded']
     const csv = [header.join(','), ...data.summaries.map((s) => [start, end, s.currency, s.raw_inflow, s.raw_outflow, s.adjusted_inflow, s.adjusted_outflow, s.adjusted_net, s.refund_amount, s.duplicate_excluded, s.transfer_excluded].join(','))].join('\r\n')
-    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }))
-    const link = document.createElement('a'); link.href = url; link.download = `bankpilot-summary-${start}-${end}.csv`; link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    downloadFile('\uFEFF' + csv, `bankpilot-summary-${start}-${end}.csv`, 'text/csv;charset=utf-8')
   }
-  return <section className="relations-panel" aria-label={english ? 'Transaction relationships' : '交易关系'}>
-    {error && <p role="alert" className="error">{error} <button disabled={busy} onClick={refresh}>{english ? 'Refresh' : '刷新'}</button></p>}
+  return <section className="relations-panel" aria-busy={loading} aria-label={english ? 'Transaction relationships' : '交易关系'}>
+    {error && <p role="alert" className="error">{error} <button disabled={busy || loading} onClick={refresh}>{english ? 'Refresh' : '刷新'}</button></p>}
     {notice && <p role="status">{english ? 'Saved' : '已保存'}</p>}
-    {loading ? <LoadingIndicator label={english ? 'Loading relationships' : '正在读取交易关系'} /> : data && <div className="relation-workspace-grid"><aside className="relation-summary">
-      <div className="relation-summary-head"><h2>{english ? 'Adjusted flows' : '调整后收支'}</h2><button onClick={exportSummary} disabled={!data.summaries.length || busy}>{english ? 'Export summary' : '导出汇总'}</button></div>
+    {loading && <LoadingIndicator label={english ? 'Loading relationships' : '正在读取交易关系'} />}
+    {data && <div className="relation-workspace-grid"><aside className="relation-summary">
+      <div className="relation-summary-head"><h2>{english ? 'Adjusted flows' : '调整后收支'}</h2><button onClick={exportSummary} disabled={!data.summaries.length || busy || loading}>{english ? 'Export summary' : '导出汇总'}</button></div>
       {data.summaries.map((s) => <div key={s.currency}><p className="currency-caption">{s.currency}</p><dl className="flow-breakdown">{(english ? [['Raw inflow', s.raw_inflow], ['Raw outflow', s.raw_outflow], ['Adjusted inflow', s.adjusted_inflow], ['Adjusted outflow', s.adjusted_outflow], ['Adjusted net flow', s.adjusted_net]] : [['原始流入', s.raw_inflow], ['原始流出', s.raw_outflow], ['调整后流入', s.adjusted_inflow], ['调整后流出', s.adjusted_outflow], ['调整后净流入', s.adjusted_net]]).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{formatMoney(value, s.currency, english ? 'en-US' : 'zh-CN')}</dd></div>)}</dl></div>)}
       {!data.summaries.length && <p>{english ? 'No transactions in this period' : '当前期间暂无流水'}</p>}
       <details className="scope-note"><summary>{english ? 'Adjustments' : '调整明细'}</summary>
@@ -87,14 +88,14 @@ export function RelationsPanel({ start, end, english }: { start: string; end: st
       </details>
       <p className="coverage-note">{english ? 'Only confirmed relationships adjust totals. Net flow is not a balance.' : '仅确认关系调整统计，净流入不代表余额。'}</p>
       </aside><div className="relation-main">
-      <ManualRelation transactions={data.transactions} start={start} end={end} english={english} busy={busy} onConfirm={(kind, first_id, second_id) => {
+      <ManualRelation transactions={data.transactions} start={start} end={end} english={english} busy={busy || loading} onConfirm={(kind, first_id, second_id) => {
         const saved = data.items.find((r) => r.kind === kind && ((r.first_id === first_id && r.second_id === second_id) || (kind === 'duplicate' && r.first_id === second_id && r.second_id === first_id)))
         void decide({ kind, first_id, second_id, version: saved?.version ?? 0 }, 'confirmed')
       }} />
       <div className="relation-tabs" role="group" aria-label={english ? 'Relation status' : '关联状态'}>{(['pending', 'confirmed', 'rejected', 'revoked'] as const).map((s) => <button key={s} aria-pressed={filter === s} onClick={() => { setFilter(s); setPage(0) }}>{({ pending: ['待确认', 'Pending'], confirmed: ['已确认', 'Confirmed'], rejected: ['已排除', 'Rejected'], revoked: ['已撤销', 'Revoked'] })[s][english ? 1 : 0]} · {data.items.filter((i) => i.state === s).length}</button>)}</div>
       {data.truncated && <p role="status">{english ? 'Candidate search limited. Narrow the period or link records manually.' : '候选搜索已达上限，可缩短期间或手动关联。'}</p>}
       {!rows.length && <EmptyContent kind="relations" title={english ? 'No matching relationships' : '暂无对应关系'} detail={english ? 'Relationships appear here when matching entries are available. You can also link entries manually.' : '匹配到交易后在这里核对，也可以手动关联已有流水。'} />}
-      {rows.slice(safePage * 20, (safePage + 1) * 20).map((r) => <RelationCard key={`${r.kind}-${r.first_id}-${r.second_id}-${r.version}`} relation={r} first={evidence.get(r.first_id)!} second={evidence.get(r.second_id)!} busy={busy} english={english} onDecide={decide} />)}
+      {rows.slice(safePage * 20, (safePage + 1) * 20).map((r) => <RelationCard key={`${r.kind}-${r.first_id}-${r.second_id}-${r.version}`} relation={r} first={evidence.get(r.first_id)!} second={evidence.get(r.second_id)!} busy={busy || loading} english={english} onDecide={decide} />)}
       {rows.length > 20 && <div className="relation-tabs"><button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>{english ? 'Previous' : '上一页'}</button><span>{safePage + 1} / {Math.ceil(rows.length / 20)}</span><button disabled={(safePage + 1) * 20 >= rows.length} onClick={() => setPage(safePage + 1)}>{english ? 'Next' : '下一页'}</button></div>}
     </div></div>}
   </section>

@@ -14,6 +14,7 @@ import { ImportHistory, ImportPreviewPanel, ImportReport } from './ImportPanels'
 import { useImportWorkflow } from './useImportWorkflow'
 
 interface ImportPageProps {
+  userId: string
   copy: Messages
   active: boolean
   english: boolean
@@ -27,13 +28,13 @@ interface ImportPageProps {
 
 export function ImportPage(props: ImportPageProps) {
   const {
-    copy, active, english, failed, imports, loading, onImported, onAnalyze, onRetryHistory,
+    userId, copy, active, english, failed, imports, loading, onImported, onAnalyze, onRetryHistory,
   } = props
-  const workflow = useImportWorkflow({ active, copy, english, imports, onImported })
+  const workflow = useImportWorkflow({ userId, active, copy, english, imports, onImported })
   const {
     accountId, accountName, accounts, accountsFailed, content, currency, detecting, error,
     fileName, headers, mapping, mappingHasDuplicates, preview, previewCurrent, ready,
-    result, retryFile, source, submitting,
+    result, retryFile, source, submitting, pending,
   } = workflow
 
   return (
@@ -44,9 +45,9 @@ export function ImportPage(props: ImportPageProps) {
       <form className="import-workspace" onSubmit={workflow.submit}>
         <section className={`import-source-panel${content ? ' has-file' : ''}`}>
           <label className="file-drop">
-            <input type="file" accept=".csv,.xlsx" onChange={workflow.selectFile} />
+            <input disabled={submitting || detecting} type="file" accept=".csv,.xlsx" onChange={workflow.selectFile} />
             <span className="file-drop-icon" aria-hidden="true">↑</span>
-            <strong>{fileName || copy.imports.chooseFile}</strong>
+            <strong className={fileName ? 'selectable-text' : undefined}>{fileName || copy.imports.chooseFile}</strong>
             <span>{copy.imports.fileRequirements}</span>
           </label>
           {content && <>
@@ -54,7 +55,7 @@ export function ImportPage(props: ImportPageProps) {
               <strong>{source === 'alipay' ? '支付宝' : source === 'wechat' ? '微信支付' : (english ? 'Standard statement' : '标准账单')}</strong>
               <span>{previewCurrent ? (english ? 'Preview ready' : '已完成预览') : (english ? 'Recognized' : '已识别')}</span>
             </div>
-            <div className="import-account-grid">
+            <fieldset disabled={submitting || Boolean(pending)} className="import-account-grid">
               <label>{english ? 'Import into' : '导入账户'}
                 <select value={accountId} disabled={submitting} onChange={(event) => {
                   workflow.setAccountId(event.target.value)
@@ -77,17 +78,19 @@ export function ImportPage(props: ImportPageProps) {
               <label>{copy.imports.currency}
                 <input aria-label={copy.imports.currency} readOnly={source !== 'standard' || Boolean(accountId)} inputMode="text" maxLength={3} pattern="[A-Za-z]{3}" placeholder={copy.imports.currencyPlaceholder} required value={currency} onChange={(event) => workflow.setCurrency(event.target.value.replace(/[^A-Za-z]/g, '').toUpperCase())} />
               </label>
-            </div>
-            {source === 'standard' && <MappingFields copy={copy} english={english} headers={headers} mapping={mapping} onChange={workflow.updateMapping} />}
+            </fieldset>
+            {source === 'standard' && !pending && <fieldset disabled={submitting}><MappingFields copy={copy} english={english} headers={headers} mapping={mapping} onChange={workflow.updateMapping} /></fieldset>}
             {mappingHasDuplicates && <p className="error">{copy.imports.duplicateMapping}</p>}
             <button className="primary import-submit" disabled={!ready || submitting || Boolean(preview && previewCurrent && preview.error_rows > 0)}>
               {submitting && <span className="button-spinner" aria-hidden="true" />}
-              {submitting ? copy.imports.importing : previewCurrent ? (english ? 'Confirm import' : '确认导入') : (english ? 'Preview statement' : '预览账单')}
+              {submitting ? copy.imports.importing : pending ? (english ? 'Retry same import' : '重试同一操作') : previewCurrent ? (english ? 'Confirm import' : '确认导入') : (english ? 'Preview statement' : '预览账单')}
             </button>
           </>}
         </section>
       </form>
 
+      {pending && <div role="status"><span>{english ? 'Unconfirmed import' : '待确认导入'} · {pending.config.file_name}</span><button disabled={submitting || detecting} onClick={() => void workflow.recover()}>{english ? 'Check result' : '查询结果'}</button></div>}
+      {source === 'standard' && content && !mapping.transaction_id && <p className="muted">{english ? 'No transaction IDs: overlapping exports may be ambiguous.' : '账单无交易编号，不同导出范围中的相同交易可能无法准确区分。'}</p>}
       {preview && previewCurrent && <ImportPreviewPanel copy={copy} currency={currency} english={english} preview={preview} />}
       {error && <p className="error import-page-error" role="alert">{error}</p>}
       {detecting && <p role="status">{english ? 'Recognizing statement' : '正在识别账单'}</p>}
@@ -115,6 +118,13 @@ function MappingFields({ copy, english, headers, mapping, onChange }: {
     <MappingSelect copy={copy} field="merchant" headers={headers} required value={mapping.merchant} onChange={(value) => onChange('merchant', value)} />
     <MappingSelect copy={copy} field="amount" headers={headers} required value={mapping.amount} onChange={(value) => onChange('amount', value)} />
     <MappingSelect copy={copy} field="description" headers={headers} value={mapping.description ?? ''} onChange={(value) => onChange('description', value)} />
+    {(['transaction_id', 'account', 'currency'] as const).map((field) => <label key={field}>
+      <span>{({transaction_id: english ? 'Transaction ID' : '交易编号', account: english ? 'Account column' : '账户列', currency: english ? 'Currency column' : '币种列'})[field]}</span>
+      <select value={mapping[field] ?? ''} onChange={(event) => onChange(field, event.target.value)}>
+        <option value="">{copy.imports.notMapped}</option>
+        {headers.map((header) => <option key={header} value={header}>{header}</option>)}
+      </select>
+    </label>)}
   </div></details>
 }
 

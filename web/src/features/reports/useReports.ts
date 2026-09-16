@@ -5,16 +5,9 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../../api'
+import { downloadFile } from '../../shared/download'
+import { newIdempotencyKey } from '../../shared/operationKey'
 import type { MonthlyReport, ReportDetail } from '../../types'
-
-function newIdempotencyKey(): string {
-  // 私网 HTTP 页面也可使用 getRandomValues，不依赖仅安全上下文提供的 randomUUID。
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  bytes[6] = (bytes[6] & 15) | 64
-  bytes[8] = (bytes[8] & 63) | 128
-  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-}
 
 function errorMessage(error: unknown, english: boolean): string {
   if (error instanceof ApiError) {
@@ -160,7 +153,10 @@ export function useReports(initialMonth: string, english: boolean) {
   }
 
   async function exportReport(id: string) {
-    try { await api.exportReport(id) } catch (cause) {
+    try {
+      const content = await api.exportReport(id)
+      if (mounted.current) downloadFile(JSON.stringify(content, null, 2), `bankpilot-report-${id}.json`, 'application/json')
+    } catch (cause) {
       if (mounted.current) setError(errorMessage(cause, english))
     }
   }

@@ -43,3 +43,7 @@ class RelationError(BankPilotError):
 
     def __init__(self, code: str, status: int = 409):
         self.code, self.status = code, status
+
+
+class StatementSizeError(ValueError):
+    """账单资源上限异常，由导入接口映射为 413。"""

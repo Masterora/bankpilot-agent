@@ -6,9 +6,10 @@
 
 import csv
 import io
+from dataclasses import dataclass
 
 from bankpilot.domain.payment_sources import locate_source
-from bankpilot.domain.statement_import import StatementFieldMapping
+from bankpilot.domain.statement_import import PARSER_VERSION, StatementFieldMapping
 
 ALIASES = {
     "occurred_at": {"date", "datetime", "交易日期", "日期", "交易时间"},
@@ -21,33 +22,51 @@ ALIASES = {
 }
 
 
-def read_csv_headers(content: str) -> list[str]:
-    """按同一 CSV 方言返回原始列名，供识别和浏览器映射共用。"""
+@dataclass(frozen=True)
+class DetectedStatement:
+    source: str
+    parser_version: str
+    headers: list[str]
+    mapping: StatementFieldMapping
+    account_name: str | None
+    currency: str | None
+
+
+def detect_statement(content: str) -> DetectedStatement:
+    """一次来源定位和 CSV 读取产生完整识别结果，不重复扫描文件。"""
     native = locate_source(content)
     if native is not None:
-        return native.headers
+        profile = native.profile
+        return DetectedStatement(
+            source=profile.key,
+            parser_version=profile.parser_version,
+            headers=native.headers,
+            mapping=StatementFieldMapping(
+                occurred_at=profile.time,
+                merchant=profile.merchant,
+                amount=profile.amount,
+                description=profile.description,
+                transaction_id=profile.identifier,
+            ),
+            account_name=None,
+            currency="CNY",
+        )
     content = content.removeprefix("\ufeff")
     try:
         dialect = csv.Sniffer().sniff(content[:4096], delimiters=",;\t")
     except csv.Error:
         dialect = csv.excel
-    headers = next(csv.reader(io.StringIO(content), dialect=dialect), [])
-    return headers
+    reader = csv.DictReader(io.StringIO(content), dialect=dialect)
+    headers = list(reader.fieldnames or [])
+    mapping = _detect_mapping(headers)
+    account_name, currency = _detect_account(reader, mapping)
+    return DetectedStatement(
+        "standard", PARSER_VERSION, headers, mapping, account_name, currency
+    )
 
 
-def detect_mapping(content: str) -> StatementFieldMapping:
-    """只接受唯一匹配的结构；表头外说明、独立收支列需来源适配器处理。"""
-    native = locate_source(content)
-    if native is not None:
-        p = native.profile
-        return StatementFieldMapping(
-            occurred_at=p.time,
-            merchant=p.merchant,
-            amount=p.amount,
-            description=p.description,
-            transaction_id=p.identifier,
-        )
-    headers = read_csv_headers(content)
+def _detect_mapping(headers: list[str]) -> StatementFieldMapping:
+    """只接受唯一匹配的结构，独立收支列需来源适配器处理。"""
     fields: dict[str, str | None] = {}
     if any(
         header.strip().lower()
@@ -77,23 +96,24 @@ def detect_mapping(content: str) -> StatementFieldMapping:
     return StatementFieldMapping.model_validate(fields)
 
 
-def detect_account(content: str, mapping: StatementFieldMapping) -> tuple[str | None, str | None]:
-    """仅从全文件一致的显式账户与币种列提取元数据，不从文件名推断身份。"""
-    if locate_source(content) is not None:
-        return None, "CNY"
-    content = content.removeprefix("\ufeff")
-    try:
-        dialect = csv.Sniffer().sniff(content[:4096], delimiters=",;\t")
-    except csv.Error:
-        dialect = csv.excel
-    rows = list(csv.DictReader(io.StringIO(content), dialect=dialect))
+def _detect_account(
+    rows: csv.DictReader[str], mapping: StatementFieldMapping
+) -> tuple[str | None, str | None]:
+    """从同一次 CSV 读取中提取一致的账户/币种，不保留全量记录。"""
+    columns = (mapping.account, mapping.currency)
+    if not any(columns):
+        return None, None
+    unique: list[set[str]] = [set(), set()]
+    for row in rows:
+        for index, column in enumerate(columns):
+            if column is not None:
+                unique[index].add(" ".join((row.get(column) or "").split()))
     values: list[str | None] = []
-    for column in (mapping.account, mapping.currency):
+    for column, entries in zip(columns, unique, strict=True):
         if column is None:
             values.append(None)
-            continue
-        unique = {" ".join((row.get(column) or "").split()) for row in rows}
-        if len(unique) != 1 or "" in unique:
+        elif len(entries) != 1 or "" in entries:
             raise ValueError("Statement must contain one consistent account and currency")
-        values.append(next(iter(unique)))
+        else:
+            values.append(next(iter(entries)))
     return values[0], values[1].upper() if values[1] else None

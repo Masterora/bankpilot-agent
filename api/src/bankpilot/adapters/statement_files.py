@@ -11,13 +11,17 @@ from zipfile import BadZipFile, ZipFile
 
 from openpyxl import load_workbook
 
+from bankpilot.errors import StatementSizeError
+
 MAX_BYTES = 10 * 1024 * 1024
 
 
 def decode_statement(name: str, raw: bytes) -> str:
     """只接受明示格式；不执行用户文件、不解密或请求支付密码。"""
-    if not raw or len(raw) > MAX_BYTES:
-        raise ValueError("文件为空或超过 10 MB")
+    if not raw:
+        raise ValueError("文件为空")
+    if len(raw) > MAX_BYTES:
+        raise StatementSizeError("文件超过 10 MB")
     if name.lower().endswith(".csv"):
         for encoding in ("utf-8-sig", "gb18030"):
             try:
@@ -25,7 +29,7 @@ def decode_statement(name: str, raw: bytes) -> str:
                 if "\x00" in content:
                     raise ValueError("文件不是文本账单")
                 if len(content.encode()) > MAX_BYTES:
-                    raise ValueError("解码后的账单超过 10 MB")
+                    raise StatementSizeError("解码后的账单超过 10 MB")
                 return content
             except UnicodeDecodeError:
                 continue
@@ -36,7 +40,7 @@ def decode_statement(name: str, raw: bytes) -> str:
         with ZipFile(io.BytesIO(raw)) as archive:
             entries = archive.infolist()
             if len(entries) > 200 or sum(e.file_size for e in entries) > 30 * 1024 * 1024:
-                raise ValueError("工作簿解压大小超过限制")
+                raise StatementSizeError("工作簿解压大小超过限制")
             if any(e.flag_bits & 1 for e in entries):
                 raise ValueError("不支持加密工作簿")
             if any("vbaproject" in e.filename.lower() for e in entries):
@@ -51,7 +55,7 @@ def decode_statement(name: str, raw: bytes) -> str:
             writer = csv.writer(stream)
             for index, cells in enumerate(sheet.iter_rows(), start=1):
                 if index > 5200 or len(cells) > 80:
-                    raise ValueError("工作表超过行列上限")
+                    raise StatementSizeError("工作表超过行列上限")
                 values: list[str] = []
                 for cell in cells:
                     if cell.data_type == "f":
@@ -69,10 +73,10 @@ def decode_statement(name: str, raw: bytes) -> str:
                     values.pop()
                 writer.writerow(values)
                 if stream.tell() > MAX_BYTES:
-                    raise ValueError("工作表文本超过限制")
+                    raise StatementSizeError("工作表文本超过限制")
             content = stream.getvalue()
             if len(content.encode()) > MAX_BYTES:
-                raise ValueError("工作表文本超过限制")
+                raise StatementSizeError("工作表文本超过限制")
             return content
         finally:
             workbook.close()

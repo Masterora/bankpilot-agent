@@ -23,6 +23,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message)
   }
@@ -31,13 +32,15 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // 凭证由浏览器管理，避免应用 JavaScript 读取会话令牌。
   const response = await fetch(path, {
+    ...init,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...init?.headers },
-    ...init,
   })
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { detail?: string } | null
-    throw new ApiError(body?.detail ?? '请求失败', response.status)
+    const body = (await response.json().catch(() => null)) as { detail?: string | { code: string; message: string } } | null
+    const detail = body?.detail
+    throw new ApiError(typeof detail === 'string' ? detail : detail?.message ?? '请求失败',
+      response.status, typeof detail === 'object' ? detail?.code : undefined)
   }
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
@@ -50,19 +53,11 @@ export const api = {
   reportStatus: (id: string) => request<import('./types').MonthlyReport>(`/api/v1/reports/${id}/status`),
   createReport: (month: string, idempotency_key: string) => request<import('./types').MonthlyReport>('/api/v1/reports', { method: 'POST', body: JSON.stringify({ month, idempotency_key }) }),
   deleteReport: (id: string) => request<void>(`/api/v1/reports/${id}/delete`, { method: 'POST' }),
-  exportReport: async (id: string) => {
-    const content = await request<unknown>(`/api/v1/reports/${id}/export`)
-    const url = URL.createObjectURL(new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' }))
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `bankpilot-report-${id}.json`
-    anchor.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-  },
+  exportReport: (id: string) => request<unknown>(`/api/v1/reports/${id}/export`),
   relations: (start: string, end: string) => request<import('./types').RelationWorkspace>(`/api/v1/relations?start_date=${start}&end_date=${end}`),
   saveRelation: (payload: { kind: import('./types').RelationKind; first_id: string; second_id: string; state: 'confirmed' | 'rejected' | 'revoked'; expected_version: number }) => request<void>('/api/v1/relations', { method: 'POST', body: JSON.stringify(payload) }),
   renameAccount: (id: string, name: string) => request<void>(`/api/v1/accounts/${id}/name`, { method: 'POST', body: JSON.stringify({ name }) }),
-  decodeImport: (file_name: string, data: string) => request<{content: string}>('/api/v1/imports/decode', {method: 'POST', body: JSON.stringify({file_name, data})}),
+  decodeImport: (file_name: string, data: string) => request<{content: string; content_digest: string}>('/api/v1/imports/decode', {method: 'POST', body: JSON.stringify({file_name, data})}),
   reviews: (start: string, end: string) => request<{ summaries: import('./types').CurrencySummary[]; items: import('./types').ReviewItem[] }>(`/api/v1/reviews?start_date=${start}&end_date=${end}`),
   saveReview: (start: string, end: string, key: string, state: import('./types').ReviewItem['state'], note: string) => request<void>('/api/v1/reviews', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end, key, state, note }) }),
   runHistory: () => request<{ items: { id: string; message: string; status: string; created_at: string }[] }>('/api/v1/run-history'),
@@ -84,8 +79,9 @@ export const api = {
   listImports: () => request<ImportBatchList>('/api/v1/imports'),
   detectImport: (content: string) => request<{ source: string; headers: string[]; mapping: import('./types').ImportFieldMapping; account_name: string | null; currency: string | null }>('/api/v1/imports/detect', { method: 'POST', body: JSON.stringify({ content }) }),
   revokeImport: (id: string) => request<void>(`/api/v1/imports/${id}/revoke`, { method: 'POST' }),
-  previewImport: (payload: ImportStatementPayload) => request<{ source: string; skipped_rows: number; excluded: { row_number: number; message: string }[]; total_rows: number; error_rows: number; duplicate_rows: number; errors: { row_number: number; message: string }[]; rows: { row_number: number; date: string; occurred_at: string; time_precision: 'unknown' | 'date' | 'timestamp'; merchant: string; amount: string }[] }>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify(payload) }),
-  importStatement: (payload: ImportStatementPayload) =>
+  importByKey: (key: string) => request<ImportBatch>(`/api/v1/imports/by-key/${key}`),
+  previewImport: (payload: ImportStatementPayload) => request<import('./types').ImportPreview>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify(payload) }),
+  importStatement: (payload: ImportStatementPayload & { idempotency_key: string }) =>
     request<ImportBatch>('/api/v1/imports', {
       method: 'POST',
       body: JSON.stringify(payload),

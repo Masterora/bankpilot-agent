@@ -116,8 +116,22 @@
 .loading-track > span { display: block; width: 35%; height: 100%; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: loading-sweep 1.6s cubic-bezier(.4,0,.2,1) infinite; }
 .loading-label { opacity: .65; letter-spacing: .02em; }
 @keyframes loading-sweep { from { transform: translateX(-100%); } to { transform: translateX(386%); } }
-.overview-data[aria-busy='true'] > :not(.loading-indicator):not(.overview-retained-period) { opacity: .45; }
-.overview-retained-period { margin: 0 0 12px; color: var(--muted); font-size: 11px; }
+/* 刷新指示固定在内容上沿，不挤动已经展示的财务数据。 */
+.overview-data, .ledger-data { position: relative; }
+.overview-data > .loading-indicator, .ledger-data > .loading-indicator, .relations-panel > .loading-indicator { position: absolute; inset: -14px 0 auto; padding: 0; z-index: 2; }
+.overview-data > .loading-indicator .loading-label, .ledger-data > .loading-indicator .loading-label, .relations-panel > .loading-indicator .loading-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.overview-data[aria-busy='true'] > :not(.loading-indicator):not(.overview-retained-period) { opacity: .75; }
+.ledger-data[aria-busy='true'] .import-table { opacity: .75; }
+.copy-value { display: flex; align-items: flex-start; gap: 8px; }
+.copy-value code { min-width: 0; overflow-wrap: anywhere; font-size: 11px; }
+.copy-value button { flex-shrink: 0; padding: 4px 8px; font-size: 11px; }
+.copy-feedback { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
+.import-table tbody tr:focus-within { background: rgba(240,199,126,.05); }
+.import-table select { min-height: 34px; padding: 6px 9px; font-size: 12px; }
+.import-metrics strong, .overview-metric strong, .currency-summary dd { font-variant-numeric: tabular-nums; }
+.transaction-drawer, .mobile-navigation { overscroll-behavior: contain; }
+body:has(dialog[open]) { overflow: hidden; }
+.overview-retained-period { min-height: 16px; margin: 0 0 12px; color: var(--muted); font-size: 11px; }
 @media (prefers-reduced-motion: reduce) { .loading-track > span { animation: none; width: 100%; opacity: .55; } }
 
 .module-empty h2 { margin: 0; font-size: 18px; color: var(--text); font-weight: 500; }
@@ -205,15 +219,15 @@ form.import-report p { margin: 0; }
 }
 /* 动效只响应导航和操作，不循环装饰；减少动态效果模式不启用。 */
 @media (prefers-reduced-motion: no-preference) {
-  [data-active-page] > .product-page { animation: workspace-reveal 240ms ease-out both; }
+  [data-active-page] > .product-page { animation: workspace-reveal 180ms ease-out both; }
   .product-nav button { transition: background 180ms ease, color 180ms ease, transform 180ms ease; }
-  .product-nav button:hover { transform: translateX(3px); }
+  .product-nav button:hover { transform: none; }
   button:not(:disabled) { transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease; }
   button:not(:disabled):active { transform: translateY(1px); }
-  .transaction-drawer[open] { animation: drawer-reveal 240ms cubic-bezier(.2,.8,.2,1) both; }
+  .transaction-drawer[open] { animation: drawer-reveal 180ms cubic-bezier(.2,.8,.2,1) both; }
   .transaction-drawer[open]::backdrop { animation: backdrop-reveal 200ms ease-out both; }
   .mobile-navigation[open] { animation: navigation-reveal 220ms ease-out both; }
-  .net-position { animation: workspace-reveal 320ms ease-out both; }
+  .net-position { animation: workspace-reveal 180ms ease-out both; }
   .flow-track i { transform-origin: left; animation: grow 400ms ease-out both; }
   .recent-entry { transition: background 160ms ease; }
 }
@@ -233,7 +247,7 @@ form.import-report p { margin: 0; }
 .review-snapshot .result-heading { flex-wrap: wrap; gap: 8px; }
 .snapshot-evidence { display: grid; gap: 6px; padding-block: 12px; overflow-wrap: anywhere; }
 .snapshot-evidence small { opacity: .7; }
-.relations-panel { display: grid; gap: 18px; }
+.relations-panel { position: relative; display: grid; gap: 18px; }
 .relation-workspace-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: start; gap: 18px; }
 .relation-summary { position: sticky; top: 88px; grid-column: 2; grid-row: 1; padding: 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); min-width: 0; box-shadow: 0 10px 28px rgba(0,0,0,.12); }
 .relation-summary h2 { font-size: 16px; margin: 0; }

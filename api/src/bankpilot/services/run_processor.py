@@ -25,6 +25,7 @@ from bankpilot.db.models import RunRecord
 from bankpilot.db.run_repository import RunRepository
 from bankpilot.domain.contracts import ModelPlan, RunStatus, SupportedAction
 from bankpilot.errors import BankPilotError
+from bankpilot.observability import job_timing
 from bankpilot.ports import ModelGateway, ReviewGateway
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,10 @@ class RunProcessor:
         self.business_timezone = ZoneInfo(business_timezone)
 
     async def process(self, run_id: UUID) -> None:
+        with job_timing(str(run_id)):
+            await self._process(run_id)
+
+    async def _process(self, run_id: UUID) -> None:
         """领取、执行并完成一条已创建的运行记录。"""
         # 在耗时的模型调用前先提交规划中状态，使外部能够观察实时进度。
         async with self.session_factory() as session, session.begin():

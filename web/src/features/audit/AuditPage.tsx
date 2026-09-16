@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { formatTimestamp, formatTransactionTime } from '../../format'
 import type { Locale, Messages } from '../../i18n'
-import { EmptyContent, PageHeader } from '../../shared/ui'
+import { EmptyContent, LoadingIndicator, PageHeader } from '../../shared/ui'
 import type { Run } from '../../types'
 import { ReviewSnapshot } from '../agent/ReviewSnapshot'
 
@@ -43,9 +43,9 @@ export function AuditPage({ copy, run, locale }: { copy: Messages; run: Run | nu
     <section className="product-page">
       <PageHeader copy={copy} page="audit" />
       <label>{english ? 'Recent runs · UTC+8' : '最近运行 · UTC+8'}<select value={selectedId} onChange={(event) => { setSelected(null); setFailed(false); setLoading(Boolean(event.target.value)); setSelectedId(event.target.value) }}><option value="">{english ? 'Current run' : '当前运行'}</option>{history.map((item) => <option key={item.id} value={item.id}>{formatTimestamp(item.created_at, english ? 'en-US' : 'zh-CN')} · {item.message} · {item.status}</option>)}</select></label>
-      {loading && <p>{english ? 'Loading' : '正在读取'}</p>}
+      {loading && <LoadingIndicator label={english ? 'Loading audit' : '正在读取审计'} />}
       {failed && <button onClick={() => { setFailed(false); setAttempt((a) => a + 1) }}>{english ? 'Request failed. Retry' : '读取失败，重试'}</button>}
-      {displayed?.result && <details><summary>{english ? 'Result snapshot' : '结果快照'}</summary><p>{displayed.result.message}</p><p>{english ? 'Snapshot · Query again after changes' : '历史快照 · 更新后需重新查询'}</p><div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant', 'Amount', 'Category'] : ['时间', '账户', '商户', '金额', '分类']).map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{displayed.result.transactions.items.map((item) => <tr key={item.id}><td className="time-cell">{formatTransactionTime(item, english ? 'en-US' : 'zh-CN')}</td><td>{item.account_name}</td><td>{item.merchant}</td><td>{item.amount} {item.currency}</td><td>{copy.categoryLabels[item.category]}</td></tr>)}</tbody></table></div></details>}
+      {displayed?.result && <details><summary>{english ? 'Result snapshot' : '结果快照'}</summary><p>{displayed.result.message}</p><p>{english ? 'Snapshot · Query again after changes' : '历史快照 · 更新后需重新查询'}</p><div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant', 'Amount', 'Category'] : ['时间', '账户', '商户', '金额', '分类']).map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{displayed.result.transactions.items.map((item) => <tr key={item.id}><td className="time-cell">{formatTransactionTime(item, english ? 'en-US' : 'zh-CN')}</td><td>{item.account_name}</td><td>{item.merchant}</td><td className="ledger-amount">{item.amount} {item.currency}</td><td>{copy.categoryLabels[item.category]}</td></tr>)}</tbody></table></div></details>}
       {displayed?.result?.review && <ReviewSnapshot review={displayed.result.review} locale={english ? 'en-US' : 'zh-CN'} />}
       {displayed?.result && !displayed.result.review && <p className="scope-note">{english ? 'This result has no relationship review snapshot.' : '此结果未包含关系核查快照。'}</p>}
       <div className="audit-grid">

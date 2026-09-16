@@ -18,6 +18,6 @@ export function RelationsPage({ copy, english, period, onPeriodChange }: {
     <PeriodFilter period={period} onChange={onPeriodChange} english={english} />
     {validPeriod(period)
       ? <RelationsPanel key={`${period.start}-${period.end}`} start={period.start} end={period.end} english={english} />
-      : <p className="error" role="alert">{english ? 'Select a valid period of at most 366 days.' : '请选择有效期间，跨度不超过 366 天。'}</p>}
+      : null}
   </section>
 }

@@ -28,7 +28,7 @@ export function OverviewPage(props: OverviewProps) {
     <PeriodFilter period={period} onChange={onPeriodChange} english={english} />
     {validPeriod(period)
       ? <OverviewData {...props} />
-      : <p className="error" role="alert">{english ? 'Select a valid period of at most 366 days.' : '请选择有效期间，跨度不超过 366 天。'}</p>}
+      : null}
   </section>
 }
 
@@ -65,11 +65,9 @@ function OverviewData({ english, period, onNavigate }: OverviewProps) {
   const locale = english ? 'en-US' : 'zh-CN'
   return <div className="overview-data" aria-busy={updating}>
     {updating && <LoadingIndicator label={english ? 'Updating overview' : '正在更新总览'} />}
-    {snapshot.key !== requestKey && (
-      <p className="overview-retained-period">
+    <p className="overview-retained-period" style={{ visibility: snapshot.key !== requestKey ? 'visible' : 'hidden' }}>
         {english ? 'Displayed period' : '当前显示期间'}：{snapshot.period.start} — {snapshot.period.end}
-      </p>
-    )}
+    </p>
     {failure}
     {!data.summaries.length && <div className="ledger-welcome"><div className="welcome-symbol" aria-hidden="true"><NavigationIcon kind="review" /></div><div><h2>{english ? 'Your ledger starts here' : '从第一份账单开始'}</h2><p>{english ? 'Import a statement to see your income and spending.' : '导入账单，查看这段时间的收入与支出。'}</p><button className="primary" onClick={() => onNavigate('import')}>{english ? 'Choose statement' : '选择账单'} <span aria-hidden="true">↗</span></button></div></div>}
     {data.summaries.map((summary) => <section key={summary.currency} className="overview-currency" aria-label={summary.currency}>

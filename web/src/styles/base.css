@@ -42,7 +42,31 @@ body {
     radial-gradient(circle at 78% -20%, rgba(72, 105, 143, .12), transparent 34rem),
     var(--bg);
 }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; scrollbar-gutter: stable; }
+/* 界面文案不参与文本选择；业务结果和表单内容显式保留复制能力。
+ * 不在 body 上禁用选择，避免新增业务内容默认不可复制。
+ */
+button, summary, label, th, dt, h1, h2, h3, [role="tab"],
+.brand, .eyebrow, .navigation-group-label, .workspace-breadcrumb,
+.currency-stamp, .import-status, .status, .account-avatar, .nav-icon,
+.workspace-footer, .import-steps, .import-file-state, .field-hint,
+.loading-label, .copy-feedback, .empty-content, .login-heading p,
+.net-caption, .net-foot, .overview-metric > span, .overview-metric > small,
+.import-metrics > div > span, .result-placeholder > header,
+.ledger-welcome h2, .ledger-welcome p, a.primary { user-select: none; }
+input, textarea, [contenteditable="true"], .selectable-text,
+.transaction-link, .error, [role="alert"], .import-errors,
+.result-heading h2, .report-detail > h2 { user-select: text; }
+::selection { color: var(--text); background: #665335; }
+:where(button, a, input, select, textarea, summary) { scroll-margin-block: 88px 24px; }
+:where(button):disabled { opacity: .5; cursor: not-allowed; }
+:where(button)[aria-busy="true"] { cursor: wait; }
+:where(button):hover:not(:disabled) { border-color: var(--line-strong); background-color: var(--surface-hover); }
+:where(input, select, textarea):disabled { opacity: .6; cursor: not-allowed; }
+:where(input, select, textarea):hover:not(:disabled):not(:focus) { border-color: var(--line-strong); }
+:where(input, select, textarea)[aria-invalid="true"] { border-color: var(--danger); }
+summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 3px; }
+@media (pointer: coarse) { button, summary { min-height: 44px; } }
 button, input, select, textarea { font: inherit; }
 textarea { width: 100%; resize: vertical; color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 16px; line-height: 1.7; }
 [hidden] { display: none !important; }

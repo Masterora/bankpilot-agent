@@ -7,7 +7,7 @@
 """
 
 from datetime import date
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -24,6 +24,12 @@ class ImportRepository:
         self,
         *,
         user_id: UUID,
+        idempotency_key: UUID,
+        request_digest: str,
+        parser_version: str,
+        new_rows: int,
+        skipped_rows: int,
+        issue_count: int,
         account_id: UUID | None,
         account_name: str,
         currency: str,
@@ -41,6 +47,12 @@ class ImportRepository:
     ) -> ImportBatchRecord:
         batch = ImportBatchRecord(
             user_id=user_id,
+            idempotency_key=idempotency_key,
+            request_digest=request_digest,
+            parser_version=parser_version,
+            new_rows=new_rows,
+            skipped_rows=skipped_rows,
+            issue_count=issue_count,
             account_id=account_id,
             account_name=account_name,
             currency=currency,
@@ -67,3 +79,14 @@ class ImportRepository:
             .order_by(ImportBatchRecord.created_at.desc(), ImportBatchRecord.id.desc())
         )
         return list(records)
+
+    async def by_key(self, user_id: UUID, key: UUID) -> ImportBatchRecord | None:
+        return cast(
+            ImportBatchRecord | None,
+            await self.session.scalar(
+                select(ImportBatchRecord).where(
+                    ImportBatchRecord.user_id == user_id,
+                    ImportBatchRecord.idempotency_key == key,
+                )
+            ),
+        )

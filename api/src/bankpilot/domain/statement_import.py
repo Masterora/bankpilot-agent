@@ -14,15 +14,21 @@ import hashlib
 import io
 import re
 from collections import defaultdict
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from bankpilot.domain.payment_sources import locate_source, normalize_row
+from bankpilot.domain.payment_sources import UnknownSourceStatus, locate_source, normalize_row
 
 MAX_STATEMENT_ROWS = 5_000
+PARSER_VERSION = "statement-v2"
+
+
+class StatementStructureError(ValueError):
+    """文件结构不可解释，不能伪造零行拒绝批次。"""
 
 
 class StatementFieldMapping(BaseModel):
@@ -60,7 +66,7 @@ class ParsedStatementRow:
     amount: Decimal
     currency: str
     fingerprint: str
-    time_precision: str = "unknown"
+    time_precision: Literal["unknown", "date", "timestamp"] = "unknown"
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,7 @@ class ParsedStatement:
     errors: list[StatementRowError]
     source: str = "standard"
     skipped: list[StatementRowError] = field(default_factory=list)
+    parser_version: str = PARSER_VERSION
 
 
 def parse_statement_csv(
@@ -90,13 +97,7 @@ def parse_statement_csv(
             return native
         return _parse_statement_csv(content=content, mapping=mapping, currency=currency)
     except (csv.Error, ValueError) as exc:
-        digest = hashlib.sha256(content.removeprefix("\ufeff").encode()).hexdigest()
-        return ParsedStatement(
-            digest,
-            0,
-            [],
-            [StatementRowError(1, "INVALID_ROW", str(exc) or "CSV structure is invalid")],
-        )
+        raise StatementStructureError(str(exc)) from exc
 
 
 def _parse_payment_source(content: str, currency: str) -> ParsedStatement | None:
@@ -143,52 +144,60 @@ def _parse_payment_source(content: str, currency: str) -> ParsedStatement | None
             writer.writerow(result)
             numbers.append(number)
         except ValueError as exc:
-            errors.append(StatementRowError(number, "INVALID_ROW", str(exc)))
-    parsed = _parse_statement_csv(
-        content=stream.getvalue(),
-        currency=currency,
-        mapping=StatementFieldMapping(
-            occurred_at="date",
-            merchant="merchant",
-            amount="amount",
-            description="description",
-            transaction_id="transaction_id",
-        ),
+            errors.append(
+                StatementRowError(
+                    number,
+                    "unknown_source_status"
+                    if isinstance(exc, UnknownSourceStatus)
+                    else "invalid_row",
+                    str(exc),
+                )
+            )
+    if total == 0:
+        raise StatementStructureError("No transaction rows")
+    parsed = (
+        _parse_statement_csv(
+            content=stream.getvalue(),
+            currency=currency,
+            source_numbers=numbers,
+            mapping=StatementFieldMapping(
+                occurred_at="date",
+                merchant="merchant",
+                amount="amount",
+                description="description",
+                transaction_id="transaction_id",
+            ),
+        )
+        if numbers
+        else ParsedStatement("", 0, [], [])
     )
-    if numbers:
-        errors.extend(replace(e, row_number=numbers[e.row_number - 2]) for e in parsed.errors)
-    elif total == 0:
-        errors.append(StatementRowError(1, "NO_DATA_ROWS", "没有交易行"))
+    errors.extend(parsed.errors)
     return ParsedStatement(
         hashlib.sha256(content.encode()).hexdigest(),
         total,
-        [replace(row, row_number=numbers[row.row_number - 2]) for row in parsed.rows],
+        parsed.rows,
         errors,
-        table.profile.key + ":1",
+        table.profile.key,
         skipped,
+        table.profile.parser_version,
     )
 
 
 def _parse_statement_csv(
-    *, content: str, mapping: StatementFieldMapping, currency: str
+    *,
+    content: str,
+    mapping: StatementFieldMapping,
+    currency: str,
+    source_numbers: list[int] | None = None,
 ) -> ParsedStatement:
     """完整解析 CSV；错误行与有效行同时返回，由调用方执行整批接受或拒绝。"""
     normalized_content = content.removeprefix("\ufeff")
     file_hash = hashlib.sha256(normalized_content.encode("utf-8")).hexdigest()
     if not normalized_content.strip():
-        return ParsedStatement(
-            file_hash=file_hash,
-            total_rows=0,
-            rows=[],
-            errors=[StatementRowError(1, "EMPTY_FILE", "CSV file is empty")],
-        )
+        raise StatementStructureError("CSV file is empty")
+
     if "\ufffd" in normalized_content or "\x00" in normalized_content:
-        return ParsedStatement(
-            file_hash=file_hash,
-            total_rows=0,
-            rows=[],
-            errors=[StatementRowError(1, "INVALID_ENCODING", "CSV contains undecodable text")],
-        )
+        raise StatementStructureError("CSV contains undecodable text")
 
     try:
         dialect = csv.Sniffer().sniff(normalized_content[:4096], delimiters=",;\t")
@@ -200,12 +209,8 @@ def _parse_statement_csv(
     if any(h.strip() in {"收/支", "收支方向", "交易状态", "当前状态", "退款金额"} for h in headers):
         raise ValueError("来源结构未适配，禁止按通用金额列推断收支")
     if len(headers) != len(set(headers)):
-        return ParsedStatement(
-            file_hash=file_hash,
-            total_rows=0,
-            rows=[],
-            errors=[StatementRowError(1, "DUPLICATE_HEADER", "CSV headers must be unique")],
-        )
+        raise StatementStructureError("CSV headers must be unique")
+
     required_headers = [mapping.occurred_at, mapping.merchant, mapping.amount]
     required_headers.extend(
         value
@@ -219,59 +224,31 @@ def _parse_statement_csv(
     )
     missing_headers = [header for header in required_headers if header not in headers]
     if missing_headers:
-        return ParsedStatement(
-            file_hash=file_hash,
-            total_rows=0,
-            rows=[],
-            errors=[
-                StatementRowError(
-                    1,
-                    "MISSING_COLUMN",
-                    f"Missing mapped columns: {', '.join(missing_headers)}",
-                )
-            ],
-        )
+        raise StatementStructureError("Missing mapped columns")
 
     try:
-        raw_rows = list(reader)
-    except csv.Error:
-        return ParsedStatement(
-            file_hash,
-            0,
-            [],
-            [
-                StatementRowError(
-                    reader.line_num, "INVALID_ROW", "CSV structure or field size is invalid"
-                )
-            ],
-        )
+        raw_rows = [
+            (reader.line_num, row)
+            for row in reader
+            if any(
+                value is not None and (not isinstance(value, str) or value.strip())
+                for value in row.values()
+            )
+        ]
+    except csv.Error as exc:
+        raise StatementStructureError("CSV structure or field size is invalid") from exc
     if not raw_rows:
-        return ParsedStatement(
-            file_hash=file_hash,
-            total_rows=0,
-            rows=[],
-            errors=[StatementRowError(2, "NO_DATA_ROWS", "CSV has no transaction rows")],
-        )
+        raise StatementStructureError("CSV has no transaction rows")
+
     if len(raw_rows) > MAX_STATEMENT_ROWS:
-        return ParsedStatement(
-            file_hash=file_hash,
-            total_rows=len(raw_rows),
-            rows=[],
-            errors=[
-                StatementRowError(
-                    1,
-                    "TOO_MANY_ROWS",
-                    f"CSV exceeds the {MAX_STATEMENT_ROWS} row limit",
-                )
-            ],
-        )
+        raise StatementStructureError("CSV exceeds the 5000 row limit")
 
     parsed_rows: list[ParsedStatementRow] = []
     errors: list[StatementRowError] = []
     occurrence_counts: defaultdict[str, int] = defaultdict(int)
-    identifiers: dict[str, str] = {}
     account_names: set[str] = set()
-    for row_number, raw in enumerate(raw_rows, start=2):
+    for ordinal, (physical_line, raw) in enumerate(raw_rows):
+        row_number = source_numbers[ordinal] if source_numbers is not None else physical_line
         try:
             if None in raw or any(value is None for value in raw.values()):
                 raise ValueError("row column count does not match the CSV header")
@@ -304,9 +281,6 @@ def _parse_statement_csv(
             ).hexdigest()
             if mapping.transaction_id:
                 source_id = _required_text(raw[mapping.transaction_id], "transaction_id", 160)
-                if source_id in identifiers:
-                    raise ValueError("duplicate transaction identifier inside the file")
-                identifiers[source_id] = canonical
                 # 账户限定由持久化唯一索引提供；稳定来源 ID 不依赖导出顺序或日期范围。
                 fingerprint = hashlib.sha256(f"source-id-v1:{source_id}".encode()).hexdigest()
             parsed_rows.append(
@@ -327,7 +301,7 @@ def _parse_statement_csv(
                 )
             )
         except ValueError as exc:
-            errors.append(StatementRowError(row_number, "INVALID_ROW", str(exc)))
+            errors.append(StatementRowError(row_number, "invalid_row", str(exc)))
 
     return ParsedStatement(
         file_hash=file_hash,

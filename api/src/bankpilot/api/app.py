@@ -34,6 +34,7 @@ from bankpilot.api.system import router as system_router
 from bankpilot.api.transactions import router as transactions_router
 from bankpilot.config import Settings, get_settings
 from bankpilot.db.session import create_engine, create_session_factory
+from bankpilot.observability import RequestTimingMiddleware
 from bankpilot.ports import ModelGateway, ReviewGateway
 from bankpilot.services.report_processor import ReportProcessor
 from bankpilot.services.run_processor import RunProcessor
@@ -104,6 +105,7 @@ def create_app(
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "Last-Event-ID"],
     )
+    app.add_middleware(RequestTimingMiddleware)
     app.include_router(system_router)
     app.include_router(auth_router)
     app.include_router(cards_router)

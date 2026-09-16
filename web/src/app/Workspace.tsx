@@ -14,6 +14,7 @@ import { LedgerPage } from '../features/agent/LedgerPage'
 import { AgentPage } from '../features/agent/AgentPage'
 import { useAgentRun } from '../features/agent/useAgentRun'
 import { AuditPage } from '../features/audit/AuditPage'
+import { clearPendingImport } from '../features/imports/importRecovery'
 import { ImportPage } from '../features/imports/ImportPage'
 import { OverviewPage } from '../features/overview/OverviewPage'
 import { RelationsPage } from '../features/relations/RelationsPage'
@@ -38,6 +39,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   const navigationRef = useRef<HTMLDialogElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const previousPage = useRef<ProductPage>('overview')
+  const mobileNavigationTarget = useRef<ProductPage | null>(null)
   const agent = useAgentRun(copy)
   const [imports, setImports] = useState<ImportBatch[]>([])
   const [importsLoading, setImportsLoading] = useState(true)
@@ -51,6 +53,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   }, [menuOpen])
 
   function navigate(page: ProductPage) {
+    if (menuOpen) mobileNavigationTarget.current = page
     setMenuOpen(false)
     setActivePage(page)
     window.scrollTo({ top: 0 })
@@ -85,6 +88,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   }, [importsAttempt])
 
   async function logout() {
+    clearPendingImport()
     // 即使远程 Cookie 已过期，也要清理本地会话界面状态。
     await api.logout().catch(() => undefined)
     onLogout()
@@ -117,6 +121,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     ),
     import: (
       <ImportPage
+        userId={user.id}
         active={activePage === 'import'}
         copy={copy}
         english={locale === 'en-US'}
@@ -164,7 +169,15 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         </div>
       </aside>
 
-      <dialog className="mobile-navigation" ref={navigationRef} onCancel={() => setMenuOpen(false)} onClose={() => { setMenuOpen(false); menuRef.current?.focus() }} aria-label={copy.navigationLabel}>
+      <dialog className="mobile-navigation" ref={navigationRef} onCancel={() => setMenuOpen(false)} onClose={() => {
+        setMenuOpen(false)
+        if (mobileNavigationTarget.current) {
+          const heading = contentRef.current?.querySelector<HTMLElement>('[data-active-page] h1')
+          heading?.setAttribute('tabindex', '-1')
+          heading?.focus({ preventScroll: true })
+          mobileNavigationTarget.current = null
+        } else menuRef.current?.focus()
+      }} aria-label={copy.navigationLabel}>
         <div className="mobile-navigation-heading"><div className="brand"><Logo /> BankPilot</div><button type="button" onClick={() => setMenuOpen(false)} aria-label={locale === 'en-US' ? 'Close navigation' : '关闭导航'}>×</button></div>
         <Navigation activePage={activePage} copy={copy} english={locale === 'en-US'} onNavigate={navigate} />
       </dialog>

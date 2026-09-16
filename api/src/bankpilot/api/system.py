@@ -6,8 +6,11 @@
 关键边界：存活检查无外部依赖，就绪检查必须实际执行数据库查询。
 """
 
-from fastapi import APIRouter, Depends
+import asyncio
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import get_db_session
@@ -23,5 +26,11 @@ async def healthz() -> HealthResponse:
 
 @router.get("/readyz", response_model=HealthResponse)
 async def readyz(session: AsyncSession = Depends(get_db_session)) -> HealthResponse:
-    await session.execute(text("SELECT 1"))
+    try:
+        async with asyncio.timeout(3):
+            await session.execute(text("SELECT 1"))
+    except (TimeoutError, OSError, SQLAlchemyError) as exc:
+        raise HTTPException(
+            503, {"code": "data_unavailable", "message": "Database unavailable"}
+        ) from exc
     return HealthResponse(status="ready")

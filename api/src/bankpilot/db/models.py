@@ -187,6 +187,12 @@ class ImportBatchRecord(Base):
     account_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    idempotency_key: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    request_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    parser_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    new_rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    skipped_rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    issue_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     account_name: Mapped[str] = mapped_column(String(100))
     currency: Mapped[str] = mapped_column(String(3))
     file_name: Mapped[str] = mapped_column(String(255))
@@ -202,7 +208,25 @@ class ImportBatchRecord(Base):
     errors: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (Index("ix_import_batches_user_created", "user_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_import_batches_user_created", "user_id", "created_at"),
+        Index("uq_import_batches_user_key", "user_id", "idempotency_key", unique=True),
+        CheckConstraint(
+            "(idempotency_key IS NULL) = (request_digest IS NULL)",
+            name="ck_import_key_digest",
+        ),
+        CheckConstraint(
+            "idempotency_key IS NULL OR (parser_version IS NOT NULL "
+            "AND new_rows IS NOT NULL AND skipped_rows IS NOT NULL AND issue_count IS NOT NULL "
+            "AND new_rows >= 0 AND skipped_rows >= 0 AND issue_count >= error_rows "
+            "AND error_rows >= 0 AND duplicate_rows >= 0 AND imported_rows >= 0 "
+            "AND total_rows = new_rows + duplicate_rows + skipped_rows + error_rows "
+            "AND (status = 'REVOKED' OR (status = 'REJECTED' AND imported_rows = 0) "
+            "OR (status IN ('COMPLETED', 'COMPLETED_WITH_DUPLICATES') "
+            "AND imported_rows = new_rows AND error_rows = 0)))",
+            name="ck_import_counts",
+        ),
+    )
 
 
 class TransactionCategoryOverrideRecord(Base):

@@ -50,7 +50,7 @@ export function PageHeader({ copy, page }: { copy: Messages; page: ProductPage }
 
 export function Logo() {
   // 页面品牌标识与浏览器 favicon 复用同一资产，避免不同入口出现两套视觉语言。
-  return <img className="logo" src="/bankpilot-mark.svg?v=3" alt="" aria-hidden="true" />
+  return <img className="logo" src="/bankpilot-mark.svg?v=3" alt="" aria-hidden="true" draggable={false} />
 }
 
 /** 空数据保留功能轮廓与下一步操作，不用占位数字冒充真实统计。 */

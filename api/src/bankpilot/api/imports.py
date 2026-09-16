@@ -9,11 +9,12 @@
 from typing import Literal, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.import_errors import ImportRoute
 from bankpilot.api.schemas import (
     ImportBatchListResponse,
     ImportBatchResponse,
@@ -27,10 +28,11 @@ from bankpilot.db.models import (
     TransactionRecord,
     UserRecord,
 )
+from bankpilot.domain.statement_import import StatementStructureError
 from bankpilot.errors import ImportConflictError
 from bankpilot.services.statement_import import StatementImportService
 
-router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
+router = APIRouter(prefix="/api/v1/imports", tags=["imports"], route_class=ImportRoute)
 
 
 @router.get("", response_model=ImportBatchListResponse)
@@ -45,13 +47,16 @@ async def list_imports(
 @router.post("", response_model=ImportBatchResponse, status_code=status.HTTP_201_CREATED)
 async def import_statement(
     payload: ImportStatementRequest,
+    response: Response,
     user: UserRecord = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ImportBatchResponse:
-    await session.commit()
+    user_id = user.id
+    await session.rollback()
     try:
-        batch = await StatementImportService(session).execute(
-            user_id=user.id,
+        batch, replay = await StatementImportService(session).execute(
+            user_id=user_id,
+            idempotency_key=payload.idempotency_key,
             file_name=payload.file_name,
             content=payload.content,
             account_name=payload.account_name,
@@ -62,10 +67,25 @@ async def import_statement(
     except ImportConflictError as exc:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            "Import conflicted with another request; retry the same file",
+            {"code": "import_idempotency_conflict", "message": "同一操作不能使用不同输入"},
         ) from exc
+    except StatementStructureError as exc:
+        raise HTTPException(422, {"code": "invalid_structure", "message": str(exc)}) from exc
     except ValueError as exc:
-        raise HTTPException(422, str(exc)) from exc
+        raise HTTPException(422, {"code": "account_unavailable", "message": str(exc)}) from exc
+    response.status_code = 200 if replay else 201
+    return _import_response(batch)
+
+
+@router.get("/by-key/{key}", response_model=ImportBatchResponse)
+async def import_by_key(
+    key: UUID,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ImportBatchResponse:
+    batch = await ImportRepository(session).by_key(user.id, key)
+    if batch is None:
+        raise HTTPException(404, {"code": "import_not_found", "message": "尚未查询到已提交结果"})
     return _import_response(batch)
 
 
@@ -101,12 +121,26 @@ def _import_response(batch: ImportBatchRecord) -> ImportBatchResponse:
         raise RuntimeError(f"Import batch {batch.id} has no source")
     return ImportBatchResponse(
         source=source,
-        skipped_rows=sum(item.get("code") == "EXCLUDED" for item in batch.errors),
+        parser_version=batch.parser_version,
+        new_rows=batch.new_rows,
+        valid_rows=batch.new_rows + batch.duplicate_rows if batch.new_rows is not None else None,
+        skipped_rows=batch.skipped_rows,
+        issue_count=batch.issue_count,
+        issues_truncated=(
+            batch.issue_count > sum(e.get("code") != "EXCLUDED" for e in batch.errors)
+            if batch.issue_count is not None
+            else None
+        ),
+        excluded_truncated=(
+            batch.skipped_rows > sum(e.get("code") == "EXCLUDED" for e in batch.errors)
+            if batch.skipped_rows is not None
+            else None
+        ),
         excluded=[
             ImportRowErrorResponse.model_validate(item)
             for item in batch.errors
             if item.get("code") == "EXCLUDED"
-        ],
+        ][:100],
         id=batch.id,
         account_id=batch.account_id,
         account_name=batch.account_name,
@@ -127,6 +161,6 @@ def _import_response(batch: ImportBatchRecord) -> ImportBatchResponse:
             ImportRowErrorResponse.model_validate(item)
             for item in batch.errors
             if item.get("code") != "EXCLUDED"
-        ],
+        ][:100],
         created_at=batch.created_at,
     )

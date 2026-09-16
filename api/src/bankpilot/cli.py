@@ -4,13 +4,18 @@
 主要内容：
 - `seed`：校验邮箱和密码，触发异步初始化。
 - `_seed`：幂等创建本地用户、账户、卡片与可重复验证的交易记录。
+- `backup-db / restore-db / restore-check / restore-prepare`：显式离线备份与恢复。
 
 关键边界：密码仅从交互输入或环境变量读取，入库前必须哈希；引擎在命令结束时释放。
 """
 
 import asyncio
+import json
+import os
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
+from typing import Annotated
 
 import typer
 from pydantic import EmailStr, TypeAdapter
@@ -24,7 +29,7 @@ from bankpilot.db.user_repository import UserRepository
 from bankpilot.domain.contracts import CardStatus
 from bankpilot.security import hash_password, validate_new_password
 
-app = typer.Typer(no_args_is_help=True)
+app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
 
 
 @app.callback()
@@ -127,3 +132,86 @@ async def _seed(email: str, password: str) -> None:
         typer.echo(f"Local banking data is ready for {email.lower()}")
     finally:
         await engine.dispose()
+
+
+def _operation_url(variable: str) -> str:
+    value = os.environ.get(variable)
+    if not value:
+        raise typer.BadParameter(f"{variable} must be explicitly set")
+    return value
+
+
+@app.command("backup-db")
+def backup_db(
+    directory: Annotated[Path, typer.Option()],
+    application_commit: Annotated[str, typer.Option()],
+) -> None:
+    """备份到新建受限目录；使用加密磁盘并另行保留异机副本。"""
+    from bankpilot.services.database_backup import backup_database
+
+    os.umask(0o077)
+    result = asyncio.run(
+        backup_database(
+            _operation_url("BANKPILOT_BACKUP_DATABASE_URL"),
+            directory,
+            application_commit,
+        )
+    )
+    typer.echo(json.dumps(result))
+
+
+@app.command("restore-db")
+def restore_db(
+    directory: Annotated[Path, typer.Option()], expected_db: Annotated[str, typer.Option()]
+) -> None:
+    """仅还原到无其他客户端的空库，完成后核对完整备份证据。"""
+    from bankpilot.services.database_backup import restore_database
+
+    os.umask(0o077)
+    result = asyncio.run(
+        restore_database(
+            _operation_url("BANKPILOT_RESTORE_DATABASE_URL"),
+            directory,
+            expected_db,
+        )
+    )
+    typer.echo(json.dumps(result))
+
+
+@app.command("restore-check")
+def restore_check(
+    directory: Annotated[Path, typer.Option()], expected_db: Annotated[str, typer.Option()]
+) -> None:
+    """不启动应用，在只读一致性快照核对所有表和历史报告。"""
+    from bankpilot.services.database_backup import check_restored
+
+    result = asyncio.run(
+        check_restored(
+            _operation_url("BANKPILOT_RESTORE_DATABASE_URL"),
+            directory,
+            expected_db,
+        )
+    )
+    typer.echo(json.dumps(result))
+
+
+@app.command("restore-prepare")
+def restore_prepare(
+    directory: Annotated[Path, typer.Option()],
+    expected_db: Annotated[str, typer.Option()],
+    apply: Annotated[bool, typer.Option("--apply")] = False,
+) -> None:
+    """默认仅报告中断任务数量；--apply 原子失效旧任务令牌和会话。"""
+    from bankpilot.services.database_backup import check_restored
+
+    os.umask(0o077)
+    result = asyncio.run(
+        check_restored(
+            _operation_url("BANKPILOT_RESTORE_DATABASE_URL"),
+            directory,
+            expected_db,
+            prepare=True,
+            apply=apply,
+        )
+    )
+    typer.echo(json.dumps(result))

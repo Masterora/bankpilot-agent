@@ -22,8 +22,6 @@ async def resolve_account(
     source: str,
 ) -> AccountRecord | None:
     """显式选择优先按 ID 解析；不允许失效 ID 降级为创建同名账户。"""
-    # 解析器版本只属于批次证据，不能成为账户身份的一部分。
-    source = source.partition(":")[0]
     condition = AccountRecord.id == account_id if account_id else AccountRecord.name == name
     account = await session.scalar(
         select(AccountRecord).where(

@@ -5,7 +5,7 @@
  * 关键边界：密码只保存在组件内存中，会话令牌由 HttpOnly Cookie 管理。
  */
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useRef, useState } from 'react'
 
 import { ApiError, api } from '../../api'
 import { LanguageSwitch, Logo } from '../../shared/ui'
@@ -28,25 +28,32 @@ export function AuthPage({ copy, locale, onLocaleChange, onAuthenticated }: Auth
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
+  const confirmationRef = useRef<HTMLInputElement>(null)
+  const [confirmationError, setConfirmationError] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   function changeMode(nextMode: 'login' | 'register') {
+    if (submitting || nextMode === mode) return
     setMode(nextMode)
     setError('')
+    setConfirmationError('')
     setPassword('')
     setPasswordConfirmation('')
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (submitting) return
     setError('')
+    setConfirmationError('')
     if (mode === 'register' && !validNewPassword(password)) {
       setError(copy.passwordFormatInvalid)
       return
     }
     if (mode === 'register' && password !== passwordConfirmation) {
-      setError(copy.passwordMismatch)
+      setConfirmationError(copy.passwordMismatch)
+      confirmationRef.current?.focus()
       return
     }
     setSubmitting(true)
@@ -81,11 +88,12 @@ export function AuthPage({ copy, locale, onLocaleChange, onAuthenticated }: Auth
           <p>{mode === 'register' ? copy.registerHint : copy.loginHint}</p>
         </div>
         <div className="auth-mode-switch" role="group" aria-label={copy.loginHeading}>
-          <button type="button" aria-pressed={mode === 'login'} onClick={() => changeMode('login')}>
+          <button type="button" disabled={submitting} aria-pressed={mode === 'login'} onClick={() => changeMode('login')}>
             {copy.login}
           </button>
           <button
             type="button"
+            disabled={submitting}
             aria-pressed={mode === 'register'}
             onClick={() => changeMode('register')}
           >
@@ -95,6 +103,7 @@ export function AuthPage({ copy, locale, onLocaleChange, onAuthenticated }: Auth
         <label>
           {copy.email}
           <input
+            disabled={submitting}
             type="email"
             autoComplete="username"
             value={email}
@@ -105,6 +114,7 @@ export function AuthPage({ copy, locale, onLocaleChange, onAuthenticated }: Auth
         <label>
           {copy.password}
           <input
+            disabled={submitting}
             type="password"
             aria-label={copy.password}
             autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
@@ -121,15 +131,20 @@ export function AuthPage({ copy, locale, onLocaleChange, onAuthenticated }: Auth
           <label>
             {copy.confirmPassword}
             <input
+              ref={confirmationRef}
+              disabled={submitting}
               type="password"
+              aria-invalid={Boolean(confirmationError)}
+              aria-describedby={confirmationError ? 'confirmation-error' : undefined}
               aria-label={copy.confirmPassword}
               autoComplete="new-password"
               value={passwordConfirmation}
-              onChange={(event) => setPasswordConfirmation(event.target.value)}
+              onChange={(event) => { setPasswordConfirmation(event.target.value); setConfirmationError('') }}
               minLength={MIN_PASSWORD_LENGTH}
               maxLength={128}
               required
             />
+            {confirmationError && <span id="confirmation-error" className="error" role="alert">{confirmationError}</span>}
           </label>
         )}
         {error && <p className="error" role="alert">{error}</p>}
@@ -141,6 +156,7 @@ export function AuthPage({ copy, locale, onLocaleChange, onAuthenticated }: Auth
           }
           className="primary"
           disabled={submitting}
+          aria-busy={submitting}
         >
           {submitting && <span className="button-spinner" aria-hidden="true" />}
           <span>{mode === 'register' ? copy.register : copy.login}</span>

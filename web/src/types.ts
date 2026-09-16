@@ -41,7 +41,13 @@ export interface ImportRowError {
 
 export interface ImportBatch {
   source: string
-  skipped_rows: number
+  skipped_rows: number | null
+  parser_version: string | null
+  new_rows: number | null
+  valid_rows: number | null
+  issue_count: number | null
+  issues_truncated: boolean | null
+  excluded_truncated: boolean | null
   excluded: ImportRowError[]
   id: string
   account_id: string | null
@@ -248,4 +254,34 @@ export interface Run {
   created_at: string
   updated_at: string
   events: RunEvent[]
+}
+
+export interface ImportPreview {
+  source: string
+  parser_version: string
+  request_digest: string
+  currency: string
+  total_rows: number
+  valid_rows: number
+  new_rows: number
+  duplicate_rows: number
+  error_rows: number
+  skipped_rows: number
+  issue_count: number
+  issues_truncated: boolean
+  excluded_truncated: boolean
+  preview_truncated: boolean
+  valid_amounts: { income: string; expense: string; net: string }
+  new_amounts: { income: string; expense: string; net: string }
+  errors: ImportRowError[]
+  excluded: ImportRowError[]
+  rows: {
+    row_number: number
+    date: string
+    occurred_at: string
+    time_precision: 'unknown' | 'date' | 'timestamp'
+    merchant: string
+    amount: string
+    classification: 'new' | 'duplicate'
+  }[]
 }

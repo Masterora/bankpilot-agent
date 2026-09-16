@@ -1,24 +1,70 @@
-"""
-文件职责：编排一次账单导入的解析、账户归属、去重、批次报告和原子写入。
-
-主要内容：`StatementImportService.execute` 将确定性解析结果转换为持久化批次与标准交易。
-关键边界：失败行只生成拒绝报告；有效批次在同一事务写入账户、报告和交易；并发冲突转为稳定业务异常。
+"""文件职责：编排可恢复的账单导入。
+关键边界：读取释放连接后解析，用户锁内重查操作身份；批次、账户和流水原子提交。
 """
 
+import hashlib
+import json
+from dataclasses import asdict
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from bankpilot.db.import_repository import ImportRepository
 from bankpilot.db.ledger_revision import bump_revision
 from bankpilot.db.models import AccountRecord, ImportBatchRecord, UserRecord
 from bankpilot.db.transaction_repository import TransactionRepository
 from bankpilot.domain.payment_sources import source_account
-from bankpilot.domain.statement_import import StatementFieldMapping, parse_statement_csv
+from bankpilot.domain.statement_import import (
+    ParsedStatement,
+    StatementFieldMapping,
+    parse_statement_csv,
+)
 from bankpilot.errors import ImportConflictError
+from bankpilot.observability import measure
 from bankpilot.services.accounts import resolve_account
+from bankpilot.services.import_classification import classify_import
+
+
+def request_digest(
+    *,
+    file_name: str,
+    content: str,
+    account_name: str,
+    currency: str,
+    mapping: StatementFieldMapping,
+    account_id: UUID | None,
+) -> str:
+    data = dict(
+        file_name=file_name,
+        content=content,
+        account_name=account_name,
+        currency=currency,
+        mapping=mapping.model_dump(),
+        account_id=str(account_id) if account_id else None,
+    )
+    return hashlib.sha256(
+        json.dumps(
+            data,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def parse_input(
+    content: str,
+    mapping: StatementFieldMapping,
+    currency: str,
+    name: str,
+    account_id: UUID | None,
+) -> tuple[ParsedStatement, str]:
+    """CPU 与来源扫描不持数据库连接。"""
+    with measure("parse_ms"):
+        parsed = parse_statement_csv(content=content, mapping=mapping, currency=currency)
+        return parsed, source_account(parsed.source, name) if account_id is None else name
 
 
 class StatementImportService:
@@ -29,105 +75,108 @@ class StatementImportService:
         self,
         *,
         user_id: UUID,
+        idempotency_key: UUID,
         file_name: str,
         content: str,
         account_name: str,
         currency: str,
         mapping: StatementFieldMapping,
         account_id: UUID | None = None,
-    ) -> ImportBatchRecord:
-        """整批校验并持久化；调用前应结束身份查询产生的只读事务。"""
-        parsed = parse_statement_csv(content=content, mapping=mapping, currency=currency)
-        mapping_data = mapping.model_dump()
-        mapping_data["source"] = parsed.source
+    ) -> tuple[ImportBatchRecord, bool]:
+        digest = request_digest(
+            file_name=file_name,
+            content=content,
+            account_name=account_name,
+            currency=currency,
+            mapping=mapping,
+            account_id=account_id,
+        )
+        imports = ImportRepository(self.session)
+        with measure("connection_ms"):
+            await self.session.connection()
+        old = await imports.by_key(user_id, idempotency_key)
+        if old:
+            self.session.expunge(old)
+        await self.session.rollback()
+        if old:
+            if old.request_digest != digest:
+                raise ImportConflictError
+            return old, True
+        parsed, inferred_name = await run_in_threadpool(
+            parse_input, content, mapping, currency, account_name, account_id
+        )
         if account_id is None:
-            account_name = source_account(content, account_name)
-        exclusions = [
-            {"row_number": item.row_number, "code": item.code, "message": item.message}
-            for item in parsed.skipped
-        ]
-        row_errors = [
-            {"row_number": error.row_number, "code": error.code, "message": error.message}
-            for error in parsed.errors[:100]
-        ]
-        parsed_dates = [row.booking_date for row in parsed.rows]
-
-        try:
-            async with self.session.begin():
+            account_name = inferred_name
+        async with self.session.begin():
+            with measure("connection_ms"):
+                await self.session.connection()
+            if (
                 await self.session.scalar(
-                    select(UserRecord).where(UserRecord.id == user_id).with_for_update()
+                    select(UserRecord.id).where(UserRecord.id == user_id).with_for_update()
                 )
-                imports = ImportRepository(self.session)
-                account = await resolve_account(
-                    self.session,
-                    user_id=user_id,
-                    account_id=account_id,
-                    name=account_name,
-                    currency=currency,
-                    source=parsed.source,
+                is None
+            ):
+                raise ValueError("User is unavailable")
+            old = await imports.by_key(user_id, idempotency_key)
+            if old:
+                if old.request_digest != digest:
+                    raise ImportConflictError
+                self.session.expunge(old)
+                return old, True
+            account = await resolve_account(
+                self.session,
+                user_id=user_id,
+                account_id=account_id,
+                name=account_name,
+                currency=currency,
+                source=parsed.source,
+            )
+            classified = await classify_import(
+                self.session, parsed, account.id if account else None
+            )
+            rejected = bool(classified.errors)
+            if not rejected and classified.new and account is None:
+                account = AccountRecord(
+                    user_id=user_id, name=account_name, currency=currency, source=parsed.source
                 )
-                if parsed.errors:
-                    batch = await imports.add(
-                        user_id=user_id,
-                        account_id=None,
-                        account_name=account_name,
-                        currency=currency,
-                        file_name=file_name,
-                        file_hash=parsed.file_hash,
-                        status="REJECTED",
-                        total_rows=parsed.total_rows,
-                        imported_rows=0,
-                        duplicate_rows=0,
-                        error_rows=len(parsed.errors),
-                        start_date=min(parsed_dates) if parsed_dates else None,
-                        end_date=max(parsed_dates) if parsed_dates else None,
-                        field_mapping=mapping_data,
-                        errors=row_errors + exclusions,
-                    )
-                else:
-                    if account is None:
-                        account = AccountRecord(
-                            user_id=user_id,
-                            name=account_name,
-                            currency=currency,
-                            source=parsed.source.partition(":")[0],
-                        )
-                        self.session.add(account)
-                        await self.session.flush()
-                    transactions = TransactionRepository(self.session)
-                    if await transactions.conflicting_rows(account_id=account.id, rows=parsed.rows):
-                        raise ImportConflictError
-                    existing = await transactions.existing_fingerprints(
-                        account_id=account.id,
-                        fingerprints={row.fingerprint for row in parsed.rows},
-                    )
-                    new_rows = [row for row in parsed.rows if row.fingerprint not in existing]
-                    batch = await imports.add(
-                        user_id=user_id,
-                        account_id=account.id,
-                        account_name=account.name,
-                        currency=account.currency,
-                        file_name=file_name,
-                        file_hash=parsed.file_hash,
-                        status="COMPLETED_WITH_DUPLICATES" if existing else "COMPLETED",
-                        total_rows=parsed.total_rows,
-                        imported_rows=len(new_rows),
-                        duplicate_rows=len(parsed.rows) - len(new_rows),
-                        error_rows=0,
-                        start_date=min(parsed_dates) if parsed_dates else None,
-                        end_date=max(parsed_dates) if parsed_dates else None,
-                        field_mapping=mapping_data,
-                        errors=exclusions,
-                    )
-                    await transactions.add_imported(
-                        account_id=account.id,
-                        import_batch_id=batch.id,
-                        rows=new_rows,
-                    )
-                    if new_rows:
-                        await bump_revision(self.session, user_id)
-        except IntegrityError as exc:
-            raise ImportConflictError from exc
-
-        await self.session.refresh(batch)
-        return batch
+                self.session.add(account)
+                await self.session.flush()
+            dates = [row.booking_date for row in parsed.rows]
+            mapping_data = mapping.model_dump()
+            mapping_data["source"] = parsed.source
+            batch = await imports.add(
+                user_id=user_id,
+                idempotency_key=idempotency_key,
+                request_digest=digest,
+                parser_version=parsed.parser_version,
+                new_rows=len(classified.new),
+                skipped_rows=len(parsed.skipped),
+                issue_count=len(classified.errors),
+                account_id=account.id if account else None,
+                account_name=account.name if account else account_name,
+                currency=currency,
+                file_name=file_name,
+                file_hash=parsed.file_hash,
+                status="REJECTED"
+                if rejected
+                else ("COMPLETED_WITH_DUPLICATES" if classified.duplicates else "COMPLETED"),
+                total_rows=parsed.total_rows,
+                imported_rows=0 if rejected else len(classified.new),
+                duplicate_rows=len(classified.duplicates),
+                error_rows=classified.error_rows,
+                start_date=min(dates) if dates else None,
+                end_date=max(dates) if dates else None,
+                field_mapping=mapping_data,
+                errors=[asdict(e) for e in classified.errors[:100]]
+                + [asdict(e) for e in sorted(parsed.skipped, key=lambda e: e.row_number)[:100]],
+            )
+            if not rejected and classified.new:
+                assert account is not None
+                await TransactionRepository(self.session).add_imported(
+                    account_id=account.id,
+                    import_batch_id=batch.id,
+                    rows=classified.new,
+                )
+                await bump_revision(self.session, user_id)
+            self.session.expunge(batch)
+        return batch, False

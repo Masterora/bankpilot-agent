@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bankpilot.config import Settings
 from bankpilot.db.models import UserRecord
 from bankpilot.db.user_repository import SessionRepository
+from bankpilot.observability import measure
 from bankpilot.security import hash_session_token
 
 SESSION_COOKIE = "bankpilot_session"
@@ -36,7 +37,8 @@ async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
 async def get_snapshot_session(request: Request) -> AsyncIterator[AsyncSession]:
     """在认证读取前固定快照；多次查询共用一个连接，关闭会话结束事务。"""
     async with request.app.state.session_factory() as session:
-        await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+        with measure("connection_ms"):
+            await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
         yield session
 
 
@@ -49,6 +51,8 @@ async def get_current_user(
     if not session_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     token_hash = hash_session_token(session_token, settings.session_secret.get_secret_value())
+    with measure("connection_ms"):
+        await session.connection()
     user = await SessionRepository(session).resolve_user(token_hash)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")

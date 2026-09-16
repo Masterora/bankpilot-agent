@@ -10,11 +10,18 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from itertools import islice
+
+
+class UnknownSourceStatus(ValueError):
+    """来源状态未明确适配，必须阻止入账。"""
 
 
 @dataclass(frozen=True)
 class SourceProfile:
     key: str
+    profile_key: str
+    parser_version: str
     label: str
     time: str
     merchant: str
@@ -29,6 +36,8 @@ class SourceProfile:
 PROFILES = (
     SourceProfile(
         "wechat",
+        "wechat-personal",
+        "wechat-personal-v2",
         "微信",
         "交易时间",
         "交易对方",
@@ -41,6 +50,8 @@ PROFILES = (
     ),
     SourceProfile(
         "alipay",
+        "alipay-personal",
+        "alipay-personal-v2",
         "支付宝",
         "交易时间",
         "交易对方",
@@ -53,6 +64,8 @@ PROFILES = (
     ),
     SourceProfile(
         "alipay",
+        "alipay-legacy-export",
+        "alipay-legacy-export-v2",
         "支付宝",
         "交易创建时间",
         "交易对方",
@@ -80,6 +93,14 @@ def clean_header(value: str) -> str:
 def locate_source(content: str) -> SourceTable | None:
     """通过字段组合定位表头；说明行不写入账本，不依赖文件名或固定行数。"""
     if "收/支" not in content or not any(s in content for s in ("当前状态", "交易状态")):
+        # 即使状态/方向列缺失，明确的来源编号与表头组合也不能退回通用金额解析。
+        candidate_rows = islice(csv.reader(io.StringIO(content.removeprefix("\ufeff"))), 100)
+        for cells in candidate_rows:
+            candidate_headers = {clean_header(cell) for cell in cells}
+            if any(
+                {p.time, p.merchant, p.identifier}.issubset(candidate_headers) for p in PROFILES
+            ):
+                raise ValueError("来源账单缺少状态或收支方向列")
         return None
     reader = csv.reader(io.StringIO(content.removeprefix("\ufeff")), strict=True)
     rows: list[tuple[int, list[str]]] = []
@@ -104,22 +125,21 @@ def locate_source(content: str) -> SourceTable | None:
                     raise ValueError("Duplicate source columns")
                 found.append((index, profile, headers))
     if not found:
-        return None
+        raise ValueError("来源结构未适配，禁止回退通用金额映射")
     if len(found) != 1:
         raise ValueError("Multiple statement headers are not supported")
     index, profile, headers = found[0]
     return SourceTable(profile, headers, rows[index + 1 :])
 
 
-def source_account(content: str, account_name: str) -> str:
+def source_account(source: str, account_name: str) -> str:
     """账户以来源限定命名空间，避免两个平台的相同用户标签混为同一账户。"""
-    try:
-        table = locate_source(content)
-    except csv.Error as exc:
-        raise ValueError("CSV structure is invalid") from exc
-    if table is None:
+    if source == "standard":
         return account_name
-    prefix = table.profile.label + " · "
+    profile = next((profile for profile in PROFILES if profile.key == source), None)
+    if profile is None:
+        raise ValueError("Unknown statement source")
+    prefix = profile.label + " · "
     value = account_name if account_name.startswith(prefix) else prefix + account_name
     if len(value) > 100:
         raise ValueError("Account label is too long")
@@ -131,10 +151,10 @@ def normalize_row(profile: SourceProfile, row: dict[str, str]) -> list[str] | No
     state, direction = row[profile.status].strip(), row["收/支"].strip()
     if state in {"交易关闭", "已关闭", "支付失败", "已撤销", "未支付"}:
         return None
+    if state not in profile.successful:
+        raise UnknownSourceStatus(f"状态待适配：{state}；未写入，请保留原文件")
     if direction in {"/", "不计收支", "不计收入支出"}:
         return None
-    if state not in profile.successful:
-        raise ValueError(f"状态待适配：{state}；未写入，请保留原文件")
     if direction not in {"收入", "支出"}:
         raise ValueError("收支方向无法确定")
     if "退款" in state and direction != "收入":

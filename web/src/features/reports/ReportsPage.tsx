@@ -46,12 +46,12 @@ export function ReportsPage({ copy, locale, initialMonth }: Props) {
             disabled={busy} onChange={(event) => setMonth(event.target.value)}
           />
         </label>
-        <button className="primary-button" disabled={busy || !month}>
+        <button className="primary" aria-busy={busy} disabled={busy || !month}>
           {busy
             ? (english ? 'Submitting…' : '提交中…')
             : (english ? 'Generate report' : '生成月报')}
         </button>
-        <button type="button" onClick={refreshReports}>{english ? 'Refresh' : '刷新'}</button>
+        <button type="button" disabled={loading || busy} onClick={refreshReports}>{english ? 'Refresh' : '刷新'}</button>
       </form>
       {error && <p role="alert">{error}</p>}
       {listError && (
