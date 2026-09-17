@@ -13,6 +13,7 @@ from datetime import date
 from typing import Protocol
 from uuid import UUID
 
+from bankpilot.domain.assistant import Decision
 from bankpilot.domain.contracts import ModelPlan, ReviewSnapshot, TransactionResult
 
 
@@ -32,3 +33,7 @@ class ReviewGateway(Protocol):
     async def review_transactions(
         self, *, user_id: UUID, start_date: date, end_date: date
     ) -> ReviewSnapshot: ...
+
+
+class AssistantGateway(Protocol):
+    async def decide(self, messages: list[dict[str, str]]) -> "Decision": ...

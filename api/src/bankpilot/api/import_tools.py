@@ -14,14 +14,14 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from bankpilot.adapters.statement_files import decode_statement
 from bankpilot.api.dependencies import get_current_user, get_db_session
-from bankpilot.api.import_errors import ImportRoute
+from bankpilot.api.errors import ApiProblem
 from bankpilot.api.schemas import ImportPreviewRequest, ImportRowErrorResponse
 from bankpilot.db.models import UserRecord
 from bankpilot.domain.source_detection import detect_statement
@@ -35,7 +35,7 @@ from bankpilot.services.accounts import resolve_account
 from bankpilot.services.import_classification import classify_import
 from bankpilot.services.statement_import import parse_input, request_digest
 
-router = APIRouter(prefix="/api/v1/imports", tags=["imports"], route_class=ImportRoute)
+router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
 
 
 class PreviewRow(BaseModel):
@@ -102,7 +102,7 @@ async def preview(
             payload.account_id,
         )
     except StatementStructureError as exc:
-        raise HTTPException(422, {"code": "invalid_structure", "message": str(exc)}) from exc
+        raise ApiProblem(422, "invalid_structure", str(exc)) from exc
     with measure("connection_ms"):
         await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
     try:
@@ -116,7 +116,7 @@ async def preview(
         )
         result = await classify_import(session, parsed, account.id if account else None)
     except ValueError as exc:
-        raise HTTPException(422, {"code": "account_unavailable", "message": str(exc)}) from exc
+        raise ApiProblem(422, "account_unavailable", str(exc)) from exc
     finally:
         await session.rollback()
     valid = sorted(result.new + result.duplicates, key=lambda row: row.row_number)
@@ -182,9 +182,9 @@ async def decode_file(
         raw = base64.b64decode(payload.data, validate=True)
         content = await run_in_threadpool(decode_statement, payload.file_name, raw)
     except StatementSizeError as exc:
-        raise HTTPException(413, str(exc)) from exc
+        raise ApiProblem(413, "file_too_large", str(exc)) from exc
     except (ValueError, binascii.Error) as exc:
-        raise HTTPException(422, str(exc)) from exc
+        raise ApiProblem(422, "invalid_structure", str(exc)) from exc
     return DecodeResponse(
         content=content, content_digest=hashlib.sha256(content.encode("utf-8")).hexdigest()
     )
@@ -211,8 +211,8 @@ async def detect(
 
 def detect_content(content: str) -> DetectionResponse:
     if len(content.encode("utf-8")) > 10 * 1024 * 1024:
-        raise HTTPException(413, "Statement exceeds the size limit")
+        raise ApiProblem(413, "file_too_large", "Statement exceeds the size limit")
     try:
         return DetectionResponse.model_validate(detect_statement(content), from_attributes=True)
     except (ValueError, csv.Error) as exc:
-        raise HTTPException(422, str(exc)) from exc
+        raise ApiProblem(422, "invalid_structure", str(exc)) from exc

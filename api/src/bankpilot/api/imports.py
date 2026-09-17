@@ -9,12 +9,12 @@
 from typing import Literal, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import get_current_user, get_db_session
-from bankpilot.api.import_errors import ImportRoute
+from bankpilot.api.errors import ApiProblem
 from bankpilot.api.schemas import (
     ImportBatchListResponse,
     ImportBatchResponse,
@@ -32,7 +32,7 @@ from bankpilot.domain.statement_import import StatementStructureError
 from bankpilot.errors import ImportConflictError
 from bankpilot.services.statement_import import StatementImportService
 
-router = APIRouter(prefix="/api/v1/imports", tags=["imports"], route_class=ImportRoute)
+router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
 
 
 @router.get("", response_model=ImportBatchListResponse)
@@ -65,14 +65,13 @@ async def import_statement(
             mapping=payload.mapping,
         )
     except ImportConflictError as exc:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            {"code": "import_idempotency_conflict", "message": "同一操作不能使用不同输入"},
+        raise ApiProblem(
+            status.HTTP_409_CONFLICT, "import_idempotency_conflict", "同一操作不能使用不同输入"
         ) from exc
     except StatementStructureError as exc:
-        raise HTTPException(422, {"code": "invalid_structure", "message": str(exc)}) from exc
+        raise ApiProblem(422, "invalid_structure", str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(422, {"code": "account_unavailable", "message": str(exc)}) from exc
+        raise ApiProblem(422, "account_unavailable", str(exc)) from exc
     response.status_code = 200 if replay else 201
     return _import_response(batch)
 
@@ -85,7 +84,7 @@ async def import_by_key(
 ) -> ImportBatchResponse:
     batch = await ImportRepository(session).by_key(user.id, key)
     if batch is None:
-        raise HTTPException(404, {"code": "import_not_found", "message": "尚未查询到已提交结果"})
+        raise ApiProblem(404, "import_not_found", "尚未查询到已提交结果")
     return _import_response(batch)
 
 
@@ -102,7 +101,7 @@ async def revoke_import(
         .with_for_update()
     )
     if batch is None:
-        raise HTTPException(404, "Import not found")
+        raise ApiProblem(404, "import_not_found", "Import not found")
     deleted_id = await session.scalar(
         delete(TransactionRecord)
         .where(TransactionRecord.import_batch_id == batch.id)

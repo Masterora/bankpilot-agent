@@ -22,6 +22,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from bankpilot.config import Settings
+from bankpilot.domain.assistant import Decision, decision_adapter
 from bankpilot.domain.contracts import ModelPlan, ModelUsage, PlanningDecision
 from bankpilot.errors import ModelOutputInvalidError, ModelUnavailableError
 
@@ -174,6 +175,39 @@ class OpenRouterModelGateway:
             raise ModelOutputInvalidError(
                 "OpenRouter returned an invalid planning decision"
             ) from exc
+
+    async def decide(self, messages: list[dict[str, str]]) -> Decision:
+        """依据工具观察选择下一步；失败显式返回，不使用关键词或固定流程回退。"""
+        api_key = self.settings.openrouter_api_key.get_secret_value()
+        if not api_key or not self.settings.model_id:
+            raise ModelUnavailableError("Model is not configured")
+        response = await self._post_with_retry(
+            {
+                "model": self.settings.model_id,
+                "messages": messages,
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "assistant_decision",
+                        "strict": True,
+                        "schema": _inline_local_refs(decision_adapter.json_schema()),
+                    },
+                },
+                "provider": {
+                    "require_parameters": self.settings.model_require_parameters,
+                    "data_collection": self.settings.model_data_collection,
+                },
+                "reasoning": {"effort": self.settings.model_reasoning_effort},
+                "temperature": 0,
+                "max_tokens": self.settings.model_max_tokens,
+            },
+            api_key,
+        )
+        try:
+            body = _PlanningResponse.model_validate(response.json())
+            return decision_adapter.validate_json(body.choices[0].message.content)
+        except (ValueError, TypeError, ValidationError) as exc:
+            raise ModelOutputInvalidError("Invalid assistant decision") from exc
 
     async def _post_with_retry(self, payload: dict[str, Any], api_key: str) -> httpx.Response:
         """重试短暂的网络或供应商故障，并对上输出稳定的领域异常。"""

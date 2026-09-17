@@ -9,11 +9,12 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.adapters.local_banking import LocalBankingGateway
 from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.errors import ApiProblem
 from bankpilot.api.schemas import CorrectCategoryRequest
 from bankpilot.db.models import UserRecord
 from bankpilot.db.transaction_repository import TransactionRepository
@@ -30,7 +31,7 @@ async def transactions(
     session: AsyncSession = Depends(get_db_session),
 ) -> TransactionResult:
     if end_date < start_date or (end_date - start_date).days > 366:
-        raise HTTPException(422, "End date must not precede start date")
+        raise ApiProblem(422, "invalid_period", "End date must not precede start date")
     return await LocalBankingGateway(session).query_transactions(
         user_id=user.id, start_date=start_date, end_date=end_date
     )
@@ -49,5 +50,5 @@ async def correct_category(
         category=payload.category.value,
     )
     if record is None:
-        raise HTTPException(404, "Transaction not found")
+        raise ApiProblem(404, "transaction_not_found", "Transaction not found")
     await session.commit()

@@ -6,23 +6,53 @@
 import { useEffect, useState } from 'react'
 import { pageDefinitions } from './pages'
 import type { ProductPage } from './pages'
-import { currentPeriod, validPeriod } from '../shared/period'
+import { currentPeriod, validPeriod, monthPeriod } from '../shared/period'
 import type { ReviewPeriod } from '../shared/period'
 
 function readRoute() {
   const params = new URLSearchParams(window.location.hash.slice(1))
   const page = pageDefinitions.find((item) => item.id === params.get('page'))?.id ?? 'overview'
   const period = { start: params.get('start') ?? '', end: params.get('end') ?? '' }
-  return { page, period: validPeriod(period) ? period : currentPeriod() }
+  const selectedPeriod = validPeriod(period) ? period : currentPeriod()
+  const selectedMonth = (key: string) => {
+    const value = params.get(key) ?? selectedPeriod.start.slice(0, 7)
+    return monthPeriod(value) ? value : currentPeriod().start.slice(0, 7)
+  }
+  const overview = {
+    start: params.get('overviewStart') ?? selectedPeriod.start,
+    end: params.get('overviewEnd') ?? selectedPeriod.end,
+  }
+  return {
+    page,
+    overviewPeriod: validPeriod(overview) ? overview : currentPeriod(),
+    period: selectedPeriod,
+    budgetMonth: selectedMonth('budgetMonth'),
+    recurringMonth: selectedMonth('recurringMonth'),
+  }
 }
 
-export function useWorkspaceRoute() {
+export function useWorkspaceRoute(locked = { budgets: false, recurring: false }) {
   const [route, setRoute] = useState(readRoute)
   useEffect(() => {
-    const restore = () => setRoute(readRoute())
+    const restore = () => {
+      const next = readRoute()
+      // History may change pages, but must not replace the month owning an unsaved form.
+      if (locked.budgets) next.budgetMonth = route.budgetMonth
+      if (locked.recurring) next.recurringMonth = route.recurringMonth
+      window.history.replaceState(
+        null,
+        '',
+        `#${new URLSearchParams({ page: next.page, ...next.period, overviewStart: next.overviewPeriod.start, overviewEnd: next.overviewPeriod.end, budgetMonth: next.budgetMonth, recurringMonth: next.recurringMonth })}`,
+      )
+      setRoute(next)
+    }
     if (!window.location.hash) {
       const initial = readRoute()
-      window.history.replaceState(null, '', `#${new URLSearchParams({ page: initial.page, ...initial.period })}`)
+      window.history.replaceState(
+        null,
+        '',
+        `#${new URLSearchParams({ page: initial.page, ...initial.period, overviewStart: initial.overviewPeriod.start, overviewEnd: initial.overviewPeriod.end, budgetMonth: initial.budgetMonth, recurringMonth: initial.recurringMonth })}`,
+      )
     }
     window.addEventListener('popstate', restore)
     window.addEventListener('hashchange', restore)
@@ -30,15 +60,32 @@ export function useWorkspaceRoute() {
       window.removeEventListener('popstate', restore)
       window.removeEventListener('hashchange', restore)
     }
-  }, [])
-  function update(page: ProductPage, period: ReviewPeriod) {
-    setRoute({ page, period })
+  }, [locked.budgets, locked.recurring, route.budgetMonth, route.recurringMonth])
+  function update(
+    page: ProductPage,
+    period: ReviewPeriod,
+    month?: string,
+    overviewPeriod = route.overviewPeriod,
+  ) {
+    const budgetMonth = page === 'budgets' && month ? month : route.budgetMonth
+    const recurringMonth = page === 'recurring' && month ? month : route.recurringMonth
+    setRoute({ page, period, overviewPeriod, budgetMonth, recurringMonth })
     if (!validPeriod(period)) return
-    const hash = `#${new URLSearchParams({ page, ...period })}`
+    const hash = `#${new URLSearchParams({ page, ...period, overviewStart: overviewPeriod.start, overviewEnd: overviewPeriod.end, budgetMonth, recurringMonth })}`
     if (window.location.hash !== hash) window.history.pushState(null, '', hash)
   }
   return {
     activePage: route.page,
+    budgetMonth: route.budgetMonth,
+    recurringMonth: route.recurringMonth,
+    setPlanningMonth: (month: string) => {
+      if (monthPeriod(month)) update(route.page, route.period, month)
+    },
+    navigateTo: (page: ProductPage, month?: string, period = route.period) =>
+      update(page, period, month),
+    overviewPeriod: route.overviewPeriod,
+    setOverviewPeriod: (period: ReviewPeriod) =>
+      update(route.page, route.period, undefined, period),
     reviewPeriod: route.period,
     setActivePage: (page: ProductPage) => update(page, route.period),
     setReviewPeriod: (period: ReviewPeriod) => update(route.page, period),

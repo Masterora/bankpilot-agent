@@ -7,7 +7,7 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from bankpilot.api.dependencies import (
     get_snapshot_session,
     get_snapshot_user,
 )
+from bankpilot.api.errors import ApiProblem
 from bankpilot.db.models import UserRecord
 from bankpilot.domain.contracts import RelationWorkspace
 from bankpilot.domain.transaction_relations import RelationKind, RelationState
@@ -47,13 +48,13 @@ async def list_relations(
 ) -> RelationWorkspace:
     """同时返回期间原流水与调整值；候选未穷尽时明确标记。"""
     if end_date < start_date or (end_date - start_date).days > 366:
-        raise HTTPException(422, "invalid_period")
+        raise ApiProblem(422, "invalid_period")
     try:
         return RelationWorkspace.model_validate(
             await relation_workspace(session, user.id, start_date, end_date)
         )
     except RelationError as exc:
-        raise HTTPException(exc.status, exc.code) from exc
+        raise ApiProblem(exc.status, exc.code) from exc
 
 
 @router.post("", status_code=204)
@@ -65,5 +66,6 @@ async def decide_relation(
     """事务完成才返回成功；冲突要求刷新，禁止覆盖另一页面的确认。"""
     try:
         await save_relation(session, user_id=user.id, **payload.model_dump())
+        await session.commit()
     except RelationError as exc:
-        raise HTTPException(exc.status, exc.code) from exc
+        raise ApiProblem(exc.status, exc.code) from exc

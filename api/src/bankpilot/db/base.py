@@ -10,3 +10,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 class Base(DeclarativeBase):
     pass
+
+
+# 与本应用 ORM 模型配套的数据库版本；备份证据拒绝不同版本。
+SCHEMA_REVISION = "20260916_0012"

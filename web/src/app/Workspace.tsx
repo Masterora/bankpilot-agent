@@ -6,10 +6,11 @@
  * 关键边界：这里只管理跨页面状态；业务展示、解析和账务计算分别留在 feature 与服务端。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { api } from '../api'
+import { AssistantPanel } from '../features/assistant/AssistantPanel'
 import { LedgerPage } from '../features/agent/LedgerPage'
 import { AgentPage } from '../features/agent/AgentPage'
 import { useAgentRun } from '../features/agent/useAgentRun'
@@ -18,13 +19,17 @@ import { clearPendingImport } from '../features/imports/importRecovery'
 import { ImportPage } from '../features/imports/ImportPage'
 import { OverviewPage } from '../features/overview/OverviewPage'
 import { RelationsPage } from '../features/relations/RelationsPage'
+import { BudgetsPage } from '../features/planning/BudgetsPage'
+import { RecurringPage } from '../features/planning/RecurringPage'
 import { ReportsPage } from '../features/reports/ReportsPage'
+import type { RecurringInput } from '../features/planning/types'
+import type { LedgerEntry } from '../features/agent/LedgerPage'
 import { useWorkspaceRoute } from './routing'
 import type { Messages } from '../i18n'
-import { EmptyProductPage, LanguageSwitch, Logo, NavigationIcon } from '../shared/ui'
+import { IconButton, LanguageSwitch, Logo, NavigationIcon } from '../shared/ui'
 import type { LanguageProps } from '../shared/ui'
 import type { ImportBatch, User } from '../types'
-import { navigationGroups } from './pages'
+import { primaryPages, secondaryPages } from './pages'
 import type { ProductPage } from './pages'
 
 interface WorkspaceProps extends LanguageProps {
@@ -33,8 +38,21 @@ interface WorkspaceProps extends LanguageProps {
 }
 
 export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspaceProps) {
-  const { activePage, setActivePage, reviewPeriod, setReviewPeriod } = useWorkspaceRoute()
+  const [drafts, setDrafts] = useState({ budgets: false, recurring: false })
+  const { activePage, setActivePage, overviewPeriod, setOverviewPeriod, reviewPeriod, setReviewPeriod, budgetMonth, recurringMonth, setPlanningMonth, navigateTo } = useWorkspaceRoute(drafts)
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  const [assistantRevision, setAssistantRevision] = useState(0)
+  const [planningRevision, setPlanningRevision] = useState(0)
+  const planningSaved = useCallback(() => setPlanningRevision((value) => value + 1), [])
+  const [visited, setVisited] = useState<ProductPage[]>([activePage, 'import'])
+  const [recurringSeed, setRecurringSeed] = useState<RecurringInput | null>(null)
+  const [relationSeed, setRelationSeed] = useState<string | undefined>()
+  const [ledgerEntry, setLedgerEntry] = useState<LedgerEntry | null>(null)
+  const [navigationNotice, setNavigationNotice] = useState('')
+  const [focusTarget, setFocusTarget] = useState('')
+  const positions = useRef<Partial<Record<ProductPage, number>>>({})
   const [menuOpen, setMenuOpen] = useState(false)
+  const mobileAssistantTarget = useRef(false)
   const menuRef = useRef<HTMLButtonElement>(null)
   const navigationRef = useRef<HTMLDialogElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -53,14 +71,18 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   }, [menuOpen])
 
   function navigate(page: ProductPage) {
+    if (page === 'relations') setRelationSeed(undefined)
     if (menuOpen) mobileNavigationTarget.current = page
     setMenuOpen(false)
+    setFocusTarget('')
+    positions.current[activePage] = window.scrollY
     setActivePage(page)
-    window.scrollTo({ top: 0 })
   }
 
   useEffect(() => {
     // 页面切换后将阅读焦点移至标题；语言切换不抢占正在编辑的输入焦点。
+    setVisited((current) => current.includes(activePage) ? current : [...current, activePage])
+    window.scrollTo({ top: positions.current[activePage] ?? 0 })
     document.title = `${copy.productPages[activePage].title} · BankPilot`
     if (previousPage.current !== activePage) {
       const heading = contentRef.current?.querySelector<HTMLElement>('[data-active-page] h1')
@@ -94,14 +116,40 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     onLogout()
   }
 
+  function openPlanning(page: 'budgets' | 'recurring', month: string, target = '') {
+    positions.current[activePage] = window.scrollY
+    const currentMonth = page === 'budgets' ? budgetMonth : recurringMonth
+    if (drafts[page] && month !== currentMonth) {
+      setNavigationNotice(locale === 'en-US' ? 'Your draft is retained. Save or cancel it before changing the month.' : '已保留未保存的草稿，请先保存或取消，再查看其他月份。')
+      navigate(page)
+      return
+    }
+    setNavigationNotice('')
+    setFocusTarget(target)
+    navigateTo(page, month)
+  }
+  function inspectLedger(entry: LedgerEntry) {
+    setLedgerEntry(entry)
+    navigate('review')
+  }
+  function startRecurring(seed: RecurringInput) {
+    setRecurringSeed(seed)
+    openPlanning('recurring', recurringMonth)
+  }
+
   const pages: Record<ProductPage, ReactNode> = {
     overview: (
       <OverviewPage
         copy={copy}
         english={locale === 'en-US'}
-        onNavigate={navigate}
-        period={reviewPeriod}
-        onPeriodChange={setReviewPeriod}
+        onNavigate={(page) => { if (page === 'review') inspectLedger({ period: overviewPeriod }); else if (page === 'relations') { setRelationSeed(undefined); navigateTo(page, undefined, overviewPeriod) } else navigate(page) }}
+        onPlanning={openPlanning}
+        planningRevision={planningRevision}
+        imports={imports}
+        importsLoading={importsLoading}
+        importsFailed={importsFailed}
+        period={overviewPeriod}
+        onPeriodChange={setOverviewPeriod}
       />
     ),
     agent: (
@@ -112,6 +160,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         error={agent.error}
         locale={locale}
         message={agent.message}
+        period={reviewPeriod}
         onCategoryChange={agent.correctCategory}
         onMessageChange={agent.setMessage}
         onSubmit={agent.submit}
@@ -128,28 +177,33 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         failed={importsFailed}
         imports={imports}
         loading={importsLoading}
-        onAnalyze={() => setActivePage('review')}
+        onAnalyze={(batch) => inspectLedger({ batchId: batch.id, period: { start: batch.start_date!, end: batch.end_date! } })}
+        onReviewRelations={(batch) => { if (batch.start_date && batch.end_date) { setRelationSeed(undefined); navigateTo('relations', undefined, { start: batch.start_date, end: batch.end_date }) } }}
         onRetryHistory={() => { setImportsFailed(false); setImportsLoading(true); setImportsAttempt((value) => value + 1) }}
         onImported={(batch) => {
           setImports((current) => [batch, ...current.filter((item) => item.id !== batch.id)])
           setImportsFailed(false)
-          if (batch.start_date && batch.end_date) {
-            setReviewPeriod({ start: batch.start_date, end: batch.end_date })
-          }
+
         }}
       />
     ),
     review: <LedgerPage
+      active={activePage === 'review'}
+      entry={ledgerEntry}
+      onReviewRelation={(id) => { navigate('relations'); setRelationSeed(id) }}
+      onStartRecurring={startRecurring}
+      onImport={() => navigate('import')}
+      onAsk={() => { agent.setMessage(`核查 ${reviewPeriod.start} 至 ${reviewPeriod.end} 的全部已导入账单`); navigate('agent') }}
       copy={copy}
       english={locale === 'en-US'}
       period={reviewPeriod}
       onPeriodChange={setReviewPeriod}
     />,
-    relations: <RelationsPage copy={copy} english={locale === 'en-US'} period={reviewPeriod} onPeriodChange={setReviewPeriod} />,
-    reports: <ReportsPage copy={copy} locale={locale} initialMonth={reviewPeriod.start} />,
+    relations: <RelationsPage onImport={() => navigate('import')} seedId={relationSeed} copy={copy} english={locale === 'en-US'} period={reviewPeriod} onPeriodChange={setReviewPeriod} />,
+    reports: <ReportsPage copy={copy} locale={locale} initialMonth={reviewPeriod.start} active={activePage === 'reports'} />,
     audit: <AuditPage copy={copy} run={agent.run} locale={locale} />,
-    recurring: <EmptyProductPage copy={copy} page="recurring" />,
-    budgets: <EmptyProductPage copy={copy} page="budgets" />,
+    recurring: <RecurringPage onSaved={planningSaved} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} />,
+    budgets: <BudgetsPage externalRevision={assistantRevision} onSaved={planningSaved} copy={copy} locale={locale} month={budgetMonth} onMonthChange={setPlanningMonth} key={budgetMonth} active={activePage === 'budgets'} focusTarget={focusTarget} onInspect={inspectLedger} onDraftChange={(dirty) => setDrafts((current) => current.budgets === dirty ? current : { ...current, budgets: dirty })} />,
   }
 
   return (
@@ -159,48 +213,53 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         <Navigation
           activePage={activePage}
           copy={copy}
-          english={locale === 'en-US'}
           onNavigate={navigate}
         />
+        <div className="sidebar-utilities">
+          <button onClick={() => setAssistantOpen(true)}>{locale === 'en-US' ? 'Assistant' : '问助手'}</button>
+          <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
+        </div>
         <div className="sidebar-account">
           <span className="account-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
-          <span className="account-identity"><strong>{user.email}</strong><small>{locale === 'en-US' ? 'Workspace connected' : '工作区已连接'}</small></span>
-          <button onClick={logout}>{copy.logout}</button>
+          <span className="account-identity"><strong>{user.email}</strong></span>
+          <IconButton icon="logout" label={copy.logout} onClick={logout} />
         </div>
       </aside>
 
       <dialog className="mobile-navigation" ref={navigationRef} onCancel={() => setMenuOpen(false)} onClose={() => {
         setMenuOpen(false)
-        if (mobileNavigationTarget.current) {
+        if (mobileAssistantTarget.current) {
+          mobileAssistantTarget.current = false
+          setAssistantOpen(true)
+        } else if (mobileNavigationTarget.current) {
           const heading = contentRef.current?.querySelector<HTMLElement>('[data-active-page] h1')
           heading?.setAttribute('tabindex', '-1')
           heading?.focus({ preventScroll: true })
           mobileNavigationTarget.current = null
         } else menuRef.current?.focus()
       }} aria-label={copy.navigationLabel}>
-        <div className="mobile-navigation-heading"><div className="brand"><Logo /> BankPilot</div><button type="button" onClick={() => setMenuOpen(false)} aria-label={locale === 'en-US' ? 'Close navigation' : '关闭导航'}>×</button></div>
-        <Navigation activePage={activePage} copy={copy} english={locale === 'en-US'} onNavigate={navigate} />
+        <div className="mobile-navigation-heading"><div className="brand"><Logo /> BankPilot</div><IconButton icon="close" onClick={() => setMenuOpen(false)} label={locale === 'en-US' ? 'Close navigation' : '关闭导航'} /></div>
+        <Navigation activePage={activePage} copy={copy} onNavigate={navigate} />
+        <div className="sidebar-utilities">
+          <button onClick={() => { mobileAssistantTarget.current = true; setMenuOpen(false) }}>{locale === 'en-US' ? 'Assistant' : '问助手'}</button>
+          <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
+        </div>
+        <IconButton icon="logout" label={copy.logout} onClick={logout} />
       </dialog>
 
+      <AssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} month={activePage === 'budgets' ? budgetMonth : activePage === 'recurring' ? recurringMonth : activePage === 'overview' ? overviewPeriod.start : reviewPeriod.start} copy={copy} locale={locale} onSaved={() => { planningSaved(); setAssistantRevision(value => value + 1) }} />
       <main className="workspace-shell">
-        <header className="workspace-topbar">
-          <button ref={menuRef} type="button" className="menu-toggle" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} aria-label={locale === 'en-US' ? 'Open navigation' : '打开导航'}>☰</button>
-          <div className="workspace-breadcrumb"><small>{locale === 'en-US' ? 'Personal ledger' : '个人账本'}</small><strong>{copy.productPages[activePage].title}</strong></div>
-          <div className="header-actions">
-            <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
-            <div className="account-chip">
-              <span>{user.email}</span>
-              <button onClick={logout}>{copy.logout}</button>
-            </div>
-          </div>
-        </header>
+        <IconButton icon="menu" ref={menuRef} className="menu-toggle" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} label={locale === 'en-US' ? 'Open navigation' : '打开导航'} />
 
         <div className="workspace-content" ref={contentRef}>
-          {/* 导入表单保持挂载，切换页面不会丢失已选文件与字段映射。 */}
-          <div hidden={activePage !== 'import'} data-active-page={activePage === 'import' ? '' : undefined}>{pages.import}</div>
-          {activePage !== 'import' && <div data-active-page="">{pages[activePage]}</div>}
+          {navigationNotice && <p role="status">{navigationNotice}<button onClick={() => setNavigationNotice('')}>{locale === 'en-US' ? 'Dismiss' : '知道了'}</button></p>}
+          {/* 已访问的编辑页面保留草稿与筛选；隐藏时暂停读取，重新进入后核对最新状态。 */}
+          {(['import', 'review', 'budgets', 'recurring', 'reports'] as ProductPage[])
+            .filter((page) => visited.includes(page) || page === activePage)
+            .map((page) => <div key={page} hidden={activePage !== page} data-active-page={activePage === page ? '' : undefined}>{pages[page]}</div>)}
+          {!['import', 'review', 'budgets', 'recurring', 'reports'].includes(activePage) && <div data-active-page="">{pages[activePage]}</div>}
           {activePage === 'review' && agent.error && <p className="error" role="alert">{agent.error}</p>}
-          <footer className="workspace-footer"><span>{locale === 'en-US' ? 'Imported data · Not a bank balance' : '已导入数据 · 不代表银行余额'}</span><span>UTC+08:00</span></footer>
+          <footer className="workspace-footer"><span>{locale === 'en-US' ? 'Imported data · Not a bank balance' : '已导入数据 · 不代表银行余额'}</span></footer>
         </div>
       </main>
     </div>
@@ -210,35 +269,23 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
 function Navigation({
   activePage,
   copy,
-  english,
   onNavigate,
 }: {
   activePage: ProductPage
   copy: Messages
-  english: boolean
   onNavigate: (page: ProductPage) => void
 }) {
-  const groupLabels = english
-    ? { ledger: 'Ledger', analysis: 'Review & control', planning: 'Planning' }
-    : { ledger: '账务管理', analysis: '核查与治理', planning: '分析规划' }
-  return (
-    <nav className="product-nav" aria-label={copy.navigationLabel}>
-      {navigationGroups.map((group) => <div className="navigation-group" key={group.id}>
-      <p className="navigation-group-label">{groupLabels[group.id as keyof typeof groupLabels]}</p>
-      {group.pages.map((page) => (
-        <button
-          type="button"
-          className={activePage === page ? 'active' : undefined}
-          aria-current={activePage === page ? 'page' : undefined}
-          key={page}
-          onClick={() => onNavigate(page)}
-        >
-          <NavigationIcon kind={page} />
-          <span>{copy.productPages[page].navigation}</span>
-          {(page === 'recurring' || page === 'budgets') && <small>{english ? 'Planned' : '规划中'}</small>}
-        </button>
-      ))}
-      </div>)}
-    </nav>
-  )
+  function links(pages: ProductPage[]) {
+    return pages.map((page) => <button type="button" key={page}
+      className={activePage === page ? 'active' : undefined}
+      aria-current={activePage === page ? 'page' : undefined} onClick={() => onNavigate(page)}>
+      <NavigationIcon kind={page} /><span>{copy.productPages[page].navigation}</span>
+    </button>)
+  }
+  return <nav className="product-nav" aria-label={copy.navigationLabel}>
+    <div className="navigation-group">{links(primaryPages)}</div>
+    <div className="navigation-group">
+      {links(secondaryPages)}
+    </div>
+  </nav>
 }

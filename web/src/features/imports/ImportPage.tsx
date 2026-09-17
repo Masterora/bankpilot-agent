@@ -22,13 +22,14 @@ interface ImportPageProps {
   imports: ImportBatch[]
   loading: boolean
   onImported: (batch: ImportBatch) => void
-  onAnalyze: () => void
+  onAnalyze: (batch: ImportBatch) => void
+  onReviewRelations: (batch: ImportBatch) => void
   onRetryHistory: () => void
 }
 
 export function ImportPage(props: ImportPageProps) {
   const {
-    userId, copy, active, english, failed, imports, loading, onImported, onAnalyze, onRetryHistory,
+    userId, copy, active, english, failed, imports, loading, onImported, onAnalyze, onReviewRelations, onRetryHistory,
   } = props
   const workflow = useImportWorkflow({ userId, active, copy, english, imports, onImported })
   const {
@@ -40,8 +41,13 @@ export function ImportPage(props: ImportPageProps) {
   return (
     <section className="product-page">
       <PageHeader copy={copy} page="import" />
-      <div className="import-steps" aria-label={english ? 'Import steps' : '导入步骤'}><span>01 {english ? 'Statement' : '选择账单'}</span><span aria-hidden="true">→</span><span>02 {english ? 'Preview' : '预览核对'}</span><span aria-hidden="true">→</span><span>03 {english ? 'Confirm' : '确认入账'}</span></div>
 
+      <details className="import-guide"><summary>{english ? 'How do I get a statement?' : '如何获取账单？'}</summary>
+        <p>{english ? 'Export a transaction statement from your bank or payment app. Choose the account and date range you want to review.' : '从银行或支付平台导出交易账单，选择需要核对的账户与日期范围。'}</p>
+        <ul><li>{english ? 'WeChat / Alipay: look for statement export or transaction proof in the bill menu. Export entry names vary by app version.' : '微信／支付宝：在账单菜单中查找账单导出或交易证明；不同版本入口名称可能不同。'}</li>
+        <li>{english ? 'Bank: export account transaction details as CSV or Excel. PDF statements are not supported here.' : '银行卡：导出账户交易明细，选择 CSV 或 Excel；这里暂不支持 PDF 账单。'}</li></ul>
+        <p>{english ? 'Keep the original headings and transaction IDs. If recognition fails, choose the date, merchant and amount columns in the preview.' : '保留原始表头和交易编号。无法识别时，可在预览中指定日期、交易对方和金额列。'}</p>
+      </details>
       <form className="import-workspace" onSubmit={workflow.submit}>
         <section className={`import-source-panel${content ? ' has-file' : ''}`}>
           <label className="file-drop">
@@ -57,8 +63,9 @@ export function ImportPage(props: ImportPageProps) {
             </div>
             <fieldset disabled={submitting || Boolean(pending)} className="import-account-grid">
               <label>{english ? 'Import into' : '导入账户'}
-                <select value={accountId} disabled={submitting} onChange={(event) => {
-                  workflow.setAccountId(event.target.value)
+                <select value={accountId || (workflow.creatingAccount ? 'new' : '')} disabled={submitting} onChange={(event) => {
+                  workflow.setAccountId(event.target.value === 'new' ? '' : event.target.value)
+                  workflow.setCreatingAccount(event.target.value === 'new')
                   const selected = accounts.find((account) => account.id === event.target.value)
                   if (selected) {
                     workflow.setAccountName(selected.name)
@@ -67,13 +74,14 @@ export function ImportPage(props: ImportPageProps) {
                     workflow.setAccountName('')
                   }
                 }}>
-                  <option value="">{english ? 'New account' : '新建账户'}</option>
+                  <option value="" disabled>{english ? 'Choose an account' : '请选择导入账户'}</option>
+                  <option value="new">{english ? 'Create a new account' : '新建账户'}</option>
                   {accounts.filter((account) => account.source === source && (!currency || account.currency === currency)).map((account) => <option key={account.id} value={account.id}>{account.name} · {account.currency}</option>)}
                 </select>
                 {accountsFailed && <span role="alert">{english ? 'Accounts unavailable. Select the file again.' : '账户读取失败，请重新选择文件。'}</span>}
               </label>
               <label>{copy.imports.accountName}
-                <input readOnly={Boolean(accountId)} maxLength={100} placeholder={copy.imports.accountPlaceholder} required value={accountName} onChange={(event) => workflow.setAccountName(event.target.value)} />
+                <input readOnly={Boolean(accountId) || !workflow.creatingAccount} maxLength={100} placeholder={copy.imports.accountPlaceholder} required value={accountName} onChange={(event) => workflow.setAccountName(event.target.value)} />
               </label>
               <label>{copy.imports.currency}
                 <input aria-label={copy.imports.currency} readOnly={source !== 'standard' || Boolean(accountId)} inputMode="text" maxLength={3} pattern="[A-Za-z]{3}" placeholder={copy.imports.currencyPlaceholder} required value={currency} onChange={(event) => workflow.setCurrency(event.target.value.replace(/[^A-Za-z]/g, '').toUpperCase())} />
@@ -90,17 +98,17 @@ export function ImportPage(props: ImportPageProps) {
       </form>
 
       {pending && <div role="status"><span>{english ? 'Unconfirmed import' : '待确认导入'} · {pending.config.file_name}</span><button disabled={submitting || detecting} onClick={() => void workflow.recover()}>{english ? 'Check result' : '查询结果'}</button></div>}
-      {source === 'standard' && content && !mapping.transaction_id && <p className="muted">{english ? 'No transaction IDs: overlapping exports may be ambiguous.' : '账单无交易编号，不同导出范围中的相同交易可能无法准确区分。'}</p>}
+      {source === 'standard' && content && !mapping.transaction_id && <p className="muted">{english ? 'No transaction ID column selected. Set it in Field mapping when available.' : '尚未指定交易编号列；账单有编号时，请在字段对应中选择，以便识别重复导入。'}</p>}
       {preview && previewCurrent && <ImportPreviewPanel copy={copy} currency={currency} english={english} preview={preview} />}
       {error && <p className="error import-page-error" role="alert">{error}</p>}
       {detecting && <p role="status">{english ? 'Recognizing statement' : '正在识别账单'}</p>}
       {retryFile && <button type="button" disabled={detecting} onClick={() => void workflow.detectFile(retryFile)}>{english ? 'Retry detection' : '重试识别'}</button>}
       {result && <>
         <ImportReport batch={result} copy={copy} english={english} />
-        {result.status !== 'REJECTED' && <div className="import-next"><button type="button" className="primary" onClick={onAnalyze}>{copy.openReview}<span aria-hidden="true"> →</span></button></div>}
+        {result.imported_rows > 0 && result.start_date && result.end_date && <div className="import-next"><button type="button" className="primary" onClick={() => onAnalyze(result)}>{copy.openReview}<span aria-hidden="true"> →</span></button><button type="button" onClick={() => onReviewRelations(result)}>{english ? 'Check duplicates, transfers & refunds' : '核对重复、转账与退款'}</button></div>}
       </>}
       {failed && <button type="button" onClick={onRetryHistory}>{english ? 'Retry history' : '重新读取历史'}</button>}
-      {(loading || failed || imports.length > 0) && <ImportHistory copy={copy} english={english} failed={failed} imports={imports} loading={loading} onRevoked={onImported} />}
+      {(loading || failed || imports.length > 0) && <ImportHistory copy={copy} english={english} failed={failed} imports={imports} loading={loading} onRevoked={onImported} onAnalyze={onAnalyze} />}
       {active && <Accounts key={imports.map((batch) => `${batch.id}:${batch.status}`).join('|')} english={english} onChanged={() => workflow.setAccountsAttempt((value) => value + 1)} />}
     </section>
   )
@@ -113,7 +121,7 @@ function MappingFields({ copy, english, headers, mapping, onChange }: {
   mapping: ImportFieldMapping
   onChange: (field: keyof ImportFieldMapping, value: string) => void
 }) {
-  return <details className="mapping-details"><summary>{english ? 'Field mapping' : '字段对应'}</summary><div className="mapping-fields">
+  return <details className="mapping-details" open={!mapping.transaction_id || undefined}><summary>{english ? 'Field mapping' : '字段对应'}</summary><div className="mapping-fields">
     <MappingSelect copy={copy} field="occurredAt" headers={headers} required value={mapping.occurred_at} onChange={(value) => onChange('occurred_at', value)} />
     <MappingSelect copy={copy} field="merchant" headers={headers} required value={mapping.merchant} onChange={(value) => onChange('merchant', value)} />
     <MappingSelect copy={copy} field="amount" headers={headers} required value={mapping.amount} onChange={(value) => onChange('amount', value)} />

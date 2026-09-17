@@ -5,7 +5,7 @@
  * 关键边界：共享组件只负责显示和回调，不读取业务数据或调用 API。
  */
 
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 
 import type { Locale, Messages, ProductPage } from '../i18n'
 
@@ -42,7 +42,6 @@ export function PageHeader({ copy, page }: { copy: Messages; page: ProductPage }
   const content = copy.productPages[page]
   return (
     <header className="page-header">
-      <p className="eyebrow">{content.eyebrow}</p>
       <h1>{content.title}</h1>
     </header>
   )
@@ -58,11 +57,6 @@ export function EmptyContent({ title, detail, kind, children }: {
   title: string; detail: string; kind: ProductPage; children?: ReactNode
 }) {
   return <div className="empty-content"><span className="empty-content-icon" aria-hidden="true"><NavigationIcon kind={kind} /></span><h3>{title}</h3><p>{detail}</p>{children && <div className="empty-content-actions">{children}</div>}</div>
-}
-
-/** 保留未接入数据的产品页面结构，不模拟结果或执行操作。 */
-export function EmptyProductPage({ copy, page }: { copy: Messages; page: ProductPage }) {
-  return <section className="product-page"><PageHeader copy={copy} page={page} /><section className="module-empty"><NavigationIcon kind={page} /><p>{copy.productPages[page].empty}</p></section></section>
 }
 
 export function NavigationIcon({ kind }: { kind: ProductPage }) {
@@ -90,4 +84,24 @@ export function LoadingIndicator({ label }: { label: string }) {
     <span className="loading-track" aria-hidden="true"><span /></span>
     <span className="loading-label">{label}</span>
   </div>
+}
+
+/** 常见操作共用线性图标；按钮名称同时用于读屏和悬停提示。 */
+export function ActionIcon({ kind }: { kind: 'close' | 'refresh' | 'edit' | 'delete' | 'logout' | 'menu' }) {
+  const paths = {
+    close: <path d="m6 6 12 12M6 18 18 6" />,
+    refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" /></>,
+    edit: <><path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15Z" /></>,
+    delete: <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></>,
+    logout: <><path d="M10 4H4v16h6M10 12h11m-4-4 4 4-4 4" /></>,
+    menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+  }
+  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">{paths[kind]}</svg>
+}
+
+export function IconButton({ icon, label, className = '', ...props }: Omit<ComponentProps<'button'>, 'children' | 'aria-label' | 'title'> & {
+  icon: ComponentProps<typeof ActionIcon>['kind']
+  label: string
+}) {
+  return <button {...props} type={props.type ?? 'button'} className={`icon-button ${className}`.trim()} aria-label={label} title={label}><ActionIcon kind={icon} /></button>
 }

@@ -20,3 +20,10 @@ export function validPeriod({ start, end }: ReviewPeriod) {
   const days = (Date.parse(end) - Date.parse(start)) / 86400000
   return Boolean(start && end && Number.isFinite(days) && days >= 0 && days <= 366)
 }
+
+/** 月份选择使用同一工作区期间，URL 是唯一可恢复的状态来源。 */
+export function monthPeriod(month: string): ReviewPeriod | null {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || month < '1900-01' || month > '9998-12') return null
+  const [year, number] = month.split('-').map(Number)
+  return { start: `${month}-01`, end: new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10) }
+}

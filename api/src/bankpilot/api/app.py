@@ -21,11 +21,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from bankpilot.adapters.local_review import LocalReviewGateway
 from bankpilot.adapters.openrouter import OpenRouterModelGateway
 from bankpilot.api.accounts import router as accounts_router
+from bankpilot.api.assistant import router as assistant_router
 from bankpilot.api.auth import router as auth_router
 from bankpilot.api.cards import router as cards_router
+from bankpilot.api.errors import ErrorResponse, register_error_handlers
 from bankpilot.api.import_tools import router as import_tools_router
 from bankpilot.api.imports import router as imports_router
 from bankpilot.api.overview import router as overview_router
+from bankpilot.api.planning import router as planning_router
 from bankpilot.api.relations import router as relations_router
 from bankpilot.api.reports import router as reports_router
 from bankpilot.api.reviews import router as reviews_router
@@ -35,7 +38,7 @@ from bankpilot.api.transactions import router as transactions_router
 from bankpilot.config import Settings, get_settings
 from bankpilot.db.session import create_engine, create_session_factory
 from bankpilot.observability import RequestTimingMiddleware
-from bankpilot.ports import ModelGateway, ReviewGateway
+from bankpilot.ports import AssistantGateway, ModelGateway, ReviewGateway
 from bankpilot.services.report_processor import ReportProcessor
 from bankpilot.services.run_processor import RunProcessor
 
@@ -45,6 +48,7 @@ def create_app(
     session_factory: async_sessionmaker[AsyncSession] | None = None,
     model_gateway: ModelGateway | None = None,
     review_gateway: ReviewGateway | None = None,
+    assistant_gateway: AssistantGateway | None = None,
 ) -> FastAPI:
     """通过可替换端口构建应用，便于测试和扩展后续供应商。"""
     resolved_settings = settings or get_settings()
@@ -65,6 +69,15 @@ def create_app(
             )
             resolved_gateway = OpenRouterModelGateway(resolved_settings, model_client)
 
+        if assistant_gateway is None:
+            if model_client is None:
+                model_client = httpx.AsyncClient(
+                    base_url=str(resolved_settings.model_base_url).rstrip("/"),
+                    timeout=resolved_settings.model_timeout_seconds,
+                )
+            app.state.assistant_gateway = OpenRouterModelGateway(resolved_settings, model_client)
+        else:
+            app.state.assistant_gateway = assistant_gateway
         app.state.settings = resolved_settings
         app.state.session_factory = session_factory
         resolved_review_gateway = review_gateway or LocalReviewGateway(session_factory)
@@ -97,6 +110,10 @@ def create_app(
         title="BankPilot Agent API",
         version="0.3.0",
         lifespan=lifespan,
+        responses={
+            "default": {"model": ErrorResponse, "description": "Request failed"},
+            422: {"model": ErrorResponse, "description": "Invalid request"},
+        },
     )
     app.add_middleware(
         CORSMiddleware,
@@ -106,6 +123,11 @@ def create_app(
         allow_headers=["Content-Type", "Last-Event-ID"],
     )
     app.add_middleware(RequestTimingMiddleware)
+
+    register_error_handlers(app)
+
+    app.include_router(assistant_router)
+    app.include_router(planning_router)
     app.include_router(system_router)
     app.include_router(auth_router)
     app.include_router(cards_router)

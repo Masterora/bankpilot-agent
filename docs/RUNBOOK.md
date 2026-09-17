@@ -38,7 +38,7 @@ make web
 
 ## 数据与配置
 
-`make api` 会执行 `alembic upgrade head`。数据库结构变化先在隔离 PostgreSQL 验证升降级，再迁移业务库；当前代码迁移头是 `20260915_0008`；共享业务库是否升级需现场核对。
+`make api` 会执行 `alembic upgrade head`。数据库结构变化先在隔离 PostgreSQL 验证升降级，再迁移业务库；当前代码结构版本是 `20260916_0012`（由 `api/src/bankpilot/db/base.py` 的 `SCHEMA_REVISION` 声明，与迁移 head 一致）；共享业务库是否升级需现场核对。
 
 ```bash
 cd api
@@ -115,3 +115,5 @@ prepare 默认显示将处理的任务数量；--apply 失效运行中报告令�
 HTTP 响应提供 X-Request-ID 与 Server-Timing（db、connection、parse，毫秒），服务端记录路由模板、状态、SQL 次数及响应发送耗时；不记录 SQL 参数和账单内容。后台运行使用独立 job_id。SQL 时间包含驱动/网络往返，需要查询计划才能判断索引问题。
 
 本地数据库与 SSH/Tailscale 链路分开测量；连接获取预算或网络延迟不能当成 SQL 执行慢。readyz 实际查询数据库，总预算 3 秒，断连/超时返回 503；healthz 无数据库依赖。
+
+助手请求的服务端总预算为 90 秒，Web 代理读取超时为 120 秒；调整时须保留代理余量。部署必须同时更新 API 和 Web，不能仅以本地 Vite 请求成功代替代理链路验收。

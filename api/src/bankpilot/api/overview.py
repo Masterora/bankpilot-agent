@@ -6,10 +6,11 @@
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import get_snapshot_session, get_snapshot_user
+from bankpilot.api.errors import ApiProblem
 from bankpilot.db.models import UserRecord
 from bankpilot.db.overview_repository import read_overview
 from bankpilot.domain.contracts import OverviewSnapshot
@@ -27,8 +28,8 @@ async def get_overview(
 ) -> OverviewSnapshot:
     """返回首屏所需数据，完整候选关系仅在关系核对页计算。"""
     if end_date < start_date or (end_date - start_date).days > 366:
-        raise HTTPException(422, "invalid_period")
+        raise ApiProblem(422, "invalid_period")
     try:
         return await read_overview(session, user.id, start_date, end_date)
     except RelationError as exc:
-        raise HTTPException(exc.status, exc.code) from exc
+        raise ApiProblem(exc.status, exc.code) from exc

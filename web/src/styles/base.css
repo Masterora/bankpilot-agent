@@ -29,27 +29,29 @@
   --success: #74d3a2;
   --danger: #f39a94;
   --danger-bg: #29191b;
-  --sidebar-width: 248px;
+  --sidebar-width: 216px;
+  --page-width: 1280px;
+  --page-gutter: clamp(24px, 3vw, 48px);
+  --control-height: 38px;
+  --radius-panel: 10px;
   --shadow-card: 0 12px 34px rgba(0, 0, 0, .18);
 }
 
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 78% -20%, rgba(72, 105, 143, .12), transparent 34rem),
-    var(--bg);
+  background: var(--bg);
 }
 html { scroll-behavior: smooth; scrollbar-gutter: stable; }
 /* 界面文案不参与文本选择；业务结果和表单内容显式保留复制能力。
  * 不在 body 上禁用选择，避免新增业务内容默认不可复制。
  */
 button, summary, label, th, dt, h1, h2, h3, [role="tab"],
-.brand, .eyebrow, .navigation-group-label, .workspace-breadcrumb,
+.brand, .eyebrow,
 .currency-stamp, .import-status, .status, .account-avatar, .nav-icon,
-.workspace-footer, .import-steps, .import-file-state, .field-hint,
+.workspace-footer, .import-file-state, .field-hint,
 .loading-label, .copy-feedback, .empty-content, .login-heading p,
 .net-caption, .net-foot, .overview-metric > span, .overview-metric > small,
 .import-metrics > div > span, .result-placeholder > header,
@@ -72,7 +74,7 @@ textarea { width: 100%; resize: vertical; color: var(--text); border: 1px solid 
 [hidden] { display: none !important; }
 button {
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 6px;
   padding: 9px 13px;
   color: var(--text);
   background: var(--surface);
@@ -254,3 +256,10 @@ select:focus {
   border-color: var(--accent-strong);
   box-shadow: 0 0 0 3px rgba(223, 204, 172, 0.1);
 }
+
+/* 图标操作保留明确的可访问名称；尺寸不随周围文本按钮变化。 */
+button.icon-button { display: inline-flex; justify-content: center; align-items: center; flex-shrink: 0; width: 36px; height: 36px; padding: 8px; }
+button.icon-button .nav-icon { width: 18px; height: 18px; }
+button.icon-button.menu-toggle { display: none; }
+@media (max-width: 900px) { button.icon-button.menu-toggle { display: inline-flex; width: 44px; height: 44px; } }
+@media (pointer: coarse) { button.icon-button { width: 44px; height: 44px; } }

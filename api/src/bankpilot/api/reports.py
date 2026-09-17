@@ -10,11 +10,12 @@ import json
 from datetime import date, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.errors import ApiProblem
 from bankpilot.db.models import MonthlyReportRecord, UserRecord
 from bankpilot.db.report_repository import ReportConflict, ReportRepository
 from bankpilot.db.user_repository import UserRepository
@@ -88,14 +89,14 @@ async def owned_report(
 ) -> MonthlyReportRecord:
     record = await ReportRepository(session).get_for_user(user_id, report_id)
     if record is None:
-        raise HTTPException(404, "report_not_found")
+        raise ApiProblem(404, "report_not_found")
     return record
 
 
 async def current_revision(session: AsyncSession, user_id: UUID) -> int:
     revision = await UserRepository(session).ledger_revision(user_id)
     if revision is None:
-        raise HTTPException(404, "report_not_found")
+        raise ApiProblem(404, "report_not_found")
     return revision
 
 
@@ -111,7 +112,7 @@ async def create_report(
         )
         await session.commit()
     except ReportConflict as exc:
-        raise HTTPException(exc.status, exc.code) from exc
+        raise ApiProblem(exc.status, exc.code) from exc
     return summary(record, await current_revision(session, user.id))
 
 
@@ -150,7 +151,7 @@ async def export_report(
 ) -> Response:
     record = await owned_report(session, user.id, report_id)
     if record.status != ReportStatus.SUCCEEDED or record.snapshot is None:
-        raise HTTPException(409, "report_not_ready")
+        raise ApiProblem(409, "report_not_ready")
     # 不夹带动态 stale 标识，重复导出同一报告得到相同内容。
     content = json.dumps(
         {"id": str(record.id), "snapshot": record.snapshot},
@@ -180,7 +181,7 @@ async def report_status(
         user.id, report_id, include_snapshot=False
     )
     if record is None:
-        raise HTTPException(404, "report_not_found")
+        raise ApiProblem(404, "report_not_found")
     return summary(record, await current_revision(session, user.id))
 
 
@@ -191,5 +192,5 @@ async def delete_report(
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     if not await ReportRepository(session).delete_for_user(user.id, report_id):
-        raise HTTPException(404, "report_not_found")
+        raise ApiProblem(404, "report_not_found")
     await session.commit()

@@ -1,0 +1,17 @@
+/* 全局对话侧栏：结果与证据分层，不将模型文本解析成 HTML。 */
+.assistant-intro h3 { font-size: 20px; font-weight: 500; }
+.assistant-intro p, .assistant-evidence, .assistant-proposal p { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.assistant-turn { padding: 18px 0; border-bottom: 1px solid var(--line); }
+.assistant-question { margin: 0 0 18px; padding-left: 12px; border-left: 2px solid var(--accent); color: var(--text); }
+.assistant-answer { white-space: pre-wrap; font-size: 14px; line-height: 1.8; }
+.assistant-question, .assistant-answer, .assistant-proposal strong { overflow-wrap: anywhere; user-select: text; }
+.assistant-evidence dl > div { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; }
+.assistant-evidence dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.assistant-proposal { border: 1px solid var(--line-strong); border-radius: 6px; padding: 16px; margin-top: 16px; }
+.assistant-proposal strong { font-size: 14px; font-weight: 500; }
+.assistant-composer { display: grid; gap: 12px; margin-top: 24px; }
+.assistant-composer > label { color: var(--muted); font-size: 11px; }
+.assistant-composer textarea { background: var(--bg); }
+
+.assistant-composer > .planning-actions { margin-top: 0; justify-content: flex-end; }
+.assistant-shortcut { margin-right: auto; color: var(--muted); font-size: 11px; user-select: none; }

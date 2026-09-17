@@ -8,6 +8,9 @@ import { useState } from 'react'
 import { formatMoney } from '../../format'
 import type { Locale, Messages } from '../../i18n'
 import type { ReportDetail } from '../../types'
+import { ReportSummary } from './ReportSummary'
+import { ledgerCsv } from '../agent/ledgerExport'
+import { downloadFile } from '../../shared/download'
 import { ReviewSnapshot } from '../agent/ReviewSnapshot'
 
 interface Props {
@@ -32,14 +35,7 @@ export function ReportDetailPanel({
 
   return (
     <article className="report-detail">
-      <h2>{report.month.slice(0, 7)} · {statusLabel}</h2>
-      {report.stale && (
-        <p role="status" className="scope-note">
-          {english
-            ? 'The ledger or rules have changed. This report retains its original evidence. Changes may concern another month; regenerate to review the latest state.'
-            : '账本或规则已更新，此报告保留原证据。变动可能来自其他月份，可重新生成核对最新状态。'}
-        </p>
-      )}
+      {!snapshot && <h2>{report.month.slice(0, 7)} · {statusLabel}</h2>}
       {pending && (
         <p role="status">
           {english
@@ -54,13 +50,14 @@ export function ReportDetailPanel({
             : '生成失败，请检查数据连接或当月交易是否超过 10,000 笔，再重新生成。'}
         </p>
       )}
+      {snapshot && <ReportSummary report={report} locale={locale} />}
       <div className="report-toolbar">
+        <button disabled={!snapshot} onClick={() => window.print()}>{english ? 'Print / Save PDF' : '打印／保存 PDF'}</button>
+        <button disabled={!snapshot} onClick={() => { if (snapshot) downloadFile(ledgerCsv(snapshot.transactions.items), `bankpilot-${report.month.slice(0, 7)}.csv`, 'text/csv;charset=utf-8') }}>{english ? 'Export transactions (CSV)' : '导出流水表格'}</button>
         <button disabled={busy || pending} onClick={() => { void onGenerate(report.month.slice(0, 7)) }}>
           {english ? 'Generate new version' : '重新生成新版本'}
         </button>
-        <button disabled={report.status !== 'SUCCEEDED'} onClick={() => { void onExport(report.id) }}>
-          {english ? 'Export evidence (JSON)' : '导出完整证据（JSON）'}
-        </button>
+
         <button disabled={busy} onClick={() => setConfirmDelete(true)}>
           {english ? 'Delete report' : '删除报告'}
         </button>
@@ -83,10 +80,13 @@ export function ReportDetailPanel({
         </div>
       )}
       {snapshot && (
-        <>
+        <details className="report-technical"><summary>{english ? 'View calculation and original evidence' : '查看计算过程与原始证据'}</summary>
           <p className="scope-note">
             {english ? 'Ledger revision' : '账本修订号'} {snapshot.ledger_revision} · {snapshot.report_rule_version}
           </p>
+                  <button disabled={report.status !== 'SUCCEEDED'} onClick={() => { void onExport(report.id) }}>
+          {english ? 'Export evidence (JSON)' : '导出完整证据（JSON）'}
+        </button>
           <ReviewSnapshot review={snapshot.review} locale={locale} />
           <details className="scope-note">
             <summary>{english ? 'Raw category totals' : '原始分类汇总'}</summary>
@@ -140,7 +140,7 @@ export function ReportDetailPanel({
               </button>
             )}
           </details>
-        </>
+        </details>
       )}
     </article>
   )

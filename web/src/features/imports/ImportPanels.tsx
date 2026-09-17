@@ -72,6 +72,7 @@ export function ImportHistory({
   imports,
   loading,
   onRevoked,
+  onAnalyze,
 }: {
   copy: Messages
   english: boolean
@@ -79,6 +80,7 @@ export function ImportHistory({
   imports: ImportBatch[]
   loading: boolean
   onRevoked: (batch: ImportBatch) => void
+  onAnalyze: (batch: ImportBatch) => void
 }) {
   const [pending, setPending] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -103,7 +105,7 @@ export function ImportHistory({
       {loading ? <LoadingIndicator label={copy.imports.loading} />
         : failed ? <p className="error">{copy.imports.loadFailed}</p>
           : imports.length === 0 ? <EmptyContent kind="import" title={english ? 'No import history' : '暂无导入记录'} detail={english ? 'Imported files and their processing results will appear here.' : '导入后的文件、处理结果和来源记录会保存在这里。'} />
-            : <div className="import-table-wrap"><table className="import-table"><thead><tr><th>{copy.imports.file}</th><th>{copy.imports.accountName}</th><th>{copy.imports.period}</th><th>{copy.imports.importedRows}</th><th>{copy.imports.duplicateRows}</th><th>{copy.imports.status}</th></tr></thead><tbody>{imports.map((batch) => <tr key={batch.id}><td>{batch.file_name}<small className="event-time">{formatTimestamp(batch.created_at, english ? 'en-US' : 'zh-CN')}</small>{(batch.excluded?.length > 0 || batch.errors.length > 0) && <details><summary>{english ? 'Row report' : '行报告'} · {batch.skipped_rows ?? '—'} {english ? 'excluded' : '行排除'}</summary>{[...batch.errors, ...(batch.excluded ?? [])].map((row) => <p key={`${row.row_number}-${row.code}`}>{row.row_number} · {row.message}</p>)}</details>}</td><td>{batch.account_name} · {batch.currency}</td><td>{batch.start_date && batch.end_date ? `${batch.start_date} — ${batch.end_date}` : '—'}</td><td>{batch.imported_rows} / {batch.total_rows}</td><td>{batch.duplicate_rows}</td><td><ImportStatus batch={batch} copy={copy} />{batch.status !== 'REVOKED' && batch.status !== 'REJECTED' && (pending === batch.id ? <div><p>{english ? 'Remove imported transactions? Snapshots remain.' : '撤销本批次交易？保留历史快照。'}</p><button disabled={busy} onClick={() => void revoke(batch)}>{english ? 'Confirm revocation' : '确认撤销'}</button><button disabled={busy} onClick={() => setPending(null)}>{english ? 'Cancel' : '取消'}</button></div> : <button onClick={() => setPending(batch.id)}>{english ? 'Revoke' : '撤销批次'}</button>)}</td></tr>)}</tbody></table></div>}
+            : <div className="import-table-wrap"><table className="import-table"><thead><tr><th>{copy.imports.file}</th><th>{copy.imports.accountName}</th><th>{copy.imports.period}</th><th>{copy.imports.importedRows}</th><th>{copy.imports.duplicateRows}</th><th>{copy.imports.status}</th></tr></thead><tbody>{imports.map((batch) => <tr key={batch.id}><td>{batch.file_name}<small className="event-time">{formatTimestamp(batch.created_at, english ? 'en-US' : 'zh-CN')}</small>{(batch.excluded?.length > 0 || batch.errors.length > 0) && <details><summary>{english ? 'Row report' : '行报告'} · {batch.skipped_rows ?? '—'} {english ? 'excluded' : '行排除'}</summary>{[...batch.errors, ...(batch.excluded ?? [])].map((row) => <p key={`${row.row_number}-${row.code}`}>{row.row_number} · {row.message}</p>)}</details>}</td><td>{batch.account_name} · {batch.currency}</td><td>{batch.start_date && batch.end_date ? `${batch.start_date} — ${batch.end_date}` : '—'}</td><td>{batch.imported_rows} / {batch.total_rows}</td><td>{batch.duplicate_rows}</td><td><ImportStatus batch={batch} copy={copy} />{batch.status !== 'REVOKED' && batch.imported_rows > 0 && batch.start_date && batch.end_date && <button onClick={() => onAnalyze(batch)}>{english ? 'View this batch' : '查看本批流水'}</button>}{batch.status !== 'REVOKED' && batch.status !== 'REJECTED' && (pending === batch.id ? <div><p>{english ? 'Remove imported transactions? Snapshots remain.' : '撤销本批次交易？保留历史快照。'}</p><button disabled={busy} onClick={() => void revoke(batch)}>{english ? 'Confirm revocation' : '确认撤销'}</button><button disabled={busy} onClick={() => setPending(null)}>{english ? 'Cancel' : '取消'}</button></div> : <button onClick={() => setPending(batch.id)}>{english ? 'Revoke' : '撤销批次'}</button>)}</td></tr>)}</tbody></table></div>}
     </section>
   )
 }

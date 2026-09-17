@@ -7,12 +7,13 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.errors import ApiProblem
 from bankpilot.db.models import UserRecord
 from bankpilot.db.run_repository import RunRepository
 from bankpilot.domain.contracts import ReviewList, ReviewState, RunStatus, TransactionQuery
@@ -47,7 +48,7 @@ async def reviews(
     session: AsyncSession = Depends(get_db_session),
 ) -> ReviewList:
     if end_date < start_date or (end_date - start_date).days > 366:
-        raise HTTPException(422, "Select an ordered period of at most 366 days")
+        raise ApiProblem(422, "invalid_period", "Select an ordered period of at most 366 days")
     return await ReviewService(session).read(user.id, start_date, end_date)
 
 
@@ -61,12 +62,14 @@ async def save_review(
         user.id, payload.start_date, payload.end_date, payload.key, payload.state, payload.note
     )
     if not saved:
-        raise HTTPException(404, "Review evidence is no longer available")
+        raise ApiProblem(404, "evidence_unavailable", "Review evidence is no longer available")
     try:
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
-        raise HTTPException(409, "Review changed concurrently; reload and retry") from exc
+        raise ApiProblem(
+            409, "stale_version", "Review changed concurrently; reload and retry"
+        ) from exc
 
 
 @router.get("/run-history", response_model=RunHistory)

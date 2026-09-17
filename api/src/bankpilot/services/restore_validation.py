@@ -7,12 +7,13 @@ import json
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bankpilot.db.base import Base
+from bankpilot.db.base import SCHEMA_REVISION, Base
 from bankpilot.db.models import (
     AccountRecord,
+    AssistantActionRecord,
     MonthlyReportRecord,
     RunRecord,
     SessionRecord,
@@ -37,8 +38,8 @@ class DatabaseEvidence(BaseModel):
 async def database_evidence(session: AsyncSession) -> DatabaseEvidence:
     """流式计算各表有序行摘要，不把敏感记录写入核对文件或日志。"""
     migration = str(await session.scalar(text("SELECT version_num FROM alembic_version")))
-    if migration != "20260915_0008":
-        raise ValueError("Use the application matching migration 20260915_0008")
+    if migration != SCHEMA_REVISION:
+        raise ValueError(f"Use the application matching migration {SCHEMA_REVISION}")
     schema_hash = await schema_digest(session)
     counts, hashes = {}, {}
     for table in Base.metadata.sorted_tables:
@@ -148,5 +149,10 @@ async def prepare_restored_tasks(session: AsyncSession) -> dict[str, int]:
             },
         )
     # 备份之后已退出的会话不能在恢复库重新有效。
+    await session.execute(
+        update(AssistantActionRecord)
+        .where(AssistantActionRecord.status == "pending")
+        .values(status="cancelled")
+    )
     await session.execute(delete(SessionRecord))
     return result

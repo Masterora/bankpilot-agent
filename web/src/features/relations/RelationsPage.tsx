@@ -10,14 +10,14 @@ import { validPeriod } from '../../shared/period'
 import type { ReviewPeriod } from '../../shared/period'
 import { RelationsPanel } from './RelationsPanel'
 
-export function RelationsPage({ copy, english, period, onPeriodChange }: {
-  copy: Messages; english: boolean; period: ReviewPeriod; onPeriodChange: (period: ReviewPeriod) => void
+export function RelationsPage({ copy, english, period, onPeriodChange, seedId, onImport }: {
+  onImport: () => void; seedId?: string; copy: Messages; english: boolean; period: ReviewPeriod; onPeriodChange: (period: ReviewPeriod) => void
 }) {
   return <section className="product-page">
     <PageHeader copy={copy} page="relations" />
     <PeriodFilter period={period} onChange={onPeriodChange} english={english} />
     {validPeriod(period)
-      ? <RelationsPanel key={`${period.start}-${period.end}`} start={period.start} end={period.end} english={english} />
+      ? <RelationsPanel onImport={onImport} seedId={seedId} key={`${period.start}-${period.end}`} start={period.start} end={period.end} english={english} />
       : null}
   </section>
 }

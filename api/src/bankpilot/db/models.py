@@ -321,3 +321,111 @@ class AuditEventRecord(Base):
     )
 
     __table_args__ = (Index("uq_audit_run_sequence", "run_id", "sequence", unique=True),)
+
+
+class BudgetRecord(Base):
+    """按月、分类和币种保存预算；实际支出从当前账本计算，不保存重复统计。"""
+
+    __tablename__ = "budgets"
+    id: Mapped[UUID] = mapped_column(Uuid, default=uuid4, unique=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), primary_key=True)
+    currency: Mapped[str] = mapped_column(String(3), primary_key=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_budgets_amount"),
+        CheckConstraint("version > 0", name="ck_budgets_version"),
+        CheckConstraint("EXTRACT(DAY FROM month) = 1", name="ck_budgets_month"),
+    )
+
+
+class RecurringRecord(Base):
+    """周期锚点与预期金额；暂停停止显示待核对期次，结束后不可恢复。"""
+
+    __tablename__ = "recurring_plans"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(100))
+    merchant: Mapped[str] = mapped_column(String(160))
+    currency: Mapped[str] = mapped_column(String(3))
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    cadence: Mapped[str] = mapped_column(String(16))
+    start_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_recurring_amount"),
+        CheckConstraint("version > 0", name="ck_recurring_version"),
+        CheckConstraint("cadence IN ('monthly', 'yearly')", name="ck_recurring_cadence"),
+        CheckConstraint("status IN ('active', 'paused', 'ended')", name="ck_recurring_status"),
+    )
+
+
+class RecurringMatchRecord(Base):
+    """一期一笔、一笔一期；源流水被撤销时自动解除关联，不保留虚构支付事实。"""
+
+    __tablename__ = "recurring_matches"
+    plan_id: Mapped[UUID] = mapped_column(
+        ForeignKey("recurring_plans.id", ondelete="CASCADE"), primary_key=True
+    )
+    due_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    transaction_id: Mapped[UUID] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), unique=True
+    )
+
+
+class RecurringRevisionRecord(Base):
+    """追加生效配置；初始配置保留在主记录，不覆盖历史月份。"""
+
+    __tablename__ = "recurring_revisions"
+    plan_id: Mapped[UUID] = mapped_column(
+        ForeignKey("recurring_plans.id", ondelete="CASCADE"), primary_key=True
+    )
+    effective_month: Mapped[date] = mapped_column(Date, primary_key=True)
+    account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"))
+    merchant: Mapped[str] = mapped_column(String(160))
+    currency: Mapped[str] = mapped_column(String(3))
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    cadence: Mapped[str] = mapped_column(String(16))
+    start_date: Mapped[date] = mapped_column(Date)
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_recurring_revision_amount"),
+        CheckConstraint("cadence IN ('monthly', 'yearly')", name="ck_recurring_revision_cadence"),
+        CheckConstraint(
+            "EXTRACT(DAY FROM effective_month) = 1", name="ck_recurring_revision_month"
+        ),
+    )
+
+
+class RecurringSkipRecord(Base):
+    """用户明确确认本期未发生；不创建交易，不修改预计扣款配置。"""
+
+    __tablename__ = "recurring_skips"
+    plan_id: Mapped[UUID] = mapped_column(
+        ForeignKey("recurring_plans.id", ondelete="CASCADE"), primary_key=True
+    )
+    due_date: Mapped[date] = mapped_column(Date, primary_key=True)
+
+
+class AssistantActionRecord(Base):
+    """冻结用户即将确认的预算差异；确认、写入和回执共用一个事务。"""
+
+    __tablename__ = "assistant_actions"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    before_amount: Mapped[str | None] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'applied', 'cancelled')", name="ck_assistant_action_status"
+        ),
+    )

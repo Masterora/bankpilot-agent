@@ -7,7 +7,8 @@ import type { FormEvent } from 'react'
 
 import { formatTimestamp } from '../../format'
 import type { Locale, Messages } from '../../i18n'
-import { LoadingIndicator, PageHeader } from '../../shared/ui'
+import { IconButton, LoadingIndicator, PageHeader } from '../../shared/ui'
+import { ReportComparison } from './ReportComparison'
 import { ReportDetailPanel } from './ReportDetailPanel'
 import { useReports } from './useReports'
 
@@ -20,16 +21,18 @@ interface Props {
   copy: Messages
   locale: Locale
   initialMonth: string
+  active: boolean
 }
 
-export function ReportsPage({ copy, locale, initialMonth }: Props) {
+export function ReportsPage({ copy, locale, initialMonth, active }: Props) {
   const english = locale === 'en-US'
   const {
     month, setMonth, items, offset, goToPage, hasMore, selected, detail,
     listError, detailError, loading, busy, error,
     selectReport, generate, remove, exportReport, refreshReports,
-  } = useReports(initialMonth, english)
+  } = useReports(initialMonth, english, active)
 
+  const previous = detail && items.find((item) => item.month === detail.month && item.created_at < detail.created_at && item.status === 'SUCCEEDED')
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     void generate(month)
@@ -51,7 +54,7 @@ export function ReportsPage({ copy, locale, initialMonth }: Props) {
             ? (english ? 'Submitting…' : '提交中…')
             : (english ? 'Generate report' : '生成月报')}
         </button>
-        <button type="button" disabled={loading || busy} onClick={refreshReports}>{english ? 'Refresh' : '刷新'}</button>
+        <IconButton icon="refresh" label={english ? 'Refresh' : '刷新'} disabled={loading || busy} onClick={refreshReports} />
       </form>
       {error && <p role="alert">{error}</p>}
       {listError && (
@@ -69,28 +72,6 @@ export function ReportsPage({ copy, locale, initialMonth }: Props) {
             : '暂无报告，选择月份生成第一份月报。'}
         </p>
       )}
-      <div className="report-list" aria-label={english ? 'Report history' : '报告历史'}>
-        {items.map((item) => (
-          <button
-            type="button" className="report-list-item" key={item.id}
-            aria-pressed={selected === item.id} disabled={busy} onClick={() => selectReport(item.id)}
-          >
-            <strong>{item.month.slice(0, 7)}</strong>
-            <span>{statusLabels[item.status][english ? 1 : 0]}</span>
-            <small>{formatTimestamp(item.created_at, locale)}</small>
-            {item.stale && <span>{english ? 'Ledger or rules updated' : '账本或规则已更新'}</span>}
-          </button>
-        ))}
-      </div>
-      <div className="report-toolbar">
-        <button disabled={!offset || busy || loading} onClick={() => goToPage(Math.max(0, offset - 20))}>
-          {english ? 'Previous' : '上一页'}
-        </button>
-        <span>{english ? 'Page' : '第'} {offset / 20 + 1} {english ? '' : '页'}</span>
-        <button disabled={!hasMore || busy || loading} onClick={() => goToPage(offset + 20)}>
-          {english ? 'Next' : '下一页'}
-        </button>
-      </div>
       {detailError && (
         <p role="alert">
           {english ? 'Could not refresh this report. Retry with Refresh.' : '报告读取失败，请点击刷新重试。'}
@@ -106,6 +87,31 @@ export function ReportsPage({ copy, locale, initialMonth }: Props) {
           onGenerate={generate} onExport={exportReport} onDelete={remove}
         />
       )}
+      {detail?.id === selected && detail.snapshot && previous && <ReportComparison key={`${detail.id}:${previous.id}`} current={detail} previous={previous} locale={locale} />}
+      <details className="report-history" open={!selected || undefined}><summary>{english ? 'Report versions & history' : '报告版本与历史'}</summary>
+      <div className="report-list" aria-label={english ? 'Report history' : '报告历史'}>
+        {items.map((item) => (
+          <button
+            type="button" className="report-list-item" key={item.id}
+            aria-pressed={selected === item.id} disabled={busy} onClick={() => selectReport(item.id)}
+          >
+            <strong>{item.month.slice(0, 7)}{selected === item.id ? (english ? ' · Viewing' : ' · 正在查看') : ''}</strong>
+            <span>{statusLabels[item.status][english ? 1 : 0]} · {offset === 0 && items.find((row) => row.month === item.month)?.id === item.id ? (english ? 'Latest version' : '最新版本') : (english ? 'Saved version' : '历史版本')}</span>
+            <small>{formatTimestamp(item.created_at, locale)}</small>
+            {item.stale && <span>{english ? 'Ledger or rules updated' : '账本或规则已更新'}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="report-toolbar">
+        <button disabled={!offset || busy || loading} onClick={() => goToPage(Math.max(0, offset - 20))}>
+          {english ? 'Previous' : '上一页'}
+        </button>
+        <span>{english ? 'Page' : '第'} {offset / 20 + 1} {english ? '' : '页'}</span>
+        <button disabled={!hasMore || busy || loading} onClick={() => goToPage(offset + 20)}>
+          {english ? 'Next' : '下一页'}
+        </button>
+      </div>
+      </details>
     </section>
   )
 }

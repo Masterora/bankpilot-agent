@@ -23,7 +23,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: string,
+    readonly code: string,
   ) {
     super(message)
   }
@@ -37,16 +37,39 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   })
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { detail?: string | { code: string; message: string } } | null
-    const detail = body?.detail
-    throw new ApiError(typeof detail === 'string' ? detail : detail?.message ?? '请求失败',
-      response.status, typeof detail === 'object' ? detail?.code : undefined)
+    const body: unknown = await response.json().catch(() => null)
+    if (typeof body === 'object' && body !== null && 'detail' in body) {
+      const detail = body.detail
+      if (
+        typeof detail === 'object' && detail !== null &&
+        'code' in detail && typeof detail.code === 'string' &&
+        'message' in detail && typeof detail.message === 'string'
+      ) {
+        throw new ApiError(detail.message, response.status, detail.code)
+      }
+    }
+    throw new ApiError('服务响应格式无效', response.status, 'invalid_response')
   }
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }
 
 export const api = {
+  assistantChat: (messages: import('./features/assistant/types').ChatMessage[], month: string, locale: import('./i18n').Locale) => request<import('./features/assistant/types').Reply>('/api/v1/assistant/chat', { method: 'POST', body: JSON.stringify({ messages, month: `${month.slice(0, 7)}-01`, locale }) }),
+  assistantAction: (id: string, cancel: boolean) => request<import('./features/assistant/types').AssistantAction>(`/api/v1/assistant/${cancel ? 'cancel' : 'confirm'}`, { method: 'POST', body: JSON.stringify({ id }) }),
+  budgets: (month: string) => request<import('./features/planning/types').BudgetWorkspace>(`/api/v1/budgets?month=${month}-01`),
+  saveBudget: (payload: import('./features/planning/types').BudgetInput) => request<void>('/api/v1/budgets', { method: 'POST', body: JSON.stringify(payload) }),
+  deleteBudget: (payload: Omit<import('./features/planning/types').BudgetInput, 'amount'>) => request<void>('/api/v1/budgets/delete', { method: 'POST', body: JSON.stringify(payload) }),
+  copyBudgets: (month: string) => request<{ copied: number; source_count: number }>('/api/v1/budgets/copy', { method: 'POST', body: JSON.stringify({ month: `${month}-01` }) }),
+  recurring: (month: string) => request<import('./features/planning/types').RecurringWorkspace>(`/api/v1/recurring?month=${month}-01`),
+  recurringCandidates: (month: string) => request<import('./features/planning/types').RecurringTransaction[]>(`/api/v1/recurring/candidates?month=${month}-01`),
+  createRecurring: (payload: import('./features/planning/types').RecurringInput) => request<void>('/api/v1/recurring', { method: 'POST', body: JSON.stringify(payload) }),
+  editRecurring: (payload: import('./features/planning/types').RecurringEditInput) => request<void>(`/api/v1/recurring/${payload.id}/edit`, { method: 'POST', body: JSON.stringify(payload) }),
+  recurringDraft: (id: string) => request<import('./features/planning/types').RecurringInput>(`/api/v1/recurring/draft?transaction_id=${id}`),
+  skipRecurring: (id: string, due_date: string, skipped: boolean, expected_version: number) => request<void>(`/api/v1/recurring/${id}/skip`, { method: 'POST', body: JSON.stringify({ due_date, skipped, expected_version }) }),
+  cancelRecurringRevision: (id: string, effective_month: string, expected_version: number) => request<void>(`/api/v1/recurring/${id}/cancel-revision`, { method: 'POST', body: JSON.stringify({ effective_month, expected_version }) }),
+  recurringStatus: (id: string, status: import('./features/planning/types').RecurringItem['status'], expected_version: number) => request<void>(`/api/v1/recurring/${id}/status`, { method: 'POST', body: JSON.stringify({ status, expected_version }) }),
+  matchRecurring: (id: string, due_date: string, transaction_id: string | null, expected_version: number) => request<void>(`/api/v1/recurring/${id}/match`, { method: 'POST', body: JSON.stringify({ due_date, transaction_id, expected_version }) }),
   overview: (start: string, end: string) => request<import('./types').OverviewSnapshot>(`/api/v1/overview?start_date=${start}&end_date=${end}`),
   reports: (offset = 0) => request<{ items: import('./types').MonthlyReport[]; has_more: boolean }>(`/api/v1/reports?offset=${offset}&limit=20`),
   report: (id: string) => request<import('./types').ReportDetail>(`/api/v1/reports/${id}`),

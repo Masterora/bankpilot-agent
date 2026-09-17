@@ -8,12 +8,13 @@
 
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import get_db_session
+from bankpilot.api.errors import ApiProblem
 from bankpilot.api.schemas import HealthResponse
 
 router = APIRouter(prefix="/api/v1", tags=["system"])
@@ -30,7 +31,5 @@ async def readyz(session: AsyncSession = Depends(get_db_session)) -> HealthRespo
         async with asyncio.timeout(3):
             await session.execute(text("SELECT 1"))
     except (TimeoutError, OSError, SQLAlchemyError) as exc:
-        raise HTTPException(
-            503, {"code": "data_unavailable", "message": "Database unavailable"}
-        ) from exc
+        raise ApiProblem(503, "data_unavailable", "Database unavailable") from exc
     return HealthResponse(status="ready")

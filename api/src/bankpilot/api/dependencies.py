@@ -13,9 +13,10 @@
 from collections.abc import AsyncIterator
 from typing import cast
 
-from fastapi import Cookie, Depends, HTTPException, Request, status
+from fastapi import Cookie, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bankpilot.api.errors import ApiProblem
 from bankpilot.config import Settings
 from bankpilot.db.models import UserRecord
 from bankpilot.db.user_repository import SessionRepository
@@ -49,13 +50,13 @@ async def get_current_user(
 ) -> UserRecord:
     """根据已哈希且具有过期时间的会话令牌解析当前用户。"""
     if not session_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        raise ApiProblem(status.HTTP_401_UNAUTHORIZED, "unauthenticated", "Not authenticated")
     token_hash = hash_session_token(session_token, settings.session_secret.get_secret_value())
     with measure("connection_ms"):
         await session.connection()
     user = await SessionRepository(session).resolve_user(token_hash)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+        raise ApiProblem(status.HTTP_401_UNAUTHORIZED, "session_expired", "Session expired")
     return user
 
 

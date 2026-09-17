@@ -8,12 +8,13 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.errors import ApiProblem
 from bankpilot.db.account_repository import AccountRepository
 from bankpilot.db.models import UserRecord
 
@@ -67,8 +68,8 @@ async def rename_account(
 ) -> None:
     try:
         if not await AccountRepository(session).rename(user.id, account_id, payload.name):
-            raise HTTPException(404, "Account not found")
+            raise ApiProblem(404, "account_not_found", "Account not found")
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
-        raise HTTPException(409, "Account name already exists") from exc
+        raise ApiProblem(409, "account_name_conflict", "Account name already exists") from exc

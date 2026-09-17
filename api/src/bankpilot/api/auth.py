@@ -8,7 +8,7 @@
 
 import asyncio
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,7 @@ from bankpilot.api.dependencies import (
     get_current_user,
     get_db_session,
 )
+from bankpilot.api.errors import ApiProblem
 from bankpilot.api.schemas import LoginRequest, RegisterRequest, UserResponse
 from bankpilot.config import Settings
 from bankpilot.db.models import UserRecord
@@ -56,7 +57,9 @@ async def register(
         async with session.begin():
             users = UserRepository(session)
             if await users.by_email(str(payload.email)) is not None:
-                raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
+                raise ApiProblem(
+                    status.HTTP_409_CONFLICT, "email_registered", "Email already registered"
+                )
             password_hash = await asyncio.to_thread(hash_password, payload.password)
             user = await users.add(email=str(payload.email), password_hash=password_hash)
             token = create_session_token()
@@ -67,7 +70,9 @@ async def register(
                 ttl_seconds=settings.session_ttl_seconds,
             )
     except IntegrityError as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered") from exc
+        raise ApiProblem(
+            status.HTTP_409_CONFLICT, "email_registered", "Email already registered"
+        ) from exc
     _set_session_cookie(response, token=token, settings=settings)
     return UserResponse(id=user.id, email=user.email)
 
@@ -84,7 +89,9 @@ async def login(
         candidate_hash = user.password_hash if user is not None else DUMMY_PASSWORD_HASH
         valid = await asyncio.to_thread(verify_password, payload.password, candidate_hash)
         if user is None or not valid:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+            raise ApiProblem(
+                status.HTTP_401_UNAUTHORIZED, "invalid_credentials", "Invalid credentials"
+            )
         token = create_session_token()
         token_hash = hash_session_token(token, settings.session_secret.get_secret_value())
         await SessionRepository(session).create(

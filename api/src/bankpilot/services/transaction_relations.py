@@ -138,7 +138,6 @@ async def save_relation(
     record.first_id, record.second_id, record.state = first_id, second_id, state
     record.version += 1
     await bump_revision(session, user_id)
-    await session.commit()
 
 
 async def relation_workspace(

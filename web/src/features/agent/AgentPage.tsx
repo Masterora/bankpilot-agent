@@ -12,6 +12,7 @@ import { formatMoney, formatTimestamp, formatTransactionTime } from '../../forma
 import type { Locale, Messages } from '../../i18n'
 import { EmptyContent, PageHeader } from '../../shared/ui'
 import type { Run, TransactionCategory } from '../../types'
+import type { ReviewPeriod } from '../../shared/period'
 import { ReviewSnapshot } from './ReviewSnapshot'
 
 interface RunViewProps {
@@ -23,6 +24,7 @@ interface RunViewProps {
 }
 
 interface AgentPageProps extends RunViewProps {
+  period: ReviewPeriod
   correctionSaved: boolean
   error: string
   message: string
@@ -33,6 +35,7 @@ interface AgentPageProps extends RunViewProps {
 
 export function AgentPage({
   correctionSaved,
+  period,
   copy,
   correctingId,
   error,
@@ -49,6 +52,8 @@ export function AgentPage({
     <section className="product-page">
       <PageHeader copy={copy} page="agent" />
       <section className="agent-command">
+        <details className="scope-note"><summary>{locale === 'en-US' ? 'Review scope' : '核查范围'}</summary><p>{locale === 'en-US' ? 'Review imported transactions by date. Use the ledger to filter by account or merchant.' : '按日期核查已导入流水；按账户或商户筛选请使用账本。'}</p></details>
+        <button onClick={() => onMessageChange(locale === 'en-US' ? `Review all imported statements from ${period.start} to ${period.end}` : `核查 ${period.start} 至 ${period.end} 的全部已导入账单`)}>{locale === 'en-US' ? 'Use current ledger dates' : '使用当前账本期间'} · {period.start} — {period.end}</button>
         <form aria-busy={submitting} className="prompt" onSubmit={onSubmit}>
           <textarea
             ref={inputRef}

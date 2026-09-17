@@ -11,12 +11,13 @@ from collections.abc import AsyncIterator
 from typing import cast
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.errors import ApiProblem
 from bankpilot.api.schemas import (
     AuditEventResponse,
     CorrectCategoryRequest,
@@ -62,7 +63,7 @@ async def get_run(
     repository = RunRepository(session)
     run = await repository.get_for_user(run_id=run_id, user_id=user.id)
     if run is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run not found")
+        raise ApiProblem(status.HTTP_404_NOT_FOUND, "run_not_found", "Run not found")
     return await _run_response(repository, run)
 
 
@@ -77,16 +78,20 @@ async def stream_run_events(
     repository = RunRepository(session)
     run = await repository.get_for_user(run_id=run_id, user_id=user.id)
     if run is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run not found")
+        raise ApiProblem(status.HTTP_404_NOT_FOUND, "run_not_found", "Run not found")
     cursor = after
     last_event_id = request.headers.get("last-event-id")
     if last_event_id is not None:
         try:
             cursor = int(last_event_id)
         except ValueError as exc:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Last-Event-ID") from exc
+            raise ApiProblem(
+                status.HTTP_400_BAD_REQUEST, "invalid_event_cursor", "Invalid Last-Event-ID"
+            ) from exc
         if cursor < 0:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Last-Event-ID")
+            raise ApiProblem(
+                status.HTTP_400_BAD_REQUEST, "invalid_event_cursor", "Invalid Last-Event-ID"
+            )
     session_factory = cast(async_sessionmaker[AsyncSession], request.app.state.session_factory)
 
     async def generate() -> AsyncIterator[str]:
@@ -142,10 +147,12 @@ async def correct_transaction_category(
     runs = RunRepository(session)
     run = await runs.get_for_user(run_id=run_id, user_id=user.id)
     if run is None or run.status != RunStatus.SUCCEEDED.value or run.result is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Run not found")
+        raise ApiProblem(status.HTTP_404_NOT_FOUND, "run_not_found", "Run not found")
     transactions = TransactionResult.model_validate(run.result.get("transactions"))
     if not any(entry.id == transaction_id for entry in transactions.items):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Transaction not found")
+        raise ApiProblem(
+            status.HTTP_404_NOT_FOUND, "transaction_not_found", "Transaction not found"
+        )
     current = await session.scalar(
         select(TransactionRecord)
         .join(AccountRecord)
@@ -153,7 +160,7 @@ async def correct_transaction_category(
         .with_for_update()
     )
     if current is None:
-        raise HTTPException(404, "Transaction not found")
+        raise ApiProblem(404, "transaction_not_found", "Transaction not found")
     override = await session.get(TransactionCategoryOverrideRecord, transaction_id)
     previous_category = (
         override.category
@@ -170,7 +177,9 @@ async def correct_transaction_category(
         category=payload.category.value,
     )
     if transaction is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Transaction not found")
+        raise ApiProblem(
+            status.HTTP_404_NOT_FOUND, "transaction_not_found", "Transaction not found"
+        )
     await runs.add_event(
         run_id,
         "transaction.category_corrected",

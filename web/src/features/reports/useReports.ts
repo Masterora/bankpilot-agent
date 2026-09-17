@@ -5,20 +5,20 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../../api'
+import { apiErrorMessage } from '../../shared/apiErrors'
 import { downloadFile } from '../../shared/download'
 import { newIdempotencyKey } from '../../shared/operationKey'
 import type { MonthlyReport, ReportDetail } from '../../types'
 
 function errorMessage(error: unknown, english: boolean): string {
-  if (error instanceof ApiError) {
-    if (error.status === 429) return english ? 'Two reports are already pending. Try again when one finishes.' : '已有两份报告待完成，请稍后重试。'
-    if (error.status === 404 || error.status === 410) return english ? 'This report is no longer available. Refresh the list.' : '报告已不可用，请刷新列表。'
-    if (error.status === 401) return english ? 'Your session expired. Sign in again.' : '登录已过期，请重新登录。'
-  }
-  return english ? 'Request failed. Your input and results have been kept. Please retry.' : '请求失败，已保留输入和结果，请重试。'
+  return apiErrorMessage(error, english, {
+    report_quota_exceeded: ['已有两份报告待完成，请稍后重试。', 'Two reports are pending. Retry when one finishes.'],
+    report_not_found: ['报告已不可用，请刷新列表。', 'This report is unavailable. Refresh the list.'],
+    report_deleted: ['报告已删除，请刷新列表。', 'This report was deleted. Refresh the list.'],
+  })
 }
 
-export function useReports(initialMonth: string, english: boolean) {
+export function useReports(initialMonth: string, english: boolean, visible: boolean) {
   const [month, setMonth] = useState(initialMonth.slice(0, 7))
   const [items, setItems] = useState<MonthlyReport[]>([])
   const [offset, setOffset] = useState(0)
@@ -43,7 +43,7 @@ export function useReports(initialMonth: string, english: boolean) {
 
   useEffect(() => {
     function revalidate() {
-      if (document.visibilityState === 'visible') setRefresh((value) => value + 1)
+      if (visible && document.visibilityState === 'visible') setRefresh((value) => value + 1)
     }
     document.addEventListener('visibilitychange', revalidate)
     window.addEventListener('focus', revalidate)
@@ -51,17 +51,18 @@ export function useReports(initialMonth: string, english: boolean) {
       document.removeEventListener('visibilitychange', revalidate)
       window.removeEventListener('focus', revalidate)
     }
-  }, [])
+  }, [visible])
 
   useEffect(() => {
     let active = true
     let timer: number | undefined
     async function load() {
-      if (document.visibilityState === 'hidden') return
+      if (!visible || document.visibilityState === 'hidden') return
       try {
         const result = await api.reports(offset)
         if (!active) return
         setItems(result.items)
+        if (offset === 0) setSelected((current) => current ?? result.items[0]?.id ?? null)
         setDisplayedOffset(offset)
         setHasMore(result.has_more)
         setListError(false)
@@ -78,14 +79,14 @@ export function useReports(initialMonth: string, english: boolean) {
     }
     void load()
     return () => { active = false; window.clearTimeout(timer) }
-  }, [offset, refresh])
+  }, [offset, refresh, visible])
 
   useEffect(() => {
     if (!selected) return
     let active = true
     let timer: number | undefined
     async function load() {
-      if (document.visibilityState === 'hidden') return
+      if (!visible || document.visibilityState === 'hidden') return
       try {
         const status = await api.reportStatus(selected!)
         if (!active) return
@@ -101,7 +102,7 @@ export function useReports(initialMonth: string, english: boolean) {
     }
     void load()
     return () => { active = false; window.clearTimeout(timer) }
-  }, [selected, refresh])
+  }, [selected, refresh, visible])
 
   function selectReport(id: string) {
     if (id === selected) return

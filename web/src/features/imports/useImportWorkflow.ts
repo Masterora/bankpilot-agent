@@ -54,6 +54,7 @@ export function useImportWorkflow({ userId, active, copy, english, imports, onIm
   const [headers, setHeaders] = useState<string[]>([])
   const [accountName, setAccountName] = useState('')
   const [accountId, setAccountId] = useState('')
+  const [creatingAccount, setCreatingAccount] = useState(false)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [accountsFailed, setAccountsFailed] = useState(false)
   const [accountsAttempt, setAccountsAttempt] = useState(0)
@@ -173,6 +174,7 @@ export function useImportWorkflow({ userId, active, copy, english, imports, onIm
         setContentDigest(decoded.content_digest)
         setFileName(saved.config.file_name)
         setAccountId(saved.config.account_id ?? '')
+        setCreatingAccount(!saved.config.account_id)
         setAccountName(saved.config.account_name)
         setCurrency(saved.config.currency)
         setMapping(saved.config.mapping)
@@ -196,6 +198,7 @@ export function useImportWorkflow({ userId, active, copy, english, imports, onIm
     setSource('standard')
     setAccountName('')
     setAccountId('')
+    setCreatingAccount(false)
     setCurrency('')
     setMapping(emptyMapping)
     let stage: 'decode' | 'detect' = 'decode'
@@ -263,7 +266,7 @@ export function useImportWorkflow({ userId, active, copy, english, imports, onIm
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (initialRecovery.error || busyRef.current || !canSubmit(accountName, content, currency, mapping)) return
+    if (initialRecovery.error || busyRef.current || (!accountId && !creatingAccount) || !canSubmit(accountName, content, currency, mapping)) return
     setError('')
     busyRef.current = true
     setSubmitting(true)
@@ -308,10 +311,10 @@ export function useImportWorkflow({ userId, active, copy, english, imports, onIm
   }
   const mappingHasDuplicates = headers.length > 0
     && selectedColumns.length !== new Set(selectedColumns).size
-  const ready = canSubmit(accountName, content, currency, mapping) && !mappingHasDuplicates
+  const ready = (Boolean(accountId) || creatingAccount) && canSubmit(accountName, content, currency, mapping) && !mappingHasDuplicates
 
   return {
-    accountId, accountName, accounts, accountsFailed, content, currency, detecting, error,
+    accountId, creatingAccount, setCreatingAccount, accountName, accounts, accountsFailed, content, currency, detecting, error,
     fileName, headers, mapping, mappingHasDuplicates, preview, previewCurrent, ready,
     result, retryFile, source, submitting, pending, recover, detectFile, selectFile, setAccountId,
     setAccountName, setAccountsAttempt, setCurrency, submit, updateMapping,

@@ -47,3 +47,11 @@ class RelationError(BankPilotError):
 
 class StatementSizeError(ValueError):
     """账单资源上限异常，由导入接口映射为 413。"""
+
+
+class PlanningError(Exception):
+    """规划业务冲突和容量错误；API 边界负责转换状态及稳定错误码。"""
+
+    def __init__(self, code: str, status: int = 409) -> None:
+        self.code, self.status = code, status
+        super().__init__(code)
