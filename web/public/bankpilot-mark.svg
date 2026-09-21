@@ -1,3 +1,8 @@
+<!--
+文件职责：提供 BankPilot 的矢量品牌图标。
+主要内容：罗盘轮廓、方向标记和可访问标题。
+关键边界：静态 SVG 不包含脚本、外部资源或业务交互。
+-->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
   <title id="title">BankPilot</title>
   <circle cx="32" cy="32" r="25" fill="none" stroke="#54c6b5" stroke-width="2.5"/>

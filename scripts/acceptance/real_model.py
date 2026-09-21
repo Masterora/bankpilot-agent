@@ -1,5 +1,8 @@
-"""真实模型场景：仅发送隔离库的合成数据，结果输出到 stdout。"""
-
+"""
+文件职责：执行需要显式配置的真实模型场景验收。
+主要内容：准备合成业务数据，运行真实工具决策并将场景结果输出到标准输出。
+关键边界：外部模型会产生用量；仅使用隔离数据库的合成数据，运行须事先获得授权。
+"""
 import asyncio
 import json
 from datetime import date
@@ -84,7 +87,8 @@ async def run_model(factory, url):
                 payload = {
                     "month": "2026-09-01",
                     "question": question,
-                    "protocol_version": 2,
+                    "protocol_version": 3,
+                    "expected_context_version": 0,
                     "request_id": str(uuid4()),
                     "creation_id": str(uuid4()),
                 }

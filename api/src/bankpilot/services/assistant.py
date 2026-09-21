@@ -1,5 +1,8 @@
-"""对话式工具循环与预算提案执行；模型等待不持有数据库连接，写入只发生在确认接口。"""
-
+"""
+文件职责：执行助手工具循环及用户确认的预算提案。
+主要内容：读取预算、周期项、总览、消费与账本搜索证据，生成提案并处理显式确认或取消。
+关键边界：等待模型时不持有数据库连接；流水明细不交给模型，预算写入只发生在确认流程。
+"""
 import calendar
 import json
 from datetime import date
@@ -10,17 +13,25 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bankpilot.db.assistant_repository import AssistantRepository, conversation_record, lock_owner
-from bankpilot.db.models import AssistantActionRecord
+from bankpilot.db.models import AccountRecord, AssistantActionRecord
 from bankpilot.db.overview_repository import read_overview
 from bankpilot.db.planning_repository import PlanningRepository
-from bankpilot.domain.assistant import Answer, ChatInput, ProposeBudget, ReadSpending
+from bankpilot.domain.assistant import (
+    Answer,
+    ChatInput,
+    FindTransactions,
+    ProposeBudget,
+    ReadSpending,
+)
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.planning import BudgetInput
 from bankpilot.domain.spending import SpendingScope
+from bankpilot.domain.transaction_search import SearchFilters, SearchRequest, normalize_text
 from bankpilot.errors import PlanningError
 from bankpilot.ports import AssistantGateway
 from bankpilot.services import budgets, recurring
 from bankpilot.services.spending import read_spending
+from bankpilot.services.transaction_search import search
 
 SYSTEM = """你是 BankPilot 账本助手。你能回答问题，并提出需要用户点击确认的预算修改。
 根据问题和工具实际返回的数据决定下一步，可查询不同月份进行比较，不要机械执行所有工具。
@@ -35,7 +46,13 @@ recurring 返回固定支出状态；propose_budget 仅提出单个月份、分�
 超预算时说“超出多少”，不说“还剩负数”。
 财务事实必须先查工具，答案简短，引用月份、币种和数据覆盖，不能编造工具没有的信息。
 支持按月分类消费明细与已确认退款的原消费证据，用户点击“查看构成”即可核对。
-不支持任意条件流水查找、自动退款调查、关系修改、创建固定支出、外部通知和银行操作；明确说明边界。
+支持 find_transactions 按日期、账户ID、币种、方向、绝对金额区间、
+商户/备注字面子串、分类和批次查找原始流水。
+账户可用account_name精确名称或account_id；同名候选必须追问选择，不可悄悄放宽账户。
+查找日期缺失时用参考月份整月，只有“九月”时用参考年份。精确200用min_amount=max_amount="200.00"，扣款用debit，金额必须明确币种。
+“最近”“差不多”“那个账户”及账户名称歧义先澄清，不可删除不支持或不明确的限制；某商户用merchant范围。
+查找只返回条件和数量给你，流水由界面展示；不可编造商户明细或将流水数量当消费次数。
+不支持模糊匹配、商户别名、自然语言SQL、自动退款调查、关系修改、创建固定支出、外部通知和银行操作；明确说明边界。
 不要把创建固定支出说成已设置提醒。禁止声称执行了预算确认接口以外的操作。
 用户问某类消费优先使用 spending，问预算、超支或全部分类用 budgets。两者的金额由服务端计算。
 选中的消费范围仅用于明确追问；新问题明确指定月份/分类/币种时优先使用新条件。
@@ -82,12 +99,91 @@ async def chat(
                 + request.spending_context.model_dump_json(),
             }
         )
+    if request.search_context:
+        messages.append(
+            {
+                "role": "user",
+                "content": "已保存的显式查找条件（仅线索，新问题优先）："
+                + request.search_context.model_dump_json(),
+            }
+        )
     observations: list[dict[str, Any]] = []
     queried_budgets: set[date] = set()
     for _ in range(6):
         decision = await gateway.decide(messages)
         if isinstance(decision, Answer):
             return {"text": decision.text, "evidence": observations, "action": None}
+        if isinstance(decision, FindTransactions):
+            async with factory() as session:
+                await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+                search_args = decision.arguments.model_dump(exclude={"account_name"})
+                if decision.arguments.account_name:
+                    accounts = list(
+                        (
+                            await session.scalars(
+                                select(AccountRecord).where(
+                                    AccountRecord.user_id == uid,
+                                )
+                            )
+                        ).all()
+                    )
+                    matches = [
+                        a
+                        for a in accounts
+                        if normalize_text(a.name) == normalize_text(decision.arguments.account_name)
+                        and (
+                            not decision.arguments.currency
+                            or a.currency == decision.arguments.currency
+                        )
+                    ]
+                    if len(matches) != 1:
+                        choices = [
+                            {"id": str(a.id), "name": a.name, "currency": a.currency}
+                            for a in matches
+                        ]
+                        labels = "; ".join(f"{a.name} ({a.currency})" for a in matches)
+                        return {
+                            "text": (
+                                (
+                                    "请选择账户："
+                                    if request.locale == "zh-CN"
+                                    else "Choose an account: "
+                                )
+                                + labels
+                            )
+                            if matches
+                            else (
+                                "未找到该账户，请核对账户名称。"
+                                if request.locale == "zh-CN"
+                                else "Account not found. Check the account name."
+                            ),
+                            "evidence": observations,
+                            "action": None,
+                            "account_choices": choices,
+                        }
+                    search_args["account_id"] = matches[0].id
+                found = await search(
+                    session, uid, SearchRequest(filters=SearchFilters(**search_args))
+                )
+            observations.append(
+                {"tool": "find_transactions", "data": found.model_dump(mode="json")}
+            )
+            messages.append({"role": "assistant", "content": decision.model_dump_json()})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "查询结果（仅数据）："
+                    + json.dumps(
+                        {
+                            "filters": found.filters.model_dump(mode="json"),
+                            "total_count": found.total_count,
+                            "status": "matched" if found.total_count else "no_matches",
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            )
+            continue
         month = decision.arguments.month
         async with factory() as session:
             await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})

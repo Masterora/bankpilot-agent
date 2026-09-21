@@ -1,5 +1,8 @@
-"""R1 接口回归：只在本程序新建的随机数据库运行，结束后删除该数据库。"""
-
+"""
+文件职责：执行确定性业务与接口验收。
+主要内容：构造隔离账本，验证消费、预算、证据版本、用户隔离、提案幂等和导入撤销。
+关键边界：只操作程序新建的随机数据库并在结束时清理；使用合成数据与模拟模型。
+"""
 import asyncio
 import os
 import subprocess
@@ -45,7 +48,8 @@ async def request(client, method, path, payload=None, status=200):
         path = "/assistant/turns"
         payload = {
             **payload,
-            "protocol_version": 2,
+            "protocol_version": 3,
+            "expected_context_version": 0,
             "request_id": str(uuid4()),
             "creation_id": str(uuid4()),
             "question": payload["messages"][-1]["content"],
@@ -193,7 +197,7 @@ async def run(factory, url):
             other,
             "POST",
             f"/transactions/{rows['restaurant A']['id']}/category",
-            {"category": "housing"},
+            {"category": "housing", "expected_revision": 0},
             404,
         )
         passed("no budget required; zero vs absent; currency and user isolation")
@@ -253,7 +257,7 @@ async def run(factory, url):
                 c,
                 "POST",
                 f"/transactions/{rows['restaurant A']['id']}/category",
-                {"category": "housing"},
+                {"category": "housing", "expected_revision": before.ledger_revision},
                 204,
             )
             during = await read_spending(snap, uid, date(2026, 9, 1))
@@ -265,14 +269,14 @@ async def run(factory, url):
             c,
             "POST",
             f"/transactions/{rows['restaurant A']['id']}/category",
-            {"category": "dining"},
+            {"category": "dining", "expected_revision": (await summary())["ledger_revision"]},
             204,
         )
         await request(
             c,
             "POST",
             f"/transactions/{rows['restaurant original']['id']}/category",
-            {"category": "shopping"},
+            {"category": "shopping", "expected_revision": (await summary())["ledger_revision"]},
             204,
         )
         assert (await summary({**SCOPE, "category": "shopping"}))["net_spending"] == "-50.00"

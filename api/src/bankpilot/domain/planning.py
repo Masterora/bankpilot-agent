@@ -1,5 +1,8 @@
-"""文件职责：周期日期、预算证据与规划接口契约；金额使用 Decimal，不执行自动扣款。"""
-
+"""
+文件职责：定义预算和周期规划的输入、证据与日期规则。
+主要内容：月度预算、周期配置修订、逐期匹配与跳过契约，以及按月计算应发生日期。
+关键边界：金额使用 Decimal，严格校验输入；不访问数据库或执行自动扣款。
+"""
 import calendar
 from datetime import date
 from decimal import Decimal

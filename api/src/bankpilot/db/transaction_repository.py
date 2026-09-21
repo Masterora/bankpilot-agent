@@ -1,26 +1,26 @@
 """
-文件职责：封装交易查询、去重和分类覆盖。
-
-主要内容：读取用户账本、检测指纹冲突、批量写入交易并保存分类修正。
-
-关键边界：源交易不可覆盖，所有写入遵循用户锁顺序并更新账本修订号。
+文件职责：封装交易查询、搜索候选读取、去重和分类覆盖。
+主要内容：按用户读取账本，按日期与账户等条件稳定排序，检测导入冲突、批量写入并保存分类覆盖。
+关键边界：不隐式提交；分类写入锁定用户并递增修订号，批量导入的锁与修订号由调用服务统一管理。
 """
-
 from datetime import UTC, date
+from decimal import Decimal
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bankpilot.db.ledger_revision import bump_revision
 from bankpilot.db.models import (
     AccountRecord,
     TransactionCategoryOverrideRecord,
     TransactionRecord,
     UserRecord,
 )
+from bankpilot.db.user_repository import UserRepository
 from bankpilot.domain.statement_import import ParsedStatementRow
+from bankpilot.domain.transaction_search import CAPACITY, SearchFilters
+from bankpilot.errors import PlanningError
 
 
 class TransactionRepository:
@@ -53,12 +53,69 @@ class TransactionRepository:
         )
         return list(rows.tuples())
 
-    async def set_category_override(
-        self, *, user_id: UUID, transaction_id: UUID, category: str
-    ) -> TransactionRecord | None:
-        await self.session.scalar(
-            select(UserRecord).where(UserRecord.id == user_id).with_for_update()
+    async def search_rows(
+        self,
+        user_id: UUID,
+        filters: SearchFilters | None = None,
+        transaction_id: UUID | None = None,
+    ) -> list[tuple[TransactionRecord, str, str | None]]:
+        query = (
+            select(
+                TransactionRecord, AccountRecord.name, TransactionCategoryOverrideRecord.category
+            )
+            .join(AccountRecord, TransactionRecord.account_id == AccountRecord.id)
+            .outerjoin(
+                TransactionCategoryOverrideRecord,
+                and_(
+                    TransactionCategoryOverrideRecord.transaction_id == TransactionRecord.id,
+                    TransactionCategoryOverrideRecord.user_id == user_id,
+                ),
+            )
+            .where(AccountRecord.user_id == user_id)
         )
+        if transaction_id is not None:
+            query = query.where(TransactionRecord.id == transaction_id)
+        if filters:
+            query = query.where(
+                TransactionRecord.booking_date >= filters.start_date,
+                TransactionRecord.booking_date <= filters.end_date,
+            )
+            for column, value in (
+                (TransactionRecord.account_id, filters.account_id),
+                (TransactionRecord.currency, filters.currency),
+                (TransactionRecord.import_batch_id, filters.import_batch_id),
+            ):
+                if value is not None:
+                    query = query.where(column == value)
+            if filters.direction == "debit":
+                query = query.where(TransactionRecord.amount < 0)
+            elif filters.direction == "credit":
+                query = query.where(TransactionRecord.amount > 0)
+            if filters.min_amount is not None:
+                query = query.where(
+                    func.abs(TransactionRecord.amount) >= Decimal(filters.min_amount)
+                )
+            if filters.max_amount is not None:
+                query = query.where(
+                    func.abs(TransactionRecord.amount) <= Decimal(filters.max_amount)
+                )
+        rows = await self.session.execute(
+            query.order_by(
+                TransactionRecord.booking_date.desc(),
+                TransactionRecord.occurred_at.desc(),
+                TransactionRecord.id.asc(),
+            ).limit(CAPACITY + 1)
+        )
+        return list(rows.tuples())
+
+    async def set_category_override(
+        self, *, user_id: UUID, transaction_id: UUID, category: str, expected_revision: int
+    ) -> TransactionRecord | None:
+        revision = await self.session.scalar(
+            select(UserRecord.ledger_revision).where(UserRecord.id == user_id).with_for_update()
+        )
+        if revision != expected_revision:
+            raise PlanningError("search_stale", 409)
         transaction = cast(
             TransactionRecord | None,
             await self.session.scalar(
@@ -83,7 +140,7 @@ class TransactionRepository:
             existing.category = category
         await self.session.flush()
         if changed:
-            await bump_revision(self.session, user_id)
+            await UserRepository(self.session).bump_revision(user_id)
         return transaction
 
     async def existing_fingerprints(self, *, account_id: UUID, fingerprints: set[str]) -> set[str]:

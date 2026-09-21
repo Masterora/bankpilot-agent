@@ -1,3 +1,8 @@
+/**
+ * 文件职责：将规划业务错误码转换为中英文提示。
+ * 主要内容：预算版本冲突、周期配置锁定、匹配和未来修订等错误文案。
+ * 关键边界：只负责展示；未覆盖状态交给共享错误处理，不暴露内部异常原文。
+ */
 import { apiErrorMessage } from '../../shared/apiErrors'
 
 const errors: Record<string, [string, string]> = {

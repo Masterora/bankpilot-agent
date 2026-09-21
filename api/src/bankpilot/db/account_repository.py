@@ -9,7 +9,6 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bankpilot.db.ledger_revision import bump_revision
 from bankpilot.db.models import AccountRecord
 from bankpilot.db.user_repository import UserRepository
 
@@ -38,5 +37,5 @@ class AccountRepository:
             return False
         if account.name != name:
             account.name = name
-            await bump_revision(self.session, user_id)
+            await UserRepository(self.session).bump_revision(user_id)
         return True

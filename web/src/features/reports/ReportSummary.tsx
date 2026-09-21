@@ -1,4 +1,8 @@
-/** 文件职责：将冻结月报快照呈现为阅读与打印摘要；不重算金额或混入原始分类统计。 */
+/**
+ * 文件职责：将冻结月报快照呈现为阅读与打印摘要。
+ * 主要内容：报告期间、按币种统计、分类与核查信息展示。
+ * 关键边界：不重算金额，不混入实时账本或不同口径统计。
+ */
 import { formatMoney, formatTimestamp } from '../../format'
 import type { Locale } from '../../i18n'
 import type { ReportDetail } from '../../types'

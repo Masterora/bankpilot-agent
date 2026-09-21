@@ -1,4 +1,8 @@
-/** 账户与本地显示偏好；仅提供当前已接入的操作。 */
+/**
+ * 文件职责：展示当前账户与本地显示偏好设置。
+ * 主要内容：账户信息、切换账号与退出、语言偏好，以及密码修改表单。
+ * 关键边界：只提供已接入的操作，身份与密码校验由服务端完成。
+ */
 import type { LanguageProps } from '../../shared/ui'
 import { LanguageSwitch, PageHeader } from '../../shared/ui'
 import { PasswordForm } from './PasswordForm'

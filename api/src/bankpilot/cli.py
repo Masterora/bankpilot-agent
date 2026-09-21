@@ -22,7 +22,6 @@ from pydantic import EmailStr, TypeAdapter
 from sqlalchemy import select
 
 from bankpilot.config import get_settings
-from bankpilot.db.ledger_revision import bump_revision
 from bankpilot.db.models import AccountRecord, CardRecord, TransactionRecord
 from bankpilot.db.session import create_engine, create_session_factory
 from bankpilot.db.user_repository import UserRepository
@@ -112,7 +111,7 @@ async def _seed(email: str, password: str) -> None:
                         ),
                     ]
                 )
-                await bump_revision(session, user.id)
+                await UserRepository(session).bump_revision(user.id)
             card = await session.scalar(
                 select(CardRecord).where(
                     CardRecord.account_id == account.id,

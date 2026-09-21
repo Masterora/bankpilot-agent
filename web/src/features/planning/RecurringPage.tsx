@@ -1,4 +1,8 @@
-/** 文件职责：手动周期项与逐期流水核对；预计金额仅展示，不写入账本。 */
+/**
+ * 文件职责：编排手动周期计划工作区。
+ * 主要内容：月份和计划列表、创建编辑、详情与逐期核对入口。
+ * 关键边界：预计金额仅展示，不自动写入账本或发起扣款。
+ */
 import { RecurringEditor } from './RecurringEditor'
 import type { RecurringEditorStart } from './RecurringEditor'
 import { RecurringDetails } from './RecurringDetails'

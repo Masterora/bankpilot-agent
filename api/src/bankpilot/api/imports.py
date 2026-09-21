@@ -1,11 +1,8 @@
 """
-文件职责：提供账单导入生命周期接口。
-
-主要内容：包含导入历史、原子写入、批次撤销和响应转换。
-
-关键边界：来源字段必须显式存在，撤销清理交易但保留批次与历史快照。
+文件职责：提供可恢复账单导入的 HTTP 生命周期接口。
+主要内容：导入历史、按幂等键恢复结果、原子导入、批次撤销和响应转换。
+关键边界：当前用户范围内操作；撤销清理源交易及关联并递增修订号，保留批次与历史快照。
 """
-
 from typing import Literal, cast
 from uuid import UUID
 
@@ -22,12 +19,12 @@ from bankpilot.api.schemas import (
     ImportStatementRequest,
 )
 from bankpilot.db.import_repository import ImportRepository
-from bankpilot.db.ledger_revision import bump_revision
 from bankpilot.db.models import (
     ImportBatchRecord,
     TransactionRecord,
     UserRecord,
 )
+from bankpilot.db.user_repository import UserRepository
 from bankpilot.domain.statement_import import StatementStructureError
 from bankpilot.errors import ImportConflictError
 from bankpilot.services.statement_import import StatementImportService
@@ -110,7 +107,7 @@ async def revoke_import(
     # 外键级联清理分类与关系；只有账本事实改变才使历史报告过期。
     batch.status = "REVOKED"
     if deleted_id is not None:
-        await bump_revision(session, user.id)
+        await UserRepository(session).bump_revision(user.id)
     await session.commit()
 
 

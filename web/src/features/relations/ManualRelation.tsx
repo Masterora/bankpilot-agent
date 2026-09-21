@@ -1,4 +1,8 @@
-/** 文件职责：人工配对的双边搜索、事实约束和提交预览；服务端裁决版本与关联冲突。 */
+/**
+ * 文件职责：提供交易关系的人工双边配对界面。
+ * 主要内容：交易搜索和选择、前端事实预筛、配对预览及确认提交。
+ * 关键边界：前端筛选仅作提示；版本、权限、金额与关系冲突由服务端最终校验。
+ */
 import { cents, eligiblePair, conflictFree } from './pairEligibility'
 import { useState } from 'react'
 import { formatMoney, formatTransactionTime } from '../../format'

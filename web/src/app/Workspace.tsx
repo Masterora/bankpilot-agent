@@ -1,9 +1,7 @@
 /**
- * 文件职责：组装认证后的产品工作区、共享状态与页面注册表。
- *
- * 主要内容：加载导入历史，驱动 Agent SSE 运行，协调分类修正，并渲染独立业务页面。
- * 请求归属：运行 ID 与修正请求序号共同拦截迟到响应，避免旧任务覆盖当前界面。
- * 关键边界：这里只管理跨页面状态；业务展示、解析和账务计算分别留在 feature 与服务端。
+ * 文件职责：组装认证后的工作区与跨页面状态。
+ * 主要内容：导航及期间恢复、导入与运行状态、全局助手、账本搜索跳转、详情定位及账本变更通知。
+ * 关键边界：只协调跨页面状态；异步结果按请求身份隔离，账务计算和权限校验属于服务端。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -137,6 +135,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
       }
     }
     window.dispatchEvent(new Event('bankpilot-logout'))
+    window.history.replaceState(null, '', window.location.pathname)
     try { sessionStorage.removeItem(`assistant:${user.id}`); sessionStorage.removeItem(`assistant-current:${user.id}`) } catch { /* storage unavailable */ }
     clearPendingImport()
     window.history.replaceState(null, '', window.location.pathname + window.location.search)
@@ -278,9 +277,9 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         <IconButton icon="logout" label={copy.logout} disabled={sessionBusy} onClick={logout} />
       </dialog>
 
-      <AssistantPanel userId={user.id} key={user.id} ledgerRevision={ledgerRevision} onInspect={target => {
+      <AssistantPanel onSearchLedger={filters => { setAssistantOpen(false); inspectLedger({ filters, period: { start: filters.start_date, end: filters.end_date } }) }} userId={user.id} key={user.id} ledgerRevision={ledgerRevision} onInspect={target => {
         setAssistantOpen(false)
-        inspectLedger({ transactionId: target.id, period: { start: target.booking_date, end: target.booking_date } })
+        inspectLedger({ transactionId: target.id, version: target.version, period: { start: target.booking_date, end: target.booking_date } })
       }} open={assistantOpen} onClose={() => setAssistantOpen(false)} month={activePage === 'budgets' ? budgetMonth : activePage === 'recurring' ? recurringMonth : activePage === 'overview' ? overviewPeriod.start : reviewPeriod.start} copy={copy} locale={locale} onSaved={() => { planningSaved(); setAssistantRevision(value => value + 1) }} />
       <main className="workspace-shell" id="workspace-main" tabIndex={-1}>
         <header className="workspace-topbar"><button className="assistant-trigger" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(value => !value)}><NavigationIcon kind="agent" />{locale === 'en-US' ? 'Ledger assistant' : '账本助手'}</button></header>

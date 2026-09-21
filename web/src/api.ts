@@ -1,12 +1,7 @@
 /**
- * 文件职责：封装 BankPilot Web 访问 v1 API 的同源 HTTP 请求。
- *
- * 主要内容：
- * - `ApiError`：保留 HTTP 状态码和服务端错误信息。
- * - `request`：统一注入 Cookie 凭证、JSON 请求头和错误处理。
- * - `api`：提供注册、认证、卡片、账单导入、运行、SSE 与分类修正方法。
- *
- * 关键边界：会话由浏览器 Cookie 自动携带，本文件不保存密码或令牌。
+ * 文件职责：封装 Web 对同源 v1 API 的访问。
+ * 主要内容：统一 Cookie、JSON 和错误处理；覆盖认证、导入、账本搜索、核查、关系、规划、月报及持久助手会话。
+ * 关键边界：不持久保存密码或会话令牌；版本与幂等身份由调用方传入，业务事实由服务端裁决。
  */
 
 import type {
@@ -29,6 +24,10 @@ import type {
   TransactionCategory,
   User,
 } from './types'
+
+import type { ProjectionRequest, ReviewProjection } from './features/ledger/LedgerReviews'
+import type { SearchFilters, SearchPage, SearchItem } from './features/ledger/search'
+import type { Conversation } from './features/assistant/types'
 
 import type { AssistantAction, TurnInput, SavedTurn, ConversationPage, ConversationDetail, SpendingPage, SpendingScope, SpendingSummary } from './features/assistant/types'
 
@@ -70,16 +69,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     window.dispatchEvent(new Event('bankpilot:ledger-changed'))
   }
   if (response.status === 204) return undefined as T
+  if (response.headers.get('content-type')?.includes('text/csv')) return await response.text() as T
   return (await response.json()) as T
 }
 
 export const api = {
+  reviewProjection: (payload: ProjectionRequest) => request<ReviewProjection>('/api/v1/reviews/projection', { method: 'POST', body: JSON.stringify(payload) }),
+  search: (filters: SearchFilters, offset = 0, version?: { expected_revision: number; expected_search_version: string }) => request<SearchPage>('/api/v1/transactions/search', { method: 'POST', body: JSON.stringify({ filters, offset, ...version }) }),
+  searchExport: (page: SearchPage) => request<string>('/api/v1/transactions/search/export', { method: 'POST', body: JSON.stringify({ filters: page.filters, expected_revision: page.ledger_revision, expected_search_version: page.search_version }) }),
+  transaction: (id: string, version?: { expected_revision: number; expected_search_version: string }) => request<{ item: SearchItem; ledger_revision: number; search_version: string }>(`/api/v1/transactions/${id}${version ? '?' + new URLSearchParams({ expected_revision: String(version.expected_revision), expected_search_version: version.expected_search_version }) : ''}`),
+  assistantSearchContext: (id: string, filters: SearchFilters | null, expected_context_version: number) => request<Conversation>(`/api/v1/assistant/conversations/${id}/search-context`, { method: 'PUT', body: JSON.stringify({ filters, expected_context_version }) }),
   assistantTurn: (payload: TurnInput) => request<SavedTurn>('/api/v1/assistant/turns', { method: 'POST', body: JSON.stringify(payload) }),
   assistantLookup: (payload: Pick<TurnInput, 'request_id' | 'conversation_id' | 'creation_id'>) => request<SavedTurn>(`/api/v1/assistant/turns/${payload.request_id}?${new URLSearchParams(payload.conversation_id ? { conversation_id: payload.conversation_id } : { creation_id: payload.creation_id! })}`),
   assistantHistory: (cursor?: string) => request<ConversationPage>(`/api/v1/assistant/conversations${cursor ? `?cursor=${cursor}` : ''}`),
   assistantConversation: (id: string, before?: number) => request<ConversationDetail>(`/api/v1/assistant/conversations/${id}${before ? `?before=${before}` : ''}`),
   assistantDelete: (id: string) => request(`/api/v1/assistant/conversations/${id}/delete`, { method: 'POST' }),
-  assistantScope: (id: string, month: string, spending_context: SpendingScope | null) => request(`/api/v1/assistant/conversations/${id}/scope`, { method: 'POST', body: JSON.stringify({ month, spending_context }) }),
+  assistantScope: (id: string, month: string, spending_context: SpendingScope | null, expected_context_version: number) => request<Conversation>(`/api/v1/assistant/conversations/${id}/scope`, { method: 'POST', body: JSON.stringify({ month, spending_context, expected_context_version }) }),
   spendingEvidence: (summary: SpendingSummary, page: number) => {
     const params = new URLSearchParams({ ...summary.scope, expected_revision: String(summary.ledger_revision), expected_calculation_version: summary.calculation_version, page: String(page) })
     return request<SpendingPage>(`/api/v1/assistant/spending-evidence?${params}`)
@@ -110,7 +115,7 @@ export const api = {
   renameAccount: (id: string, name: string) => request<void>(`/api/v1/accounts/${id}/name`, { method: 'POST', body: JSON.stringify({ name }) }),
   decodeImport: (file_name: string, data: string) => request<{content: string; content_digest: string}>('/api/v1/imports/decode', {method: 'POST', body: JSON.stringify({file_name, data})}),
   reviews: (start: string, end: string) => request<{ summaries: CurrencySummary[]; items: ReviewItem[] }>(`/api/v1/reviews?start_date=${start}&end_date=${end}`),
-  saveReview: (start: string, end: string, key: string, state: ReviewItem['state'], note: string) => request<void>('/api/v1/reviews', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end, key, state, note }) }),
+  saveReview: (start: string, end: string, key: string, state: ReviewItem['state'], note: string, expected_revision: number) => request<void>('/api/v1/reviews', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end, key, state, note, expected_revision }) }),
   runHistory: () => request<{ items: { id: string; message: string; status: string; created_at: string }[] }>('/api/v1/run-history'),
   register: (email: string, password: string) =>
     request<User>('/api/v1/auth/register', {
@@ -127,7 +132,7 @@ export const api = {
   logout: () => request<void>('/api/v1/auth/logout', { method: 'POST' }),
   listAccounts: () => request<{ items: Account[] }>('/api/v1/accounts'),
   ledger: (start: string, end: string) => request<RunResult['transactions']>(`/api/v1/transactions?start_date=${start}&end_date=${end}`),
-  correctLedgerCategory: (id: string, category: TransactionCategory) => request<void>(`/api/v1/transactions/${id}/category`, { method: 'POST', body: JSON.stringify({ category }) }),
+  correctLedgerCategory: (id: string, category: TransactionCategory, expected_revision: number) => request<void>(`/api/v1/transactions/${id}/category`, { method: 'POST', body: JSON.stringify({ category, expected_revision }) }),
   listImports: () => request<ImportBatchList>('/api/v1/imports'),
   detectImport: (content: string) => request<{ source: string; headers: string[]; mapping: ImportFieldMapping; account_name: string | null; currency: string | null }>('/api/v1/imports/detect', { method: 'POST', body: JSON.stringify({ content }) }),
   revokeImport: (id: string) => request<void>(`/api/v1/imports/${id}/revoke`, { method: 'POST' }),
@@ -144,10 +149,10 @@ export const api = {
       body: JSON.stringify({ message }),
     }),
   getRun: (runId: string) => request<Run>(`/api/v1/runs/${runId}`),
-  correctCategory: (runId: string, transactionId: string, category: TransactionCategory) =>
+  correctCategory: (runId: string, transactionId: string, category: TransactionCategory, expected_revision: number) =>
     request<Run>(`/api/v1/runs/${runId}/transactions/${transactionId}/category`, {
       method: 'POST',
-      body: JSON.stringify({ category }),
+      body: JSON.stringify({ category, expected_revision }),
     }),
   watchRunEvents: (
     runId: string,

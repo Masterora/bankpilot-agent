@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.db.models import TransactionRecord
 from bankpilot.db.transaction_repository import TransactionRepository
+from bankpilot.db.user_repository import UserRepository
 from bankpilot.domain.bill_analysis import classify_transaction
 from bankpilot.domain.contracts import TransactionCategory, TransactionItem, TransactionResult
 
@@ -36,6 +37,7 @@ class LocalBankingGateway:
         return TransactionResult(
             start_date=start_date,
             end_date=end_date,
+            ledger_revision=await UserRepository(self.repository.session).ledger_revision(user_id),
             items=[
                 self._to_item(transaction, account_name, override)
                 for transaction, account_name, override in rows

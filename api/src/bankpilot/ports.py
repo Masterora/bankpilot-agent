@@ -1,14 +1,9 @@
 """
-文件职责：定义核心流程依赖的抽象端口。
-
-主要内容：
-- `ModelGateway`：将用户语言转换为模型计划。
-- `BankingGateway`：按用户和日期范围查询交易。
-- `ReviewGateway`：原子读取期间交易与核查证据，保留独立账本浏览契约。
-
-关键边界：业务工作流只依赖这些 `Protocol`，不直接依赖供应商或数据库实现。
+文件职责：定义工作流与助手依赖的抽象能力端口。
+主要内容：ModelGateway 规划、AssistantGateway 工具决策、BankingGateway 账本读取，
+以及 ReviewGateway 一致快照核查。
+关键边界：核心流程依赖 Protocol，不直接依赖模型供应商或具体数据库实现。
 """
-
 from datetime import date
 from typing import Protocol
 from uuid import UUID

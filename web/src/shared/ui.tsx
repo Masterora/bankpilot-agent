@@ -1,11 +1,10 @@
 /**
- * 文件职责：提供跨业务页面复用的品牌、语言、标题、导航图标与加载组件。
- *
- * 主要内容：`Logo`、`LanguageSwitch`、`PageHeader`、`NavigationIcon` 和 `LoadingScreen`。
- * 关键边界：共享组件只负责显示和回调，不读取业务数据或调用 API。
+ * 文件职责：提供共享显示与基础交互组件。
+ * 主要内容：语言切换、页面标题、导航图标、空状态、加载提示、图标按钮和带结果反馈的复制。
+ * 关键边界：不读取业务数据或调用 API；复制仅由点击触发，失败保留原文供手动选择。
  */
 
-import type { ComponentProps, ReactNode } from 'react'
+import { useState, type ComponentProps, type ReactNode } from 'react'
 
 import type { Locale, Messages, ProductPage } from '../i18n'
 
@@ -105,4 +104,17 @@ export function IconButton({ icon, label, className = '', ...props }: Omit<Compo
   label: string
 }) {
   return <button {...props} type={props.type ?? 'button'} className={`icon-button ${className}`.trim()} aria-label={label} title={label}><ActionIcon kind={icon} /></button>
+}
+
+/** 只在点击时访问剪贴板；失败保留原文供手动选择。 */
+export function CopyValue({ value, english }: { value: string; english: boolean }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle')
+  async function copy() {
+    if (state === 'busy') return
+    setState('busy')
+    try { await navigator.clipboard.writeText(value); setState('done') }
+    catch { setState('failed') }
+  }
+  return <><span className="copy-value"><code>{value}</code><button type="button" disabled={state === 'busy'} aria-busy={state === 'busy'} onClick={() => void copy()}>{english ? 'Copy' : '复制'}</button></span>
+    <span className="copy-feedback" role="status">{state === 'done' ? (english ? 'Copied' : '已复制') : state === 'failed' ? (english ? 'Select the text to copy manually.' : '请选中文字手动复制。') : ''}</span></>
 }

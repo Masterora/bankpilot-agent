@@ -1,4 +1,9 @@
-/** 助手对话、只读证据与服务端冻结的预算提案。 */
+/**
+ * 文件职责：定义助手界面消费的对话和证据类型。
+ * 主要内容：会话轮次、消费与搜索上下文、工具证据、冻结预算提案及账本详情定位。
+ * 关键边界：与服务端契约保持一致，不把展示类型当成权限或写入校验。
+ */
+import type { SearchFilters, SearchPage } from '../ledger/search'
 import type {
   BudgetEvidence,
   BudgetInput,
@@ -22,6 +27,7 @@ export interface AssistantAction {
   result: BudgetItem | null
 }
 export type Evidence =
+  | { tool: 'find_transactions'; data: SearchPage }
   | { tool: 'spending'; month: string; data: SpendingSummary }
   | { tool: 'budgets'; month: string; data: Omit<BudgetWorkspace, 'evidence'> & { spending_refs: SpendingSummary[] } }
   | { tool: 'recurring'; month: string; data: Omit<RecurringWorkspace, 'candidates'> }
@@ -56,7 +62,7 @@ export interface SpendingPage {
   total: number
   items: BudgetEvidence[]
 }
-export interface EvidenceTarget { id: string; booking_date: string }
+export interface EvidenceTarget { id: string; booking_date: string; version?: { expected_revision: number; expected_search_version: string } }
 
 export function spendingRefs(evidence: Evidence[]): SpendingSummary[] {
   const refs = evidence.flatMap(item => item.tool === 'spending' ? [item.data] : item.tool === 'budgets' ? item.data.spending_refs : [])
@@ -69,7 +75,8 @@ export function spendingRefs(evidence: Evidence[]): SpendingSummary[] {
 }
 
 export interface TurnInput {
-  protocol_version: 2
+  protocol_version: 3
+  expected_context_version: number
   request_id: string
   conversation_id?: string
   creation_id?: string
@@ -94,6 +101,8 @@ export interface SavedTurn {
   error_code: string | null
 }
 export interface Conversation {
+  search_context: SearchFilters | null
+  context_version: number
   id: string
   title: string
   month: string

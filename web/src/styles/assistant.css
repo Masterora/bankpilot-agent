@@ -1,4 +1,8 @@
-/* 全局对话侧栏：结果与证据分层，不将模型文本解析成 HTML。 */
+/**
+ * 文件职责：定义全局助手侧栏及对话证据样式。
+ * 主要内容：消息、工具结果、提案操作和证据区域的布局与视觉状态。
+ * 关键边界：只控制呈现，不决定模型文本解析或业务交互规则。
+ */
 .assistant-evidence, .assistant-proposal p { color: var(--muted); font-size: 12px; line-height: 1.7; }
 .assistant-turn { padding: 18px 0; border-bottom: 1px solid var(--line); }
 .assistant-question { margin: 0 0 18px; padding-left: 12px; border-left: 2px solid var(--accent); color: var(--text); }

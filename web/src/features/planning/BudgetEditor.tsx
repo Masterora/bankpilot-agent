@@ -1,4 +1,8 @@
-/** 预算编辑侧栏：字段输入、上月参考和版本冲突的显式确认。 */
+/**
+ * 文件职责：提供月度预算编辑侧栏。
+ * 主要内容：预算字段、上月参考、保存状态和版本冲突后的显式处理。
+ * 关键边界：失败保留输入；最终金额与版本校验由服务端完成。
+ */
 import type { Locale, Messages } from '../../i18n'
 import { formatMoney } from '../../format'
 import { DetailPanel } from '../../shared/DetailPanel'

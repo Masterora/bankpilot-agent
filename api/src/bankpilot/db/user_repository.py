@@ -1,16 +1,13 @@
 """
-文件职责：封装用户与登录会话持久化。
-
-主要内容：提供用户查询创建、用户写锁、修订号读取，以及会话创建解析和删除。
-
-关键边界：只保存密码哈希和令牌哈希，过期会话不得解析为用户。
+文件职责：封装用户、账本修订号与登录会话持久化。
+主要内容：用户查询创建及写锁、修订号读取和原子递增、会话创建解析及单个或其他会话撤销。
+关键边界：只保存密码与令牌哈希；不隐式提交，修订号递增与业务写入必须处于同一事务。
 """
-
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.db.models import SessionRecord, UserRecord
@@ -39,6 +36,15 @@ class UserRepository:
             select(UserRecord.ledger_revision).where(UserRecord.id == user_id)
         )
         return revision
+
+    async def bump_revision(self, user_id: UUID) -> None:
+        """在调用方事务中原子递增修订号，不单独提交。"""
+        await self.session.execute(
+            update(UserRecord)
+            .where(UserRecord.id == user_id)
+            .values(ledger_revision=UserRecord.ledger_revision + 1)
+            .execution_options(synchronize_session=False)
+        )
 
     async def add(self, *, email: str, password_hash: str) -> UserRecord:
         user = UserRecord(email=email.lower(), password_hash=password_hash)

@@ -1,4 +1,8 @@
-/** API 错误展示：业务按稳定错误码提供文案，通用状态只在这里处理。 */
+/**
+ * 文件职责：统一前端 API 错误展示。
+ * 主要内容：按稳定业务码查找文案，处理通用 HTTP 状态及未知失败。
+ * 关键边界：业务模块提供专属提示；不将内部异常详情直接展示给用户。
+ */
 import { ApiError } from '../api'
 
 export type ErrorMessages = Record<string, readonly [string, string]>

@@ -1,4 +1,8 @@
-/** 固定支出编辑侧栏：周期起点、账户选择、未来配置与并发冲突。 */
+/**
+ * 文件职责：提供固定支出配置编辑侧栏。
+ * 主要内容：周期起点、金额账户、未来生效配置、提交状态与版本冲突提示。
+ * 关键边界：只提交用户确认的配置，不执行扣款；并发和生效日期由服务端裁决。
+ */
 import type { Locale } from '../../i18n'
 import { formatMoney } from '../../format'
 import { DetailPanel } from '../../shared/DetailPanel'

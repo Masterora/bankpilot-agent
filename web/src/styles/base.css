@@ -276,3 +276,18 @@ button.icon-button .nav-icon { width: 18px; height: 18px; }
 button.icon-button.menu-toggle { display: none; }
 @media (max-width: 900px) { button.icon-button.menu-toggle { display: inline-flex; width: 44px; height: 44px; } }
 @media (pointer: coarse) { button.icon-button { width: 44px; height: 44px; } }
+
+/* Search shares the established workspace surface and fixed assistant width. */
+.search-form { display: grid; gap: 12px; margin-block: 16px; min-width: 0; }
+.search-form > button { justify-self: start; min-width: 100px; }
+.search-form label { display: grid; gap: 6px; min-width: 0; }
+.search-form input, .search-form select { width: 100%; min-width: 0; }
+.search-form details > summary { cursor: pointer; padding-block: 12px; }
+.assistant-search-result { min-width: 0; margin-block: 16px; overflow-wrap: anywhere; }
+.assistant-search-result ul { list-style: none; padding: 0; }
+.assistant-search-result li button { width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; margin-block: 4px; }
+.assistant-search-result .ledger-filters { display: grid; grid-template-columns: minmax(0, 1fr); }
+.assistant-search-result nav { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+@media (max-width: 600px) {
+  .search-form .ledger-filters { display: grid; grid-template-columns: minmax(0, 1fr); }
+}

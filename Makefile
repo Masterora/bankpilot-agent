@@ -1,7 +1,7 @@
-# 文件职责：提供 BankPilot 本地开发与质量检查的统一命令入口。
-# 主要内容：安装、迁移、数据初始化、API/Web 启动与静态验证。
-# 关键边界：`verify` 覆盖静态检查、构建与生命周期回归，业务验收需单独运行。
-.PHONY: install migrate seed api web verify verify-assets verify-business verify-interactions verify-model verify-conversations
+# 文件职责：提供本地开发与验证的统一命令入口。
+# 主要内容：安装、迁移、初始化、API/Web 启动，以及静态、业务、交互、对话、搜索和模型验收入口。
+# 关键边界：verify 不代表全部业务或真实模型通过；真实模型验收需要显式配置和外部用量授权。
+.PHONY: install migrate seed api web verify verify-assets verify-business verify-interactions verify-model verify-conversations verify-search
 
 install:
 	cd api && uv sync --all-groups
@@ -43,3 +43,7 @@ verify-model:
 
 verify-conversations:
 	cd api && uv run python ../scripts/acceptance/conversations.py
+
+verify-search:
+	cd api && uv run python ../scripts/acceptance/search.py
+	node scripts/acceptance/search-frontend.cjs

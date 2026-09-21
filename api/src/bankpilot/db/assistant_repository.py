@@ -1,5 +1,8 @@
-"""助手提案持久化：按用户锁定提案，事务由调用方提交。"""
-
+"""
+文件职责：封装助手会话、轮次与预算提案持久化。
+主要内容：用户锁、会话归属查询、过期轮次收敛、历史删除及提案锁定与保存。
+关键边界：查询限定用户归属，事务由调用方提交，不在仓储中调用模型或批准提案。
+"""
 from uuid import UUID
 
 from sqlalchemy import delete, func, select, update
@@ -82,3 +85,5 @@ async def delete_history(session: AsyncSession, row: AssistantConversationRecord
     row.title = None
     row.month = None
     row.scope = None
+    row.search_context = None
+    row.context_version += 1

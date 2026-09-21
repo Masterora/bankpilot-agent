@@ -1,9 +1,11 @@
-"""Persist assistant conversations and fenced turns.
+"""
+文件职责：增加持久助手会话和可恢复轮次结构。
+主要内容：创建会话、轮次、受理身份、状态与写回隔离字段及相应约束。
+关键边界：历史与请求按用户归属隔离；表结构本身不执行模型调用或恢复任务。
 
 Revision ID: 20260921_0013
 Revises: 20260916_0012
 """
-
 import sqlalchemy as sa
 from alembic import op
 

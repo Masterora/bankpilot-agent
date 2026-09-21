@@ -175,6 +175,7 @@ async def correct_transaction_category(
         user_id=user.id,
         transaction_id=transaction_id,
         category=payload.category.value,
+        expected_revision=payload.expected_revision,
     )
     if transaction is None:
         raise ApiProblem(

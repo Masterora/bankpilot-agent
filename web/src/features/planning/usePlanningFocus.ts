@@ -1,4 +1,8 @@
-/** 文件职责：从总览进入具体待办后定位卡片，不改变数据和表单。 */
+/**
+ * 文件职责：将总览待办跳转定位到规划卡片。
+ * 主要内容：按目标标识滚动、聚焦并处理定位时机。
+ * 关键边界：只改变视图焦点，不修改业务数据或表单输入。
+ */
 import { useEffect } from 'react'
 export function usePlanningFocus(target: string, loading: boolean, active: boolean) {
   useEffect(() => {

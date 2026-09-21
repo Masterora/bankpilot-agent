@@ -1,15 +1,14 @@
 /**
  * 文件职责：展示月报详情、快照证据与操作确认。
- * 主要内容：状态说明、生成/导出/删除操作、分类和原始证据展示。
- * 关键边界：只展示服务端快照；确认与证据展开状态属于当前报告，不发起后台轮询。
+ * 主要内容：状态、生成导出删除、分类与原始证据，以及快照 CSV 转换。
+ * 关键边界：仅展示冻结快照；CSV 转义文本并防止公式执行，确认与展开状态属于当前报告。
  */
 import { useState } from 'react'
 
 import { formatMoney } from '../../format'
 import type { Locale, Messages } from '../../i18n'
-import type { ReportDetail } from '../../types'
+import type { ReportDetail, Transaction } from '../../types'
 import { ReportSummary } from './ReportSummary'
-import { ledgerCsv } from '../../shared/ledgerExport'
 import { downloadFile } from '../../shared/download'
 import { ReviewSnapshot } from '../agent/ReviewSnapshot'
 
@@ -144,4 +143,11 @@ export function ReportDetailPanel({
       )}
     </article>
   )
+}
+
+/** 文本转义并阻止表格公式执行；金额字段仅接受服务端数字字符串。 */
+function ledgerCsv(items: Transaction[]): string {
+  const cell = (value: string) => `"${(/^[\s]*[=+@-]/.test(value) ? `'${value}` : value).replaceAll('"', '""')}"`
+  return '\ufeff' + ['Date,Time UTC,Precision,Account,Merchant,Amount,Currency,Category,Batch,Source row,Description', ...items.map((i) =>
+    [cell(i.booking_date), cell(i.time_precision === 'timestamp' ? new Date(i.occurred_at).toISOString().replace(/\.\d{3}Z$/, 'Z') : ''), cell(i.time_precision ?? 'unknown'), cell(i.account_name), cell(i.merchant), /^-?\d+(\.\d+)?$/.test(i.amount) ? i.amount : cell(i.amount), cell(i.currency), cell(i.category), cell(i.import_batch_id ?? ''), String(i.source_row_number ?? ''), cell(i.description)].join(','))].join('\r\n')
 }

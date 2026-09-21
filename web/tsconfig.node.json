@@ -1,3 +1,8 @@
+/**
+ * 文件职责：配置构建工具代码的 TypeScript 检查。
+ * 主要内容：Vite 配置的运行库、模块解析、严格检查与增量信息路径。
+ * 关键边界：作用于工具侧配置，不向浏览器应用引入 Node 运行依赖。
+ */
 {
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",

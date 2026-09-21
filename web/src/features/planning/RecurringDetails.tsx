@@ -1,4 +1,8 @@
-/** 固定支出详情：期次核对、计划状态及未来配置操作；确认状态按项目隔离。 */
+/**
+ * 文件职责：展示固定支出计划详情与操作入口。
+ * 主要内容：逐期核对、计划状态、未来配置修订及相关确认。
+ * 关键边界：确认状态按项目隔离；历史配置不能由界面直接覆盖。
+ */
 import type { Locale } from '../../i18n'
 import { formatMoney } from '../../format'
 import { DetailPanel } from '../../shared/DetailPanel'

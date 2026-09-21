@@ -1,3 +1,8 @@
+/**
+ * 文件职责：提供当前账户密码修改表单。
+ * 主要内容：旧密码、新密码与确认输入、提交反馈及成功后字段清理。
+ * 关键边界：密码只保留在组件内存；由服务端验证并撤销其他会话，不保存明文凭据。
+ */
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, ApiError } from '../../api'

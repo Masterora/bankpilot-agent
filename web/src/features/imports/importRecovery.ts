@@ -1,4 +1,8 @@
-/** 文件职责：保存当前标签页的一次待确认导入；不存文件内容或凭据。 */
+/**
+ * 文件职责：保存当前标签页待确认导入的恢复信息。
+ * 主要内容：读写和清理 sessionStorage 中的用户身份、幂等键、摘要与导入配置。
+ * 关键边界：不保存文件正文或凭据；不同用户的记录清除，无效记录显式报错。
+ */
 import type { ImportStatementPayload } from '../../types'
 
 export const IMPORT_RECOVERY_KEY = 'bankpilot.import.pending'

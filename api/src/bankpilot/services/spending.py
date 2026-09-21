@@ -1,5 +1,8 @@
-"""共享消费贡献：完整月份统计、稳定分页及账本/计算版本校验。调用方拥有事务。"""
-
+"""
+文件职责：生成预算与助手共享的确定性消费证据。
+主要内容：完整月份消费贡献、退款原消费关联、分类汇总、稳定分页及账本和计算版本校验。
+关键边界：调用方拥有一致快照事务；超限或版本过期明确失败，不以局部结果冒充完整统计。
+"""
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal

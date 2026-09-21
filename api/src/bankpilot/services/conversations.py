@@ -1,5 +1,8 @@
-"""Durable conversation lifecycle; short transactions fence completion and proposal creation."""
-
+"""
+文件职责：管理持久助手会话和可恢复轮次生命周期。
+主要内容：轮次幂等提交、受理上下文快照、过期恢复、历史读取及迟到结果和提案写回隔离。
+关键边界：通过短事务与版本约束写回；等待模型不占用数据库事务，删除或过期后不得复活旧结果。
+"""
 import asyncio
 import hashlib
 import json
@@ -31,6 +34,7 @@ from bankpilot.domain.assistant import (
     TurnView,
 )
 from bankpilot.domain.planning import BudgetInput
+from bankpilot.domain.transaction_search import SearchFilters
 from bankpilot.errors import BankPilotError, PlanningError
 from bankpilot.ports import AssistantGateway
 from bankpilot.services.assistant import action_view, chat
@@ -80,7 +84,7 @@ async def current_action(session: AsyncSession, row: AssistantActionRecord) -> d
 
 async def turn_view(session: AsyncSession, row: AssistantTurnRecord) -> TurnView:
     reply = dict(row.result) if row.result else None
-    if reply and row.result_version != 1:
+    if reply and row.result_version not in (1, 2):
         reply = {
             "text": str(reply.get("text", "")),
             "evidence": [],
@@ -177,6 +181,12 @@ class ConversationService:
                 if old.digest != digest:
                     raise PlanningError("assistant_request_conflict", 409)
                 return await turn_view(session, old)
+            if row.context_version != payload.expected_context_version:
+                raise PlanningError("assistant_context_stale", 409)
+            search_context = (
+                SearchFilters.model_validate(row.search_context) if row.search_context else None
+            )
+            row.context_version += 1
             count = (
                 await session.scalar(
                     select(func.count())
@@ -208,6 +218,8 @@ class ConversationService:
             now = await database_now(session)
             turn: AssistantTurnRecord | None = AssistantTurnRecord(
                 conversation_id=row.id,
+                search_context=row.search_context,
+                result_version=2,
                 request_id=payload.request_id,
                 digest=digest,
                 sequence=count + 1,
@@ -231,7 +243,7 @@ class ConversationService:
                         .where(
                             AssistantTurnRecord.conversation_id == row.id,
                             AssistantTurnRecord.status == "completed",
-                            AssistantTurnRecord.result_version == 1,
+                            AssistantTurnRecord.result_version.in_((1, 2)),
                         )
                         .order_by(AssistantTurnRecord.sequence.desc())
                         .limit(7)
@@ -265,6 +277,7 @@ class ConversationService:
                         month=payload.month,
                         locale=payload.locale,
                         spending_context=payload.spending_context,
+                        search_context=search_context,
                     ),
                     today,
                 )

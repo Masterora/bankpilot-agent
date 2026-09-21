@@ -1,7 +1,8 @@
-"""文件职责：备份一致性核对与离线任务恢复。
-关键边界：不启动 API/模型/消费者；恢复连接显式提供，核对只读，准备仅修改恢复库。
 """
-
+文件职责：核对备份一致性并准备离线任务恢复。
+主要内容：生成结构与数据证据、校验数据库身份、收敛恢复库中的运行和助手任务状态。
+关键边界：不启动 API、模型或消费者；连接显式提供，核对只读，准备仅修改指定恢复库。
+"""
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -158,7 +159,14 @@ async def prepare_restored_tasks(session: AsyncSession) -> dict[str, int]:
     )
     await session.execute(delete(AssistantTurnRecord))
     await session.execute(
-        update(AssistantConversationRecord).values(deleted=True, title=None, month=None, scope=None)
+        update(AssistantConversationRecord).values(
+            deleted=True,
+            title=None,
+            month=None,
+            scope=None,
+            search_context=None,
+            context_version=0,
+        )
     )
     await session.execute(delete(SessionRecord))
     return result

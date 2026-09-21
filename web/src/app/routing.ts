@@ -1,7 +1,7 @@
 /**
  * 文件职责：管理工作区可恢复的 URL 导航状态。
  * 主要内容：页面与期间解析、历史记录写入、浏览器前进后退订阅。
- * 关键边界：URL 仅保存页面和日期，不保存文件、凭据或账单内容。
+ * 关键边界：URL hash 保存页面、日期与已提交查找条件，不保存凭据或文件；退出时清理。
  */
 import { useEffect, useState } from 'react'
 import { pageDefinitions } from './pages'
@@ -42,7 +42,7 @@ export function useWorkspaceRoute(locked = { budgets: false, recurring: false })
       window.history.replaceState(
         null,
         '',
-        `#${new URLSearchParams({ page: next.page, ...next.period, overviewStart: next.overviewPeriod.start, overviewEnd: next.overviewPeriod.end, budgetMonth: next.budgetMonth, recurringMonth: next.recurringMonth })}`,
+        `#${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(window.location.hash.slice(1))), page: next.page, ...next.period, overviewStart: next.overviewPeriod.start, overviewEnd: next.overviewPeriod.end, budgetMonth: next.budgetMonth, recurringMonth: next.recurringMonth })}`,
       )
       setRoute(next)
     }
@@ -51,7 +51,7 @@ export function useWorkspaceRoute(locked = { budgets: false, recurring: false })
       window.history.replaceState(
         null,
         '',
-        `#${new URLSearchParams({ page: initial.page, ...initial.period, overviewStart: initial.overviewPeriod.start, overviewEnd: initial.overviewPeriod.end, budgetMonth: initial.budgetMonth, recurringMonth: initial.recurringMonth })}`,
+        `#${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(window.location.hash.slice(1))), page: initial.page, ...initial.period, overviewStart: initial.overviewPeriod.start, overviewEnd: initial.overviewPeriod.end, budgetMonth: initial.budgetMonth, recurringMonth: initial.recurringMonth })}`,
       )
     }
     window.addEventListener('popstate', restore)
@@ -71,7 +71,7 @@ export function useWorkspaceRoute(locked = { budgets: false, recurring: false })
     const recurringMonth = page === 'recurring' && month ? month : route.recurringMonth
     setRoute({ page, period, overviewPeriod, budgetMonth, recurringMonth })
     if (!validPeriod(period)) return
-    const hash = `#${new URLSearchParams({ page, ...period, overviewStart: overviewPeriod.start, overviewEnd: overviewPeriod.end, budgetMonth, recurringMonth })}`
+    const hash = `#${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(window.location.hash.slice(1))), page, ...period, overviewStart: overviewPeriod.start, overviewEnd: overviewPeriod.end, budgetMonth, recurringMonth })}`
     if (window.location.hash !== hash) window.history.pushState(null, '', hash)
   }
   return {

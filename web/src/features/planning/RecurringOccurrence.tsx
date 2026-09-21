@@ -1,4 +1,8 @@
-/** 文件职责：逐期扣款核对与跨月候选选择；迟到查询不覆盖当前月份。 */
+/**
+ * 文件职责：提供单个周期期次的流水核对。
+ * 主要内容：候选查询、跨月选择、匹配解绑及未发生确认。
+ * 关键边界：迟到查询不覆盖当前月份；关联与金额合法性由服务端校验。
+ */
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { formatMoney } from '../../format'

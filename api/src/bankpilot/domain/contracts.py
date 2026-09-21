@@ -130,6 +130,7 @@ class TransactionItem(BaseModel):
 
 
 class TransactionResult(BaseModel):
+    ledger_revision: int | None = None
     start_date: date
     end_date: date
     items: list[TransactionItem]

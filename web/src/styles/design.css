@@ -1,5 +1,8 @@
-/* BankPilot product design: dense dark workspace, readable evidence, consistent controls.
- * Structural primitives live in shell/features; this file owns the product visual system. */
+/**
+ * 文件职责：定义产品工作区的视觉系统与组件覆盖样式。
+ * 主要内容：深色表面、信息密度、控件、证据阅读和响应式细节。
+ * 关键边界：复用基础变量与布局结构；只改变外观，不承载业务状态。
+ */
 body { font-variant-numeric: tabular-nums; }
 button, a, input, select, textarea, summary { transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; }
 button { font-size: 13px; border-radius: var(--radius-control); }

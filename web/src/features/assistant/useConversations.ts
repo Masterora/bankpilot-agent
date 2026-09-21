@@ -1,12 +1,21 @@
-/** Durable history and same-request recovery, scoped to the authenticated user and view. */
+/**
+ * 文件职责：管理持久会话历史、轮次提交及同请求恢复。
+ * 主要内容：会话列表和选择、轮次查询、待确认请求身份保存、上下文更新及删除。
+ * 关键边界：状态按用户与视图隔离；恢复查询原请求，不自动重放写入，退出后迟到结果不得重建恢复状态。
+ */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../../api'
+import type { SearchFilters } from '../ledger/search'
 import type { Conversation, SavedTurn, SpendingScope, TurnInput } from './types'
 
 export function useConversations(userId: string, open: boolean, initialMonth: string) {
   const [items, setItems] = useState<Conversation[]>([])
   const [turns, setTurns] = useState<SavedTurn[]>([])
   const [id, setId] = useState<string | null>(null)
+  const [searchContext, setSearchContext] = useState<SearchFilters | null>(null)
+  const [contextVersion, setContextVersion] = useState(0)
+  const [searchUnsaved, setSearchUnsaved] = useState(false)
+  const contextEpoch = useRef(0)
   const [scope, setScope] = useState<SpendingScope | null>(null)
   const [month, setMonth] = useState(`${initialMonth.slice(0, 7)}-01`)
   const [cursor, setCursor] = useState<string | null>(null)
@@ -45,6 +54,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   }, [])
   const load = useCallback(async (target: string, earlier?: number) => {
     const version = ++epoch.current
+    contextEpoch.current++
     active.current = target
     setId(target)
     if (!earlier) setTurns([])
@@ -60,6 +70,9 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     setLoading(false)
     setTurns(old => earlier ? [...result.turns, ...old] : result.turns)
     setScope(result.conversation.scope)
+    setSearchContext(result.conversation.search_context)
+    setContextVersion(result.conversation.context_version)
+    setSearchUnsaved(false)
     setMonth(result.conversation.month)
     setBefore(result.next_before)
     setLimit(result.turn_limit)
@@ -76,7 +89,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
         const raw = sessionStorage.getItem(key)
         if (raw) {
           const payload: TurnInput = JSON.parse(raw)
-          if (payload.protocol_version === 2 && payload.request_id && typeof payload.question === 'string') {
+          if (payload.protocol_version === 3 && payload.request_id && typeof payload.question === 'string') {
             recovery.current = payload
             setUnknown(payload)
             const turn = await api.assistantLookup(payload).catch(() => null)
@@ -160,6 +173,8 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   }
   function fresh(inherit = false) {
     epoch.current++
+    contextEpoch.current++
+    setContextVersion(0); setSearchContext(null); setSearchUnsaved(false)
     active.current = null
     setId(null); setTurns([]); setBefore(null); setError(null); setLoading(false)
     if (!inherit) { setScope(null); setMonth(`${initialMonth.slice(0, 7)}-01`) }
@@ -169,12 +184,31 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     const target = active.current
     if (target) {
       setLoading(true)
-      try { await api.assistantScope(target, value?.month ?? month, value) }
+      try { const saved = await api.assistantScope(target, value?.month ?? month, value, contextVersion); if (target === active.current && alive.current) setContextVersion(saved.context_version) }
       finally { if (target === active.current && alive.current) setLoading(false) }
     }
     if (target !== active.current || !alive.current) return
     setScope(value)
     if (value) setMonth(value.month)
+  }
+  async function selectSearch(filters: SearchFilters | null) {
+    const target = active.current
+    if (!target) throw new Error('Select a conversation first')
+    const version = ++contextEpoch.current
+    setSearchUnsaved(true)
+    try {
+      let saved
+      try { saved = await api.assistantSearchContext(target, filters, contextVersion) }
+      catch (cause) {
+        // A lost success response must be reconciled before retrying a write.
+        if (cause instanceof ApiError && cause.status < 500) throw cause
+        const current = await api.assistantConversation(target)
+        if (current.conversation.context_version !== contextVersion + 1 || JSON.stringify(current.conversation.search_context) !== JSON.stringify(filters)) throw cause
+        saved = current.conversation
+      }
+      if (!alive.current || active.current !== target || contextEpoch.current !== version) return
+      setSearchContext(saved.search_context); setContextVersion(saved.context_version); setSearchUnsaved(false)
+    } catch (cause) { if (alive.current && active.current === target) setError(cause); throw cause }
   }
   async function remove() {
     if (!id) return
@@ -183,6 +217,6 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     fresh()
     await list()
   }
-  return { items, turns, setTurns, id, scope, month, cursor, before, limit, unknown, storageFailed,
+  return { searchContext, contextVersion, searchUnsaved, selectSearch, setSearchUnsaved, items, turns, setTurns, id, scope, month, cursor, before, limit, unknown, storageFailed,
     error, setError, loading, processing, load, list, send, lookup, fresh, selectScope, remove }
 }

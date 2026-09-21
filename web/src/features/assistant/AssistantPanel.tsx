@@ -1,4 +1,8 @@
-/** 全局助手：会话保存在服务端，确认操作使用服务端提案 ID。 */
+/**
+ * 文件职责：提供工作区全局助手界面。
+ * 主要内容：会话选择、历史恢复、输入提交、消费和搜索上下文、证据展开及提案确认取消。
+ * 关键边界：会话由服务端持久保存，金融写入使用服务端提案身份并要求用户显式确认。
+ */
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
@@ -10,6 +14,8 @@ import { LoadingIndicator } from '../../shared/ui'
 import type { AssistantAction } from './types'
 import { AssistantEvidence } from './AssistantEvidence'
 import { SpendingDetails } from './SpendingDetails'
+import { SearchResultCard } from './SearchResultCard'
+import type { SearchFilters } from '../ledger/search'
 import { useConversations } from './useConversations'
 import type { EvidenceTarget, SpendingScope, SpendingSummary } from './types'
 export function AssistantPanel({
@@ -22,6 +28,7 @@ export function AssistantPanel({
   onSaved,
   ledgerRevision,
   onInspect,
+  onSearchLedger,
 }: {
   userId: string
   open: boolean
@@ -31,6 +38,7 @@ export function AssistantPanel({
   locale: Locale
   onSaved: () => void
   ledgerRevision: number
+  onSearchLedger: (filters: SearchFilters) => void
   onInspect: (target: EvidenceTarget) => void
 }) {
   const history = useConversations(userId, open, month)
@@ -62,7 +70,7 @@ export function AssistantPanel({
   const english = locale === 'en-US'
   const t = (zh: string, en: string) => (english ? en : zh)
   const loadedRevision = useRef(ledgerRevision)
-  const pending = history.processing || !!history.unknown
+  const pending = history.processing || !!history.unknown || history.searchUnsaved
   const money = (amount: string, currency: string) => formatMoney(amount, currency, locale)
   const describe = (action: AssistantAction) => {
     const p = action.payload
@@ -120,7 +128,7 @@ export function AssistantPanel({
     setBusy(true)
     setError('')
     try {
-      const accepted = await history.send({ protocol_version: 2, request_id: crypto.randomUUID(),
+      const accepted = await history.send({ protocol_version: 3, expected_context_version: history.contextVersion, request_id: crypto.randomUUID(),
         ...(history.id ? { conversation_id: history.id } : { creation_id: crypto.randomUUID() }),
         question: message.trim(), month: history.month, locale, spending_context: context })
       if (accepted) setMessage('')
@@ -214,13 +222,14 @@ export function AssistantPanel({
             <details className="assistant-message-meta"><summary>{t('详情', 'Details')}</summary><time dateTime={turn.created_at}>{new Date(turn.created_at).toLocaleString(locale)}</time><span>{turn.month.slice(0, 7)}{turn.scope && ` · ${copy.categoryLabels[turn.scope.category]} · ${turn.scope.currency}`}</span></details>
             {turn.status === 'processing' && <p role="status">{t('处理中…', 'Working…')}</p>}
             {turn.status === 'failed' && <p>{t('处理失败', 'Failed')} · {turn.error_code} <button disabled={busy || pending} onClick={() => {
-              setBusy(true); void history.send({ protocol_version: 2, conversation_id: turn.conversation_id, request_id: crypto.randomUUID(), retry_of: turn.id,
+              setBusy(true); void history.send({ protocol_version: 3, expected_context_version: history.contextVersion, conversation_id: turn.conversation_id, request_id: crypto.randomUUID(), retry_of: turn.id,
                 question: turn.question, month: turn.month, spending_context: turn.scope, locale }).finally(() => setBusy(false))
             }}>{t('重新处理', 'Retry')}</button></p>}
             {turn.reply && <>
             <p className="assistant-answer">{turn.reply.text}</p>
             {turn.reply.history_unavailable && <p>{t("历史详情不可用，请重新查询。", "History details unavailable. Query again.")}</p>}
             <button disabled={busy || pending} onClick={() => { setContext(turn.scope); setMessage(`${turn.month.slice(0, 7)} ${turn.scope ? copy.categoryLabels[turn.scope.category] + ' ' + turn.scope.currency : ''} ${t('重新查询当前账本', 'Query current ledger')}`) }}>{t('重新查询', 'Query again')}</button>
+            {turn.reply.evidence.filter(item => item.tool === 'find_transactions').map((item, index) => <SearchResultCard key={`${history.id}:${turn.id}:${index}`} initial={item.data} english={english} copy={copy} onInspect={onInspect} onLedger={onSearchLedger} onSave={history.selectSearch} onUnsaved={() => history.setSearchUnsaved(true)} />)}
             <AssistantEvidence evidence={turn.reply.evidence} copy={copy} locale={locale} stale={loadedRevision.current !== ledgerRevision} onInspect={summary => showDetail(summary, ledgerRevision)} />
             {turn.reply.action && (
               <section className="assistant-proposal" aria-label={t('预算修改', 'Budget change')}>
@@ -267,6 +276,8 @@ export function AssistantPanel({
             {error || failure(history.error)}
           </p>
         )}
+        {history.searchContext && <details><summary>{t('已选查找条件', 'Selected search filters')}</summary><SearchResultCard key={`${history.id}:${history.contextVersion}`} filters={history.searchContext} english={english} copy={copy} onInspect={onInspect} onLedger={onSearchLedger} onSave={history.selectSearch} onUnsaved={() => history.setSearchUnsaved(true)} /></details>}
+        {history.searchUnsaved && <p role="status">{t('条件未保存，请重试保存或重新打开会话。', 'Filters not saved. Retry saving or reopen the conversation.')}</p>}
         <form onSubmit={(event) => void submit(event)} className="assistant-composer">
           <label>
             {t('月份', 'Month')} · {history.month.slice(0, 7)}

@@ -1,5 +1,8 @@
-"""助手对话与工具契约：模型只能读取业务数据或提出预算修改，不能批准操作。"""
-
+"""
+文件职责：定义助手对话、工具调用、上下文与提案契约。
+主要内容：消费和账本搜索工具参数、预算提案、会话轮次视图、独立搜索上下文及版本化更新输入。
+关键边界：模型只能读取或提出修改，不能批准写入；用户归属由服务端身份决定。
+"""
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -9,6 +12,7 @@ from pydantic import Field, TypeAdapter, field_validator, model_validator
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.planning import Currency, Money, PlanningInput
 from bankpilot.domain.spending import SpendingScope
+from bankpilot.domain.transaction_search import SearchFilters
 
 
 class Message(PlanningInput):
@@ -21,6 +25,7 @@ class ChatInput(PlanningInput):
     month: date
     locale: Literal["zh-CN", "en-US"] = "zh-CN"
     spending_context: SpendingScope | None = None
+    search_context: SearchFilters | None = None
 
     @model_validator(mode="after")
     def user_turn(self) -> "ChatInput":
@@ -72,6 +77,21 @@ class ReadSpending(PlanningInput):
     arguments: SpendingScope
 
 
+class FindArguments(SearchFilters):
+    account_name: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def single_account(self) -> "FindArguments":
+        if self.account_name and self.account_id:
+            raise ValueError("Provide account name or ID, not both")
+        return self
+
+
+class FindTransactions(PlanningInput):
+    kind: Literal["find_transactions"]
+    arguments: FindArguments
+
+
 class ProposeBudget(PlanningInput):
     kind: Literal["propose_budget"]
     arguments: BudgetArguments
@@ -83,7 +103,13 @@ class Answer(PlanningInput):
 
 
 Decision = Annotated[
-    ReadBudgets | ReadRecurring | ReadOverview | ReadSpending | ProposeBudget | Answer,
+    ReadBudgets
+    | ReadRecurring
+    | ReadOverview
+    | ReadSpending
+    | FindTransactions
+    | ProposeBudget
+    | Answer,
     Field(discriminator="kind"),
 ]
 decision_adapter: TypeAdapter[Decision] = TypeAdapter(Decision)
@@ -94,7 +120,8 @@ class ActionInput(PlanningInput):
 
 
 class TurnInput(MonthArguments):
-    protocol_version: Literal[2]
+    protocol_version: Literal[3]
+    expected_context_version: int = Field(ge=0)
     request_id: UUID
     creation_id: UUID | None = None
     conversation_id: UUID | None = None
@@ -112,7 +139,13 @@ class TurnInput(MonthArguments):
         return self
 
 
+class SearchContextInput(PlanningInput):
+    filters: SearchFilters | None
+    expected_context_version: int = Field(ge=0)
+
+
 class ScopeInput(MonthArguments):
+    expected_context_version: int = Field(ge=0)
     spending_context: SpendingScope | None = None
 
 
@@ -133,6 +166,8 @@ class TurnView(PlanningInput):
 
 
 class ConversationView(PlanningInput):
+    search_context: SearchFilters | None
+    context_version: int
     id: UUID
     title: str
     month: date

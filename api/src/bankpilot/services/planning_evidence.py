@@ -1,5 +1,8 @@
-"""规划共享证据规则：排除已确认副本和转账，完整集合超限时明确拒绝。"""
-
+"""
+文件职责：提供消费与周期规划共享的证据过滤规则。
+主要内容：提取已确认重复副本和本人转账的排除 ID，检查完整证据集合容量。
+关键边界：超限明确拒绝，不能以截断集合生成完整统计。
+"""
 from uuid import UUID
 
 from bankpilot.db.models import TransactionRelationRecord

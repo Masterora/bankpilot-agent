@@ -1,3 +1,8 @@
+/**
+ * 文件职责：配置浏览器应用的 TypeScript 检查。
+ * 主要内容：React JSX、浏览器库、模块解析、严格检查与增量信息路径。
+ * 关键边界：只校验应用源码，不生成业务运行代码；打包由 Vite 完成。
+ */
 {
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",

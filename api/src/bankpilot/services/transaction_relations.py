@@ -11,13 +11,13 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bankpilot.db.ledger_revision import bump_revision
 from bankpilot.db.models import (
     AccountRecord,
     TransactionRecord,
     TransactionRelationRecord,
     UserRecord,
 )
+from bankpilot.db.user_repository import UserRepository
 from bankpilot.domain.transaction_relations import (
     Relation,
     RelationTransaction,
@@ -137,7 +137,7 @@ async def save_relation(
         session.add(record)
     record.first_id, record.second_id, record.state = first_id, second_id, state
     record.version += 1
-    await bump_revision(session, user_id)
+    await UserRepository(session).bump_revision(user_id)
 
 
 async def relation_workspace(

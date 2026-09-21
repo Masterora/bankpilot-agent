@@ -1,5 +1,8 @@
-"""周期配置与逐期核对；历史配置不可改写，调用方拥有事务。"""
-
+"""
+文件职责：编排手动周期计划与逐期账本核对。
+主要内容：生成期次、查询候选、创建配置、安排未来修订、匹配流水、标记未发生及取消修订。
+关键边界：历史生效配置不被覆盖；调用方拥有事务，预计金额不自动写入账本。
+"""
 from datetime import date, datetime
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo

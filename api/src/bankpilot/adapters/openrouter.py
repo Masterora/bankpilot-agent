@@ -1,16 +1,8 @@
 """
-文件职责：将 OpenRouter 聊天补全接口适配为 BankPilot 的模型规划端口。
-
-主要内容：
-- `_inline_local_refs`：内联 JSON Schema 引用并兼容供应商的结构化输出限制。
-- `_PlanningResponse`：严格验证响应包、消息、模型标识和非负整数用量。
-- `OpenRouterModelGateway.plan`：构造只读规划提示词、校验返回结构、记录模型与用量。
-- `_post_with_retry`：处理超时、网络错误与可重试 HTTP 状态。
-
-关键边界：工具仅接受日期范围；额外筛选不得降级为全量查询。
-模型输出必须同时通过 JSON 解析与 Pydantic 校验；API Key 只从运行配置读取。
+文件职责：将 OpenRouter 聊天补全适配为规划与助手决策端口。
+主要内容：处理结构化 Schema、规划和工具决策提示词、响应验证、用量记录及有限重试。
+关键边界：模型输出只作为受校验的计划或提案，不授予数据权限或金融写入权。
 """
-
 import asyncio
 import json
 from datetime import date

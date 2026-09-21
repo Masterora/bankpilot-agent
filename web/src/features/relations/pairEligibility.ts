@@ -1,4 +1,8 @@
-/** 文件职责：预筛人工配对事实，金额仅以整数分比较；最终校验属于服务端。 */
+/**
+ * 文件职责：预筛人工交易配对的可选事实。
+ * 主要内容：比较币种、金额、日期和账户等候选条件。
+ * 关键边界：金额只用整数分比较；预筛不替代服务端的关系和并发校验。
+ */
 import type { RelationKind, RelationTransaction } from '../../types'
 
 /** Decimal strings are converted to integer cents only for eligibility comparisons. */

@@ -1,17 +1,8 @@
 """
-文件职责：定义 BankPilot 身份、账户、卡片、账单导入、账务分析与 Agent 运行的 ORM 模型。
-
-主要内容：
-- 身份与账务：`UserRecord`、`SessionRecord`、`AccountRecord`、`CardRecord`、`TransactionRecord`。
-- 账单导入：`ImportBatchRecord` 保存来源、映射、统计和失败行报告。
-- 分析修正：`TransactionCategoryOverrideRecord` 保存用户确认的交易分类。
-- 交易关系：`TransactionRelationRecord` 保存双边证据、确认状态及版本，原交易不改写。
-- Agent 运行：`RunRecord` 保存状态、计划、结果、错误和模型信息。
-- 审计记录：`AuditEventRecord` 按运行保存有序事件。
-
-关键边界：所有业务归属通过外键表达；复合索引服务于归属和时间范围查询。
+文件职责：定义身份、账本、规划、报告与助手的 ORM 持久化模型。
+主要内容：用户会话、账户卡片、导入流水、分类与关系、核查结论、运行审计、月报任务、预算周期项及助手会话和提案。
+关键边界：金额、归属、幂等与版本约束由数据库结构表达；模型定义不负责事务编排或调用外部服务。
 """
-
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -442,8 +433,10 @@ class AssistantConversationRecord(Base):
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     creation_id: Mapped[UUID] = mapped_column(Uuid)
+    context_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     title: Mapped[str | None] = mapped_column(String(80))
     scope: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    search_context: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     month: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -467,6 +460,7 @@ class AssistantTurnRecord(Base):
     locale: Mapped[str] = mapped_column(String(8))
     month: Mapped[date] = mapped_column(Date)
     scope: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    search_context: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     business_date: Mapped[date] = mapped_column(Date)
     retry_of: Mapped[UUID | None] = mapped_column(Uuid)
     status: Mapped[str] = mapped_column(String(16), default="processing")

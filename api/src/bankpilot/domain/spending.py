@@ -1,5 +1,8 @@
-"""消费查询范围与证据响应；金额为 Decimal，范围不能指定用户。"""
-
+"""
+文件职责：定义消费查询范围、分页版本与证据响应。
+主要内容：月份币种分类范围、覆盖信息、消费汇总和分页证据模型。
+关键边界：金额使用 Decimal；输入不能指定用户，不在契约内读取数据库或计算账本。
+"""
 from datetime import date, datetime
 from decimal import Decimal
 

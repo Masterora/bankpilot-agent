@@ -1,5 +1,8 @@
-"""Application resource cleanup checks; no database or model connections."""
-
+"""
+文件职责：验证应用资源生命周期与失败清理。
+主要内容：正常关闭、启动失败、后台任务失败及调用方注入资源的所有权检查。
+关键边界：通过替身隔离依赖，不连接真实数据库或模型。
+"""
 import asyncio
 import unittest
 from unittest.mock import AsyncMock, Mock, patch

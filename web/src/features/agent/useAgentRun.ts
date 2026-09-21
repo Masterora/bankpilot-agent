@@ -122,7 +122,9 @@ export function useAgentRun(copy: Messages) {
     setError('')
     setCorrectingId(transactionId)
     try {
-      const updated = await api.correctCategory(runId, transactionId, category)
+      const revision = run.result?.transactions.ledger_revision
+      if (revision == null) throw new Error('Reload current evidence before editing')
+      const updated = await api.correctCategory(runId, transactionId, category, revision)
       if (!ownsResponse()) return
       setRun((current) => current?.id === runId ? updated : current)
       setCorrectionSaved(true)

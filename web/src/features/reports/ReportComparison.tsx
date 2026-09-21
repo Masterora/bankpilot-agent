@@ -1,4 +1,8 @@
-/** 文件职责：按需比较同月已保存版本，金额直接读取各自冻结快照，不混入实时账务。 */
+/**
+ * 文件职责：按需比较同月已保存报告版本。
+ * 主要内容：版本选择、快照加载及对应统计差异展示。
+ * 关键边界：金额读取各自冻结快照，不混入实时账务或跨币种汇总。
+ */
 import { useState } from 'react'
 import { api } from '../../api'
 import { formatMoney, formatTimestamp } from '../../format'

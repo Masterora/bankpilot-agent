@@ -1,14 +1,8 @@
 """
 文件职责：创建 FastAPI 应用并组装运行时依赖。
-
-主要内容：
-- `create_app`：提供可替换的配置、会话工厂和模型网关，便于测试与扩展。
-- `lifespan`：创建 HTTP 客户端、注册 `RunProcessor`、修复中断运行并释放资源。
-- 应用组装：配置 CORS，并挂载 v1 路由。
-
-关键边界：应用生命周期只关闭自身创建的引擎和客户端。
+主要内容：注册路由、错误与耗时中间件；管理模型客户端、运行恢复、月报处理和助手过期轮次恢复。
+关键边界：只关闭自身创建的资源；注入资源由调用方管理，启动失败也必须释放已取得的资源。
 """
-
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager, suppress

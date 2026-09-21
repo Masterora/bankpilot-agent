@@ -1,4 +1,8 @@
-/** 预算证据侧栏：呈现服务端金额及退款原消费，提供账本核对入口。 */
+/**
+ * 文件职责：展示预算的服务端消费证据侧栏。
+ * 主要内容：分类金额、贡献流水、退款原消费与账本核对入口。
+ * 关键边界：只读展示服务端计算，不在侧栏重算或改写预算和流水。
+ */
 import type { Locale, Messages } from '../../i18n'
 import { formatMoney } from '../../format'
 import { DetailPanel } from '../../shared/DetailPanel'

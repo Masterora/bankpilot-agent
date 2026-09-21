@@ -1,7 +1,8 @@
-"""文件职责：在账户快照内统一预览和提交的四类计数。
+"""
+文件职责：在账户快照内统一导入预览与提交的分类计数。
+主要内容：区分新记录、重复和错误，结合解析器跳过行校验总数并生成可追溯的错误行。
 关键边界：编号冲突整组拒绝，无编号出现次数由解析器保留；不提交事务。
 """
-
 from collections import defaultdict
 from dataclasses import dataclass
 from uuid import UUID

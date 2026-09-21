@@ -1,4 +1,8 @@
-/** 文件职责：月度分类预算设置、复制与账务证据下钻；金额计算全部来自服务端。 */
+/**
+ * 文件职责：编排月度分类预算工作区。
+ * 主要内容：选择月份、加载预算、编辑和删除、复制上月设置及证据下钻。
+ * 关键边界：金额计算全部来自服务端；页面通过共享请求 Hook 管理读取与写入状态。
+ */
 import { monthPeriod } from '../../shared/period'
 import { BudgetDetails } from './BudgetDetails'
 import { BudgetEditor } from './BudgetEditor'

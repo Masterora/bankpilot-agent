@@ -1,8 +1,8 @@
-"""文件职责：生成恢复核对所需的 PostgreSQL 表结构摘要。
-关键边界：仅读取目录及 EXPLAIN（不使用 ANALYZE）；保留 CHECK 语义和列定义，
-由 PostgreSQL 规划器统一隐式转换，不以删除表达式或字符串替换容忍结构差异。
 """
-
+文件职责：生成 PostgreSQL 结构核对摘要。
+主要内容：读取目录中的列、索引和约束，借助查询规划统一表达式后计算结构摘要。
+关键边界：只读目录及 EXPLAIN，不使用 ANALYZE；保留 CHECK 语义，不靠删除约束或字符串替换容忍差异。
+"""
 import hashlib
 import json
 

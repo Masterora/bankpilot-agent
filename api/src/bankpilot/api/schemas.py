@@ -1,17 +1,8 @@
 """
-文件职责：定义 BankPilot v1 认证、卡片、账单导入、运行、事件流与分类修正接口契约。
-
-主要内容：
-- 认证契约：`RegisterRequest`、`LoginRequest` 与 `UserResponse`。
-- 卡片契约：`CardResponse` 与 `CardListResponse`。
-- 导入契约：CSV 内容、字段映射、批次统计和失败行。
-- 运行契约：`CreateRunRequest`、`RunResponse` 与 `AuditEventResponse`。
-- 分类契约：`CorrectCategoryRequest` 只接受稳定分类代码。
-- 系统契约：`HealthResponse`。
-
-关键边界：外部请求禁止额外字段，并对邮箱、密码和用户消息设置结构限制。
+文件职责：定义认证、导入与 Agent 运行的公共 HTTP 契约。
+主要内容：登录注册与密码修改、卡片摘要、导入预览及幂等写入、运行事件和分类修正的请求响应模型。
+关键边界：在协议边界校验格式与容量；资源专属契约保留在对应模块，不在此执行持久化或业务计算。
 """
-
 from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -175,6 +166,7 @@ class CreateRunRequest(BaseModel):
 
 
 class CorrectCategoryRequest(BaseModel):
+    expected_revision: int = Field(ge=0)
     model_config = ConfigDict(extra="forbid")
 
     category: TransactionCategory

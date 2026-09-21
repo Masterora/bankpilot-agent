@@ -1,7 +1,8 @@
-"""文件职责：编排可恢复的账单导入。
-关键边界：读取释放连接后解析，用户锁内重查操作身份；批次、账户和流水原子提交。
 """
-
+文件职责：编排可恢复、幂等的账单导入。
+主要内容：计算请求摘要、解析分类、校验操作身份、绑定账户并保存批次和流水。
+关键边界：解析前释放读取连接，用户锁内重查身份；批次、账户、流水及修订号原子提交。
+"""
 import hashlib
 import json
 from dataclasses import asdict
@@ -12,9 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from bankpilot.db.import_repository import ImportRepository
-from bankpilot.db.ledger_revision import bump_revision
 from bankpilot.db.models import AccountRecord, ImportBatchRecord, UserRecord
 from bankpilot.db.transaction_repository import TransactionRepository
+from bankpilot.db.user_repository import UserRepository
 from bankpilot.domain.payment_sources import source_account
 from bankpilot.domain.statement_import import (
     ParsedStatement,
@@ -177,6 +178,6 @@ class StatementImportService:
                     import_batch_id=batch.id,
                     rows=classified.new,
                 )
-                await bump_revision(self.session, user_id)
+                await UserRepository(self.session).bump_revision(user_id)
             self.session.expunge(batch)
         return batch, False

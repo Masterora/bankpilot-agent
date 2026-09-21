@@ -25,4 +25,6 @@ BANKPILOT_ACCEPTANCE_ADMIN_URL=postgresql://localhost/postgres make verify-busin
 中断与迟到完成、提案原子性、用户隔离、容量、分页、上下文上限、历史版本降级、
 恢复清理、真实 pg_dump/pg_restore 与迁移往返。无需模型配置，不产生外部调用。
 `make verify-interactions` 另运行 conversations-frontend.cjs 的四组恢复与响应竞争检查。
-真实模型脚本已更新至协议 2；这次未运行，不以固定输出证明自然语言指代理解质量。
+真实模型脚本使用当前会话协议；运行要求与历史结果分别记录，不以固定输出证明自然语言指代理解质量。
+
+R3：`make verify-search` 运行隔离库 `search.py` 与 `search-frontend.cjs`，覆盖受限匹配、用户隔离、版本竞争、全量导出、跨页核查、助手上下文和小样本本机测量。会话前端回归另覆盖保存响应丢失与跨会话迟到。`search-model-cases.json` 是未运行的真实模型场景，不属于确定性通过数，调用前需明确授权外部使用。

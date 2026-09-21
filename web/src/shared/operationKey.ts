@@ -1,4 +1,8 @@
-/** 文件职责：为显式写操作生成随机 UUID，不在重试时更换身份。 */
+/**
+ * 文件职责：为显式写操作生成随机 UUID 身份。
+ * 主要内容：使用 getRandomValues 生成符合 UUID v4 位布局的幂等键。
+ * 关键边界：兼容私网 HTTP；仅生成身份，同一操作重试时由调用方保留并复用原键。
+ */
 export function newIdempotencyKey(): string {
   // 私网 HTTP 页面也可使用 getRandomValues，不依赖仅安全上下文提供的 randomUUID。
   const bytes = crypto.getRandomValues(new Uint8Array(16))

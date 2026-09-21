@@ -1,4 +1,8 @@
-/** 定向请求竞争回归；真实 DOM、焦点和布局由浏览器验收覆盖。 */
+/**
+ * 文件职责：验证前端证据状态与请求竞争。
+ * 主要内容：模拟请求顺序，检查证据合并、账本变化失效、迟到响应及失败重试。
+ * 关键边界：属于状态回归，不证明真实浏览器的 DOM、布局或焦点行为。
+ */
 const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')

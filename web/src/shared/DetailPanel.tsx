@@ -1,4 +1,8 @@
-/** 文件职责：统一详情侧栏的模态、键盘关闭和焦点恢复；关闭原因由调用方处理。 */
+/**
+ * 文件职责：提供共享的模态详情侧栏。
+ * 主要内容：侧栏展示、键盘关闭、焦点约束与关闭后焦点恢复。
+ * 关键边界：关闭行为通知调用方，不自行处理业务保存或丢弃草稿。
+ */
 import { useEffect, useId, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { IconButton } from './ui'

@@ -1,5 +1,8 @@
-"""R2 recovery, fencing, ownership and restore checks in disposable PostgreSQL only."""
-
+"""
+文件职责：验收助手持久会话与轮次恢复。
+主要内容：并发受理、同请求恢复、归属隔离、迟到写回、删除和恢复库任务核对。
+关键边界：只使用随机临时 PostgreSQL 与模拟模型，不访问生产或真实模型。
+"""
 import asyncio
 from datetime import timedelta
 from unittest.mock import patch
@@ -36,7 +39,8 @@ class Delayed:
 
 def payload(**extra):
     return {
-        "protocol_version": 2,
+        "protocol_version": 3,
+        "expected_context_version": 0,
         "creation_id": str(uuid4()),
         "request_id": str(uuid4()),
         "question": "本月餐饮预算",
@@ -95,7 +99,12 @@ async def run(factory, url):
             client,
             "POST",
             "/assistant/turns",
-            payload(creation_id=None, conversation_id=cid, spending_context=SCOPE),
+            payload(
+                creation_id=None,
+                conversation_id=cid,
+                spending_context=SCOPE,
+                expected_context_version=1,
+            ),
         )
         assert any(m["content"] == "Saved answer" for m in gateway.messages[0])
         detail = await request(client, "GET", f"/assistant/conversations/{cid}")
@@ -104,7 +113,7 @@ async def run(factory, url):
             client,
             "POST",
             f"/assistant/conversations/{cid}/scope",
-            {"month": SCOPE["month"], "spending_context": None},
+            {"month": SCOPE["month"], "spending_context": None, "expected_context_version": 2},
         )
         passed("server-owned context and selected-scope persistence")
 
@@ -152,7 +161,12 @@ async def run(factory, url):
                     client,
                     "POST",
                     "/assistant/turns",
-                    payload(creation_id=None, conversation_id=target, retry_of=turn["id"]),
+                    payload(
+                        creation_id=None,
+                        conversation_id=target,
+                        retry_of=turn["id"],
+                        expected_context_version=1,
+                    ),
                 )
         passed("multi-instance deadline; late completion; delete tombstone; explicit retry")
 
@@ -238,7 +252,12 @@ async def run(factory, url):
                 client,
                 "POST",
                 "/assistant/turns",
-                payload(creation_id=None, conversation_id=cid, question=f"question-{index}"),
+                payload(
+                    creation_id=None,
+                    conversation_id=cid,
+                    question=f"question-{index}",
+                    expected_context_version=3 + index,
+                ),
             )
         user_messages = [message for message in gateway.messages[0] if message["role"] != "system"]
         assert len(user_messages) == 15
@@ -283,6 +302,28 @@ async def run(factory, url):
         await request(client, "POST", "/auth/login", {"email": "r2@test.com", "password": PASSWORD})
         await request(client, "POST", "/assistant/turns", data, 410)
         passed("restore clears chats; preserves business/receipts; repeat safe; replay refused")
+
+        app.state.assistant_gateway = Decisions(Answer(kind="answer", text="Legacy readable"))
+        backup_turn = await request(client, "POST", "/assistant/turns", payload())
+        backup_cid = backup_turn["conversation_id"]
+        await request(
+            client,
+            "PUT",
+            f"/assistant/conversations/{backup_cid}/search-context",
+            {
+                "filters": {
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-09-30",
+                    "text": "private search",
+                },
+                "expected_context_version": 1,
+            },
+        )
+        async with factory.begin() as session:
+            legacy = await session.get(AssistantTurnRecord, UUID(backup_turn["id"]))
+            legacy.result_version = 1
+        legacy_detail = await request(client, "GET", f"/assistant/conversations/{backup_cid}")
+        assert not legacy_detail["turns"][0]["reply"].get("history_unavailable")
 
         # Real dump/restore validates the new tables, tombstones and confirmation gate.
         import os
@@ -342,6 +383,23 @@ async def run(factory, url):
         finally:
             await admin.execute(f'DROP DATABASE "{restore_name}"')
             await admin.close()
+        # Preserve real R2-compatible history through the additive R3 upgrade.
+        for command in (("downgrade", "20260921_0013"), ("upgrade", "head")):
+            await asyncio.to_thread(
+                subprocess.run,
+                ["uv", "run", "alembic", *command],
+                env={**os.environ, "BANKPILOT_DATABASE_URL": url},
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+        legacy_detail = await request(client, "GET", f"/assistant/conversations/{backup_cid}")
+        assert legacy_detail["conversation"]["search_context"] is None
+        assert legacy_detail["conversation"]["context_version"] == 0
+        assert legacy_detail["turns"][0]["reply"]["text"] == "Legacy readable"
+        passed(
+            "R3 context backup/restore; legacy R2 result and row survive R3 migration"
+        )
+
         # Only this disposable fixture is downgraded; no shared database is touched.
         for command in (("downgrade", "20260916_0012"), ("upgrade", "head"), ("check",)):
             await asyncio.to_thread(

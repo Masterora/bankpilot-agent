@@ -1,14 +1,7 @@
 /**
- * 文件职责：定义 Web 层消费的 BankPilot v1 卡片、账单导入、查询、分析、事件流与修正类型。
- *
- * 主要内容：
- * - `User`：当前登录用户。
- * - `ImportBatch`：CSV 字段映射、导入统计与失败行报告。
- * - `Transaction` / `BillAnalysis` / `RunResult`：分类交易、统计和异常结果。
- * - `RunEvent`：审计时间线事件。
- * - `Run`：包含状态、结果、错误与事件的完整运行快照。
- *
- * 关键边界：`Run.status` 与服务端持久化状态集必须保持一致。
+ * 文件职责：定义 Web 使用的核心 API 响应与写入类型。
+ * 主要内容：用户卡片、导入、交易分类、关系和核查、运行事件、总览与月报；规划和助手类型位于各自模块。
+ * 关键边界：金额保持服务端字符串，运行状态与版本字段须匹配服务端契约，前端类型不代替授权验证。
  */
 
 export interface User {
@@ -212,6 +205,7 @@ export interface ReportDetail extends MonthlyReport {
 export interface RunResult {
   message: string
   transactions: {
+    ledger_revision?: number | null
     start_date: string
     end_date: string
     items: Transaction[]

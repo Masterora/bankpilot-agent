@@ -1,4 +1,8 @@
-/** 按工具展示服务端原始统计；证据折叠，金额不由模型重算。 */
+/**
+ * 文件职责：按助手工具类型展示服务端证据。
+ * 主要内容：预算、周期项、总览、消费及交易搜索结果和证据下钻入口。
+ * 关键边界：金额与事实来自服务端工具结果，不由模型文本重算或拼造。
+ */
 import { formatMoney } from '../../format'
 import type { Locale, Messages } from '../../i18n'
 import { spendingRefs } from './types'
@@ -19,7 +23,7 @@ export function AssistantEvidence({
 }) {
   const en = locale === 'en-US'
   const money = (value: string, currency: string) => formatMoney(value, currency, locale)
-  const otherEvidence = evidence.filter(item => item.tool !== 'spending')
+  const otherEvidence = evidence.filter(item => item.tool !== 'spending' && item.tool !== 'find_transactions')
   return (
     evidence.length > 0 && (
       <>

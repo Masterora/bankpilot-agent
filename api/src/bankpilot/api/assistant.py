@@ -1,5 +1,8 @@
-"""助手 HTTP 边界：认证对话和显式确认分离，模型不接触确认端点。"""
-
+"""
+文件职责：提供助手对话、上下文与预算提案的 HTTP 接口。
+主要内容：提交和恢复轮次、分页读取与删除会话、更新消费范围及搜索上下文、确认或取消提案。
+关键边界：所有操作绑定当前用户；模型不能调用确认端点，上下文更新与提案写入由服务端校验。
+"""
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -19,15 +22,18 @@ from bankpilot.domain.assistant import (
     ActionInput,
     ConversationDetail,
     ConversationPage,
+    ConversationView,
     ScopeInput,
+    SearchContextInput,
     TurnInput,
     TurnView,
 )
 from bankpilot.domain.spending import SpendingPage, SpendingQuery, SpendingScope
-from bankpilot.errors import BankPilotError, RelationError
+from bankpilot.errors import BankPilotError, PlanningError, RelationError
 from bankpilot.services.assistant import resolve_action
-from bankpilot.services.conversations import ConversationService, current_action
+from bankpilot.services.conversations import ConversationService, conversation_view, current_action
 from bankpilot.services.spending import spending_page
+from bankpilot.services.transaction_search import validate_ownership
 
 router = APIRouter(prefix="/api/v1/assistant", tags=["assistant"])
 
@@ -122,15 +128,39 @@ async def set_scope(
     payload: ScopeInput,
     user: UserRecord = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
-) -> dict[str, bool]:
+) -> ConversationView:
     await lock_owner(session, user.id)
     row = await conversation_record(session, user.id, identity, lock=True)
+    if row.context_version != payload.expected_context_version:
+        raise PlanningError("assistant_context_stale", 409)
+    row.context_version += 1
     row.month = payload.month
     row.scope = (
         payload.spending_context.model_dump(mode="json") if payload.spending_context else None
     )
+    result = conversation_view(row)
     await session.commit()
-    return {"saved": True}
+    return result
+
+
+@router.put("/conversations/{identity}/search-context", response_model=ConversationView)
+async def set_search_context(
+    identity: UUID,
+    payload: SearchContextInput,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ConversationView:
+    await lock_owner(session, user.id)
+    row = await conversation_record(session, user.id, identity, lock=True)
+    if row.context_version != payload.expected_context_version:
+        raise PlanningError("assistant_context_stale", 409)
+    if payload.filters:
+        await validate_ownership(session, user.id, payload.filters)
+    row.search_context = payload.filters.model_dump(mode="json") if payload.filters else None
+    row.context_version += 1
+    result = conversation_view(row)
+    await session.commit()
+    return result
 
 
 @router.post("/conversations/{identity}/delete")

@@ -1,5 +1,8 @@
-"""月度预算统计与写入；调用方拥有事务，版本冲突不覆盖输入。"""
-
+"""
+文件职责：编排月度预算统计和显式预算写入。
+主要内容：基于消费证据构造预算工作区，保存、复制上月设置和删除预算。
+关键边界：调用方拥有事务；金额来自确定性消费规则，版本冲突不覆盖已有设置。
+"""
 from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID

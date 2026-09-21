@@ -1,4 +1,8 @@
-/** 消费证据只读视图：分页重新校验版本，迟到响应不能覆盖当前页。 */
+/**
+ * 文件职责：展示助手消费证据的只读明细。
+ * 主要内容：分页读取贡献交易、退款原消费和覆盖信息，并处理失败与重试。
+ * 关键边界：分页重新校验版本，迟到响应不能覆盖当前页，金额不在前端重算。
+ */
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '../../api'
 import { formatMoney } from '../../format'
