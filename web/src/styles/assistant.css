@@ -15,3 +15,14 @@
 
 .assistant-composer > .planning-actions { margin-top: 0; justify-content: flex-end; }
 .assistant-shortcut { margin-right: auto; color: var(--muted); font-size: 11px; user-select: none; }
+
+.spending-card { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.spending-card h3 { font-size: 14px; font-weight: 500; }
+.spending-card p, .spending-entries p, .assistant-context { font-size: 12px; color: var(--muted); line-height: 1.7; overflow-wrap: anywhere; }
+.spending-card strong { font-variant-numeric: tabular-nums; }
+.spending-entries { list-style: none; padding: 0; }
+.spending-entries li { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.spending-entries li > div { display: flex; justify-content: space-between; gap: 12px; overflow-wrap: anywhere; }
+.spending-entries details { margin-top: 12px; }
+.spending-entries strong { font-size: 14px; }
+.spending-details > button { margin-bottom: 8px; }

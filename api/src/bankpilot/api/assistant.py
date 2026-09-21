@@ -2,20 +2,44 @@
 
 import asyncio
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.dependencies import (
+    get_current_user,
+    get_db_session,
+    get_snapshot_session,
+    get_snapshot_user,
+)
 from bankpilot.api.errors import ApiProblem
 from bankpilot.db.models import UserRecord
 from bankpilot.domain.assistant import ActionInput, ChatInput
+from bankpilot.domain.spending import SpendingPage, SpendingQuery, SpendingScope
 from bankpilot.errors import BankPilotError, RelationError
 from bankpilot.services.assistant import chat, resolve_action
+from bankpilot.services.spending import spending_page
 
 router = APIRouter(prefix="/api/v1/assistant", tags=["assistant"])
+
+
+@router.get("/spending-evidence", response_model=SpendingPage)
+async def evidence(
+    query: Annotated[SpendingQuery, Query()],
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
+) -> SpendingPage:
+    scope = SpendingScope(month=query.month, category=query.category, currency=query.currency)
+    return await spending_page(
+        session,
+        user.id,
+        scope,
+        query.expected_revision,
+        query.expected_calculation_version,
+        query.page,
+    )
 
 
 @router.post("/chat")

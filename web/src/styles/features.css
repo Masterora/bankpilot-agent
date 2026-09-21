@@ -88,7 +88,7 @@
   cursor: pointer;
   transition: border-color 0.16s, background 0.16s;
 }
-.file-drop:hover { border-color: var(--accent-strong); background: rgba(240,199,126,.04); }
+.file-drop:hover { border-color: var(--accent-strong); background: var(--accent-soft); }
 .file-drop input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
 .file-drop strong { max-width: 100%; overflow: hidden; color: var(--text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .file-drop > span:last-child { font-size: 13px; font-weight: 500; }
@@ -99,7 +99,7 @@
   place-items: center;
   border-radius: 5px;
   color: var(--accent);
-  background: rgba(223, 204, 172, 0.09);
+  background: var(--accent-soft);
   font-size: 20px;
 }
 .import-source-panel.has-file {
@@ -142,11 +142,11 @@
 .import-errors li { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 10px; border: 1px solid #51302b; border-radius: 8px; color: var(--danger); background: var(--danger-bg); font-size: 13px; }
 .import-table-wrap { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; overflow: auto; max-height: min(640px, 70vh); scrollbar-gutter: stable; overscroll-behavior: contain; background: var(--surface); }
 .import-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-.import-table th { position: sticky; top: 0; z-index: 1; box-shadow: 0 1px var(--line); padding: 12px 14px; color: #8794a4; background: #11171f; font-size: 11px; font-weight: 500; text-align: left; white-space: nowrap; }
-.import-table td { padding: 14px; border-top: 1px solid var(--line); color: #c8cec9; font-size: 12px; white-space: nowrap; }
+.import-table th { position: sticky; top: 0; z-index: 1; box-shadow: 0 1px var(--line); padding: 12px 14px; color: var(--muted); background: #11171f; font-size: 11px; font-weight: 500; text-align: left; white-space: nowrap; }
+.import-table td { padding: 14px; border-top: 1px solid var(--line); color: var(--text); font-size: 12px; white-space: nowrap; }
 .ledger-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 10px; color: var(--muted); font-size: 13px; }
 .ledger-toolbar button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface); }
-.import-status { display: inline-flex; padding: 5px 8px; border-radius: 6px; color: var(--accent); background: rgba(223, 204, 172, 0.09); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.import-status { display: inline-flex; padding: 5px 8px; border-radius: 6px; color: var(--accent); background: var(--accent-soft); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .import-status-rejected { color: var(--danger); background: var(--danger-bg); }
 .import-status-completed_with_duplicates { color: #dfc08f; background: #261e13; }
 .audit-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin-top: 20px; }
@@ -351,7 +351,7 @@
   height: 34px;
   border-radius: 8px;
   color: var(--accent);
-  background: rgba(223, 204, 172, 0.09);
+  background: var(--accent-soft);
   font-weight: 700;
 }
 .transaction-copy { display: grid; gap: 3px; }

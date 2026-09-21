@@ -1,25 +1,38 @@
 /** 按工具展示服务端原始统计；证据折叠，金额不由模型重算。 */
 import { formatMoney } from '../../format'
 import type { Locale, Messages } from '../../i18n'
-import type { Evidence } from './types'
+import { spendingRefs } from './types'
+import type { Evidence, SpendingSummary } from './types'
+import { SpendingCard } from './SpendingDetails'
 export function AssistantEvidence({
   evidence,
   copy,
   locale,
+  stale,
+  onInspect,
 }: {
   evidence: Evidence[]
   copy: Messages
   locale: Locale
+  stale: boolean
+  onInspect: (summary: SpendingSummary) => void
 }) {
   const en = locale === 'en-US'
   const money = (value: string, currency: string) => formatMoney(value, currency, locale)
+  const otherEvidence = evidence.filter(item => item.tool !== 'spending')
   return (
     evidence.length > 0 && (
-      <details className="assistant-evidence">
+      <>
+      {spendingRefs(evidence).map((summary, index) => <div key={index}>
+        <SpendingCard summary={summary} copy={copy} locale={locale} />
+        {stale && <p role="status">{en ? 'Ledger changed; query again.' : '账本已更新，需要重新查询。'}</p>}
+        <button onClick={() => onInspect(summary)}>{en ? 'View breakdown' : '查看构成'}</button>
+      </div>)}
+      {otherEvidence.length > 0 && <details className="assistant-evidence">
         <summary>
-          {en ? 'Data used' : '查询依据'} · {evidence.length}
+          {en ? 'Data used' : '查询依据'} · {otherEvidence.length}
         </summary>
-        {evidence.map((item, index) => (
+        {otherEvidence.map((item, index) => (
           <section key={index}>
             <h4>
               {item.month.slice(0, 7)} ·{' '}
@@ -90,7 +103,8 @@ export function AssistantEvidence({
             )}
           </section>
         ))}
-      </details>
+      </details>}
+      </>
     )
   )
 }

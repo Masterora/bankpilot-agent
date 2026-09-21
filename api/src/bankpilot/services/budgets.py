@@ -9,76 +9,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bankpilot.db.models import BudgetRecord
 from bankpilot.db.planning_repository import PlanningRepository
 from bankpilot.db.user_repository import UserRepository
-from bankpilot.domain.bill_analysis import classify_transaction
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.planning import (
     BudgetCopyResult,
     BudgetCoverage,
-    BudgetEvidence,
     BudgetInput,
     BudgetItem,
-    BudgetPurchase,
     BudgetWorkspace,
     UnbudgetedCategory,
 )
 from bankpilot.errors import PlanningError
-from bankpilot.services.planning_evidence import check_capacity, excluded_ids
+from bankpilot.services.spending import MonthSpending, read_spending
 
 
-async def budget_workspace(session: AsyncSession, uid: UUID, month: date) -> BudgetWorkspace:
+async def budget_workspace(
+    session: AsyncSession,
+    uid: UUID,
+    month: date,
+    *,
+    calculation: MonthSpending | None = None,
+) -> BudgetWorkspace:
     repo = PlanningRepository(session)
     budgets = await repo.budgets(uid, month)
-    rows = await repo.transactions(uid, month=month)
-    check_capacity(len(rows))
-    relations = await repo.relations(uid, {row.id for row, _, _ in rows})
-    excluded = excluded_ids(relations)
-    refunds = {r.second_id: r.first_id for r in relations if r.kind == "refund"}
-    purchases = await repo.transactions(uid, ids=set(refunds.values())) if refunds else []
-    check_capacity(len(purchases))
-    all_rows = {row.id: (row, override) for row, _, override in rows + purchases}
-    account_names = {row.id: name for row, name, _ in rows + purchases}
-    evidence = []
-    for row, account_name, override in rows:
-        if row.id in excluded or (row.amount >= 0 and row.id not in refunds):
-            continue
-        purchase_id = refunds.get(row.id)
-        source, category_override = all_rows[purchase_id] if purchase_id else (row, override)
-        category = classify_transaction(
-            merchant=source.merchant,
-            description=source.description,
-            amount=source.amount,
-            override=TransactionCategory(category_override) if category_override else None,
-        ).category
-        evidence.append(
-            BudgetEvidence(
-                transaction_id=row.id,
-                booking_date=row.booking_date,
-                merchant=row.merchant,
-                account_name=account_name,
-                category=category,
-                currency=row.currency,
-                amount=row.amount,
-                contribution=-row.amount,
-                purchase=BudgetPurchase(
-                    id=source.id,
-                    booking_date=source.booking_date,
-                    merchant=source.merchant,
-                    account_name=account_names[source.id],
-                    amount=source.amount,
-                )
-                if purchase_id
-                else None,
-            )
-        )
-    totals: dict[tuple[str, str], Decimal] = {}
-    counts: dict[tuple[str, str], int] = {}
-    for entry in evidence:
-        key = (entry.category, entry.currency)
-        totals[key] = totals.get(key, Decimal("0.00")) + entry.contribution
-        counts[key] = counts.get(key, 0) + 1
-    imported_dates: dict[str, list[date]] = {}
-    for row, _, _ in rows:
-        imported_dates.setdefault(row.currency, []).append(row.booking_date)
+    calculation = calculation or await read_spending(session, uid, month)
+    evidence = calculation.evidence
+    totals, counts = calculation.totals, calculation.counts
+    imported_dates = calculation.imported_dates
     budgeted = {(b.category, b.currency) for b in budgets}
     return BudgetWorkspace(
         month=month,

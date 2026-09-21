@@ -11,7 +11,7 @@ import type { ReactNode } from 'react'
 
 import { api } from '../api'
 import { AssistantPanel } from '../features/assistant/AssistantPanel'
-import { LedgerPage } from '../features/agent/LedgerPage'
+import { LedgerPage } from '../features/ledger/LedgerPage'
 import { AgentPage } from '../features/agent/AgentPage'
 import { useAgentRun } from '../features/agent/useAgentRun'
 import { AuditPage } from '../features/audit/AuditPage'
@@ -21,9 +21,10 @@ import { OverviewPage } from '../features/overview/OverviewPage'
 import { RelationsPage } from '../features/relations/RelationsPage'
 import { BudgetsPage } from '../features/planning/BudgetsPage'
 import { RecurringPage } from '../features/planning/RecurringPage'
+import { SettingsPage } from '../features/settings/SettingsPage'
 import { ReportsPage } from '../features/reports/ReportsPage'
 import type { RecurringInput } from '../features/planning/types'
-import type { LedgerEntry } from '../features/agent/LedgerPage'
+import type { LedgerEntry } from '../features/ledger/LedgerPage'
 import { useWorkspaceRoute } from './routing'
 import type { Messages } from '../i18n'
 import { IconButton, LanguageSwitch, Logo, NavigationIcon } from '../shared/ui'
@@ -40,6 +41,12 @@ interface WorkspaceProps extends LanguageProps {
 export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspaceProps) {
   const [drafts, setDrafts] = useState({ budgets: false, recurring: false })
   const { activePage, setActivePage, overviewPeriod, setOverviewPeriod, reviewPeriod, setReviewPeriod, budgetMonth, recurringMonth, setPlanningMonth, navigateTo } = useWorkspaceRoute(drafts)
+  const [ledgerRevision, setLedgerRevision] = useState(0)
+  useEffect(() => {
+    const changed = () => { setLedgerRevision(value => value + 1); setPlanningRevision(value => value + 1) }
+    window.addEventListener('bankpilot:ledger-changed', changed)
+    return () => window.removeEventListener('bankpilot:ledger-changed', changed)
+  }, [])
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [assistantRevision, setAssistantRevision] = useState(0)
   const [planningRevision, setPlanningRevision] = useState(0)
@@ -189,6 +196,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     ),
     review: <LedgerPage
       active={activePage === 'review'}
+      onReturnToAssistant={() => setAssistantOpen(true)}
       entry={ledgerEntry}
       onReviewRelation={(id) => { navigate('relations'); setRelationSeed(id) }}
       onStartRecurring={startRecurring}
@@ -200,6 +208,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
       onPeriodChange={setReviewPeriod}
     />,
     relations: <RelationsPage onImport={() => navigate('import')} seedId={relationSeed} copy={copy} english={locale === 'en-US'} period={reviewPeriod} onPeriodChange={setReviewPeriod} />,
+    settings: <SettingsPage copy={copy} locale={locale} onLocaleChange={onLocaleChange} user={user} onLogout={logout} />,
     reports: <ReportsPage copy={copy} locale={locale} initialMonth={reviewPeriod.start} active={activePage === 'reports'} />,
     audit: <AuditPage copy={copy} run={agent.run} locale={locale} />,
     recurring: <RecurringPage onSaved={planningSaved} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} />,
@@ -207,7 +216,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   }
 
   return (
-    <div className="product-shell">
+    <div className={`product-shell${assistantOpen ? ' assistant-is-open' : ''}`}>
       <aside className="product-sidebar">
         <div className="sidebar-brand brand"><Logo /> BankPilot</div>
         <Navigation
@@ -216,7 +225,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
           onNavigate={navigate}
         />
         <div className="sidebar-utilities">
-          <button onClick={() => setAssistantOpen(true)}>{locale === 'en-US' ? 'Assistant' : '问助手'}</button>
+          <button className="settings-link" aria-current={activePage === 'settings' ? 'page' : undefined} onClick={() => navigate('settings')}><NavigationIcon kind="settings" />{copy.productPages.settings.navigation}</button>
           <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
         </div>
         <div className="sidebar-account">
@@ -247,8 +256,12 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         <IconButton icon="logout" label={copy.logout} onClick={logout} />
       </dialog>
 
-      <AssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} month={activePage === 'budgets' ? budgetMonth : activePage === 'recurring' ? recurringMonth : activePage === 'overview' ? overviewPeriod.start : reviewPeriod.start} copy={copy} locale={locale} onSaved={() => { planningSaved(); setAssistantRevision(value => value + 1) }} />
+      <AssistantPanel key={user.id} ledgerRevision={ledgerRevision} onInspect={target => {
+        setAssistantOpen(false)
+        inspectLedger({ transactionId: target.id, period: { start: target.booking_date, end: target.booking_date } })
+      }} open={assistantOpen} onClose={() => setAssistantOpen(false)} month={activePage === 'budgets' ? budgetMonth : activePage === 'recurring' ? recurringMonth : activePage === 'overview' ? overviewPeriod.start : reviewPeriod.start} copy={copy} locale={locale} onSaved={() => { planningSaved(); setAssistantRevision(value => value + 1) }} />
       <main className="workspace-shell">
+        <header className="workspace-topbar"><span className="workspace-location">{locale === 'en-US' ? 'Personal workspace' : '个人工作区'}<span>/</span>{copy.productPages[activePage].navigation}</span><button className="assistant-trigger" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(value => !value)}><NavigationIcon kind="agent" />{locale === 'en-US' ? 'Ledger assistant' : '账本助手'}</button></header>
         <IconButton icon="menu" ref={menuRef} className="menu-toggle" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} label={locale === 'en-US' ? 'Open navigation' : '打开导航'} />
 
         <div className="workspace-content" ref={contentRef}>
@@ -287,5 +300,6 @@ function Navigation({
     <div className="navigation-group">
       {links(secondaryPages)}
     </div>
+    <div className="mobile-settings-link">{links(['settings'])}</div>
   </nav>
 }

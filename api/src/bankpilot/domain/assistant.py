@@ -8,6 +8,7 @@ from pydantic import Field, TypeAdapter, field_validator, model_validator
 
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.planning import Currency, Money, PlanningInput
+from bankpilot.domain.spending import SpendingScope
 
 
 class Message(PlanningInput):
@@ -19,6 +20,7 @@ class ChatInput(PlanningInput):
     messages: list[Message] = Field(min_length=1, max_length=16)
     month: date
     locale: Literal["zh-CN", "en-US"] = "zh-CN"
+    spending_context: SpendingScope | None = None
 
     @model_validator(mode="after")
     def user_turn(self) -> "ChatInput":
@@ -65,6 +67,11 @@ class ReadOverview(PlanningInput):
     arguments: MonthArguments
 
 
+class ReadSpending(PlanningInput):
+    kind: Literal["spending"]
+    arguments: SpendingScope
+
+
 class ProposeBudget(PlanningInput):
     kind: Literal["propose_budget"]
     arguments: BudgetArguments
@@ -76,7 +83,7 @@ class Answer(PlanningInput):
 
 
 Decision = Annotated[
-    ReadBudgets | ReadRecurring | ReadOverview | ProposeBudget | Answer,
+    ReadBudgets | ReadRecurring | ReadOverview | ReadSpending | ProposeBudget | Answer,
     Field(discriminator="kind"),
 ]
 decision_adapter: TypeAdapter[Decision] = TypeAdapter(Decision)

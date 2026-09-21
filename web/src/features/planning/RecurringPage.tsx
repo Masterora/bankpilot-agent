@@ -14,7 +14,8 @@ import { EmptyContent, IconButton, LoadingIndicator, PageHeader } from '../../sh
 import { currentPeriod } from '../../shared/period'
 import { usePlanningFocus } from './usePlanningFocus'
 import type { RecurringInput, RecurringItem, RecurringRevision } from './types'
-import { planningError, usePlanningMonth } from './usePlanningMonth'
+import { usePlanningMonth } from './usePlanningMonth'
+import { planningError } from './errors'
 
 export function RecurringPage({
   copy,

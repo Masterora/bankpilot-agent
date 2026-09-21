@@ -15,7 +15,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   border-right: 1px solid var(--line);
-  background: rgba(11, 15, 21, .96);
+  background: var(--sidebar);
 }
 .sidebar-brand { padding: 0 12px 32px; font-size: 17px; flex-shrink: 0; }
 .sidebar-label {
@@ -45,13 +45,13 @@
 }
 .product-nav button:hover { color: var(--text); background: rgba(255, 255, 255, .045); }
 .product-nav button.active {
-  color: #fff4db;
-  background: rgba(240, 199, 126, .1);
+  color: var(--accent);
+  background: var(--accent-soft);
   box-shadow: inset 2px 0 var(--accent);
 }
 .product-nav button span { font-size: 13px; font-weight: 550; }
 .product-nav button small { margin-left: auto; color: #657283; font-size: 9px; font-weight: 650; }
-.product-nav button.active small { color: #c3a66f; }
+.product-nav button.active small { color: var(--accent); }
 .nav-icon {
   width: 17px;
   height: 17px;
@@ -76,10 +76,10 @@
   height: 28px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(240, 199, 126, .28);
+  border: 1px solid #32645d;
   border-radius: 10px;
   color: var(--accent);
-  background: rgba(240, 199, 126, .08);
+  background: var(--accent-soft);
   font-size: 13px;
   font-weight: 750;
 }

@@ -6,7 +6,7 @@ import type { Locale } from '../../i18n'
 import { currentPeriod } from '../../shared/period'
 import { LoadingIndicator } from '../../shared/ui'
 import type { RecurringItem, RecurringTransaction } from './types'
-import { planningError } from './usePlanningMonth'
+import { planningError } from './errors'
 
 export function Occurrence({
   item,

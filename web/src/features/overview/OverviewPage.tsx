@@ -176,6 +176,12 @@ function OverviewData({
           </div>
         </section>
       ))}
+      {!!data.summaries.length && <div className="overview-charts">
+        {data.summaries.map(summary => <article className="overview-panel" key={summary.currency}>
+          <header><h2>{english ? 'Imported cash flow' : '已导入收支'} · {summary.currency}</h2><span>{english ? 'Raw / adjusted' : '原始 / 调整后'}</span></header>
+          <FlowChart summary={summary} english={english} />
+        </article>)}
+      </div>}
       <NextActions
         revision={planningRevision}
         key={`planning:${requestKey}`}
@@ -184,7 +190,7 @@ function OverviewData({
         copy={copy}
         onPlanning={onPlanning}
       />
-      <details className="data-coverage">
+      <details className="data-coverage" open>
         <summary>{english ? 'Imported data scope' : '数据来源'}</summary>
         {importsFailed ? (
           <span>{english ? 'Import history unavailable' : '暂时无法读取导入范围'}</span>

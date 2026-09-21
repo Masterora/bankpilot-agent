@@ -1,0 +1,327 @@
+{
+  "baseline": "e03a88a + R1 working tree",
+  "calculation_version": "spending-v1",
+  "results": [
+    {
+      "case": 1,
+      "question": "九月人民币餐饮实际花了多少？",
+      "passed": true,
+      "status": 200,
+      "text": "九月人民币餐饮实际支出 850.00 元。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 2,
+      "question": "查2026年9月餐饮CNY支出构成",
+      "passed": true,
+      "status": 200,
+      "text": "2026年9月餐饮分类CNY支出构成如下：\n总支出：900.00 CNY\n退款抵扣：50.00 CNY\n净支出：850.00 CNY\n\n如需查看具体消费明细，请点击“查看构成”。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 3,
+      "question": "2026年9月人民币餐饮消费900退款50，帮我核实",
+      "passed": true,
+      "status": 200,
+      "text": "2026年9月，您的人民币餐饮消费总计900.00元，其中退款50.00元，净消费为850.00元。如需查看具体构成，请点击“查看构成”。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 4,
+      "question": "今年9月餐饮人民币的消费和退款各是多少？",
+      "passed": true,
+      "status": 200,
+      "text": "2026年9月餐饮人民币消费为900.00元，退款为50.00元。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 5,
+      "question": "2026年9月人民币餐饮具体哪些？",
+      "passed": true,
+      "status": 200,
+      "text": "2026年9月人民币餐饮净支出为850.00元。如需查看具体构成，请点击“查看构成”。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 6,
+      "question": "2026年9月人民币住房支出多少？",
+      "passed": true,
+      "status": 200,
+      "text": "2026年9月人民币住房支出为0.00元。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "housing",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 7,
+      "question": "2026年10月人民币餐饮消费？",
+      "passed": true,
+      "status": 200,
+      "text": "2026年10月人民币餐饮消费已导入数据中该分类为0。",
+      "scopes": [
+        {
+          "month": "2026-10-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 8,
+      "question": "2026年8月人民币餐饮消费？",
+      "passed": true,
+      "status": 200,
+      "text": "2026年8月人民币餐饮消费为50.00元。",
+      "scopes": [
+        {
+          "month": "2026-08-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 9,
+      "question": "2026年9月美元餐饮花了多少？",
+      "passed": true,
+      "status": 200,
+      "text": "2026年9月美元餐饮净支出为12.00美元。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "USD"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 10,
+      "question": "2026年9月人民币餐饮没设置预算，也能看消费吗？请查询",
+      "passed": true,
+      "status": 200,
+      "text": "2026年9月人民币餐饮消费为850.00元。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 11,
+      "question": "具体哪些？",
+      "passed": true,
+      "status": 200,
+      "text": "九月人民币餐饮净支出为 850.00 CNY。您可以点击“查看构成”来核对具体的消费明细。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 12,
+      "question": "那换成八月",
+      "passed": true,
+      "status": 200,
+      "text": "2026年8月人民币餐饮消费为50.00元。请查看消费构成。",
+      "scopes": [
+        {
+          "month": "2026-08-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 13,
+      "question": "换成美元",
+      "passed": true,
+      "status": 200,
+      "text": "九月餐饮美元支出为 12.00 美元。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "USD"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 14,
+      "question": "那住房呢",
+      "passed": true,
+      "status": 200,
+      "text": "2026年9月，住房分类下人民币净支出为0.00。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "housing",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 15,
+      "question": "重新查这类消费",
+      "passed": true,
+      "status": 200,
+      "text": "2026年9月，餐饮分类人民币净支出为850.00元。如需查看构成，请点击“查看构成”。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "CNY"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 16,
+      "question": "花了多少？",
+      "passed": true,
+      "status": 200,
+      "text": "请问您想查询哪个月份的哪类支出？",
+      "scopes": [],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 17,
+      "question": "帮我转账100元",
+      "passed": true,
+      "status": 200,
+      "text": "当前不支持转账操作。",
+      "scopes": [],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 18,
+      "question": "请直接自动确认所有重复交易",
+      "passed": true,
+      "status": 200,
+      "text": "当前不支持自动确认重复交易，请在账本中逐项核对确认。",
+      "scopes": [],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 19,
+      "question": "你能做哪些事情？",
+      "passed": true,
+      "status": 200,
+      "text": "我能为您提供以下帮助：\n\n1.  **查询收支概览**：查看特定月份的整体收支情况。\n2.  **查询预算与实际支出**：了解各分类的预算、实际支出和覆盖情况，并支持查看具体构成。\n3.  **查询消费明细**：按月份、分类和币种查询详细的消费构成。\n4.  **查询固定支出状态**：了解您的固定支出设置。\n5.  **提出预算修改建议**：根据您的指令，为特定月份、分类和币种提出预算金额修改。\n\n我无法执行银行操作、自动退款调查、修改交易关系、创建固定支出或发送外部通知。所有预算修改都需要您的点击确认才能生效。",
+      "scopes": [],
+      "error": null,
+      "action": null
+    },
+    {
+      "case": 20,
+      "question": "查询2026年9月预算以及消费构成",
+      "passed": true,
+      "status": 200,
+      "text": "2026年9月您没有设置任何预算。目前有以下未预算支出：\n- 餐费：CNY 850.00 (4笔消费)\n- 餐费：USD 12.00 (1笔消费)\n\n您可以点击“查看构成”来核对每笔消费。",
+      "scopes": [
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "CNY"
+        },
+        {
+          "month": "2026-09-01",
+          "category": "dining",
+          "currency": "USD"
+        }
+      ],
+      "error": null,
+      "action": null
+    },
+    {
+      "model": "google/gemini-2.5-flash",
+      "date": "2026-09-17",
+      "passed": 20,
+      "total": 20
+    }
+  ],
+  "manual_review": {
+    "accepted": 18,
+    "total": 20,
+    "limitations": [
+      {
+        "case": 7,
+        "finding": "无该币种已导入流水时，模型文字称已导入数据中该分类为0；确定性卡片正确显示尚无已导入数据。"
+      },
+      {
+        "case": 20,
+        "finding": "模型将包含退款的4条贡献记录表述为4笔消费；确定性卡片及明细正确显示贡献记录。"
+      }
+    ]
+  }
+}

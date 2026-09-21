@@ -47,7 +47,7 @@
 .transaction-drawer dd { margin: 0; overflow-wrap: anywhere; }
 .overview-currency { margin-bottom: 16px; }
 /* 分币种紧凑收支行，避免次要币种挤出待办。 */
-.currency-stamp { border: 1px solid rgba(255, 229, 183, .35); padding: 5px 10px; border-radius: 20px; color: #f7dcae; background: rgba(255,255,255,.04); font-size: 10px; letter-spacing: .1em; }
+.currency-stamp { border: 1px solid rgba(255, 229, 183, .35); padding: 5px 10px; border-radius: 20px; color: var(--accent); background: rgba(255,255,255,.04); font-size: 10px; letter-spacing: .1em; }
 .recent-ledger { margin-top: 32px; padding: 0 0 10px; }
 .recent-ledger > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 18px; }
 .recent-ledger h2 { font-size: 17px; font-weight: 500; margin: 0; }
@@ -94,7 +94,7 @@
 .review-queue button { font-size: 12px; background: transparent; }
 /* 请求反馈独立于成功提示，进度线使用 transform 避免触发布局。 */
 .loading-indicator { width: 100%; min-width: 0; display: grid; gap: 10px; padding: 16px 0; color: var(--muted); font-size: 11px; }
-.loading-track { display: block; height: 2px; overflow: hidden; border-radius: 2px; background: rgba(240,199,126,.07); }
+.loading-track { display: block; height: 2px; overflow: hidden; border-radius: 2px; background: var(--accent-soft); }
 .loading-track > span { display: block; width: 35%; height: 100%; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: loading-sweep 1.6s cubic-bezier(.4,0,.2,1) infinite; }
 .loading-label { opacity: .65; letter-spacing: .02em; }
 @keyframes loading-sweep { from { transform: translateX(-100%); } to { transform: translateX(386%); } }
@@ -108,7 +108,7 @@
 .copy-value code { min-width: 0; overflow-wrap: anywhere; font-size: 11px; }
 .copy-value button { flex-shrink: 0; padding: 4px 8px; font-size: 11px; }
 .copy-feedback { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
-.import-table tbody tr:focus-within { background: rgba(240,199,126,.05); }
+.import-table tbody tr:focus-within { background: var(--accent-soft); }
 .import-table select { min-height: 34px; padding: 6px 9px; font-size: 12px; }
 .import-metrics strong, .overview-metric strong, .currency-summary dd { font-variant-numeric: tabular-nums; }
 .transaction-drawer, .mobile-navigation { overscroll-behavior: contain; }
@@ -243,7 +243,7 @@ form.import-report p { margin: 0; }
 .relation-tabs button:hover, .relations-panel button:hover, .account-tile button:hover { border-color: var(--accent); }
 .relations-panel button:disabled, .account-tile button:disabled { opacity: .45; cursor: not-allowed; }
 .relation-summary-head { justify-content: space-between; }
-.relation-tabs button[aria-pressed="true"] { background: rgba(240,199,126,.1); border-color: var(--accent); color: var(--accent); }
+.relation-tabs button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .relation-card { border: 1px solid var(--line); padding: 20px; background: var(--surface); border-radius: var(--radius-panel); box-shadow: none; }
 .relation-card header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .relation-card h3 { margin: 0 0 16px; }
@@ -266,7 +266,7 @@ form.import-report p { margin: 0; }
 .report-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 12px; }
 .report-list-item { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; text-align: left; padding: 17px; border-radius: 12px; background: var(--surface); }
 .report-list-item small { grid-column: 1 / -1; color: var(--muted); }
-.report-list-item[aria-pressed="true"] { border-color: var(--accent); outline: 3px solid rgba(240,199,126,.1); }
+.report-list-item[aria-pressed="true"] { border-color: var(--accent); outline: 3px solid var(--accent-soft); }
 .report-detail { margin-top: 24px; min-width: 0; padding: 0 0 24px; overflow-wrap: anywhere; }
 .report-detail .snapshot-evidence { margin-block: 12px; }
 

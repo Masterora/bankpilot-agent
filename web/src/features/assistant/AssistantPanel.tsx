@@ -9,9 +9,13 @@ import { DetailPanel } from '../../shared/DetailPanel'
 import { LoadingIndicator } from '../../shared/ui'
 import type { AssistantAction, ChatMessage, Reply } from './types'
 import { AssistantEvidence } from './AssistantEvidence'
+import { SpendingDetails } from './SpendingDetails'
+import { spendingRefs } from './types'
+import type { EvidenceTarget, SpendingScope, SpendingSummary } from './types'
 interface Turn {
   question: string
   reply: Reply
+  ledgerRevision: number
 }
 export function AssistantPanel({
   open,
@@ -20,6 +24,8 @@ export function AssistantPanel({
   copy,
   locale,
   onSaved,
+  ledgerRevision,
+  onInspect,
 }: {
   open: boolean
   onClose: () => void
@@ -27,11 +33,29 @@ export function AssistantPanel({
   copy: Messages
   locale: Locale
   onSaved: () => void
+  ledgerRevision: number
+  onInspect: (target: EvidenceTarget) => void
 }) {
   const [turns, setTurns] = useState<Turn[]>([])
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [context, setContext] = useState<SpendingScope | null>(null)
+  const [detail, setDetail] = useState<{ summary: SpendingSummary; revision: number } | null>(null)
+  const [detailVisible, setDetailVisible] = useState(false)
+  const conversation = useRef<HTMLDivElement>(null)
+  const readingPosition = useRef(0)
+  function showDetail(summary: SpendingSummary, revision: number) {
+    readingPosition.current = conversation.current?.parentElement?.scrollTop ?? 0
+    setContext(summary.scope)
+    setDetail({ summary, revision })
+    setDetailVisible(true)
+    conversation.current?.parentElement?.scrollTo({ top: 0 })
+  }
+  function backToAnswer() {
+    setDetailVisible(false)
+    requestAnimationFrame(() => conversation.current?.parentElement?.scrollTo({ top: readingPosition.current }))
+  }
   const input = useRef<HTMLTextAreaElement>(null)
   const lock = useRef(false)
   const english = locale === 'en-US'
@@ -105,8 +129,11 @@ export function AssistantPanel({
         [...messages, { role: 'user', content: question }],
         month,
         locale,
+        context,
       )
-      setTurns((current) => [...current, { question, reply }])
+      setTurns((current) => [...current, { question, reply, ledgerRevision }])
+      const refs = spendingRefs(reply.evidence)
+      setContext(refs.length === 1 ? refs[0].scope : null)
       setMessage('')
     } catch (cause) {
       setError(failure(cause))
@@ -137,21 +164,27 @@ export function AssistantPanel({
   }
   return (
     <DetailPanel
+      docked
       open={open}
       title={t('账本助手', 'Ledger assistant')}
       closeLabel={t('收起', 'Close')}
       onClose={onClose}
     >
-      <div className="assistant-conversation">
+      {detail && <div hidden={!detailVisible}>
+        <SpendingDetails key={`${detail.summary.calculated_at}:${JSON.stringify(detail.summary.scope)}`} summary={detail.summary} copy={copy} locale={locale}
+          active={open && detailVisible} stale={detail.revision !== ledgerRevision} onBack={backToAnswer} onInspect={onInspect}
+          onRequery={() => {
+            setContext(detail.summary.scope)
+            const scope = detail.summary.scope
+            setMessage(`${scope.month.slice(0, 7)} ${copy.categoryLabels[scope.category]} ${scope.currency} ${t('实际支出和构成', 'spending and breakdown')}`)
+            backToAnswer()
+            requestAnimationFrame(() => input.current?.focus())
+          }} />
+      </div>}
+      <div className="assistant-conversation" ref={conversation} hidden={detailVisible}>
         {!turns.length && (
           <div className="assistant-intro">
             <h3>{t('想了解本月开销？', 'What would you like to know?')}</h3>
-            <p>
-              {t(
-                '查询月度收支、预算与固定支出，也可以帮你调整预算。',
-                'Ask about monthly spending, budgets and recurring costs, or change a budget.',
-              )}
-            </p>
             <div className="suggestions">
               {[
                 t('本月哪些分类超预算了？', 'Which categories are over budget this month?'),
@@ -175,7 +208,7 @@ export function AssistantPanel({
           <article className="assistant-turn" key={index}>
             <p className="assistant-question">{turn.question}</p>
             <p className="assistant-answer">{turn.reply.text}</p>
-            <AssistantEvidence evidence={turn.reply.evidence} copy={copy} locale={locale} />
+            <AssistantEvidence evidence={turn.reply.evidence} copy={copy} locale={locale} stale={turn.ledgerRevision !== ledgerRevision} onInspect={summary => showDetail(summary, turn.ledgerRevision)} />
             {turn.reply.action && (
               <section className="assistant-proposal" aria-label={t('预算修改', 'Budget change')}>
                 <strong>{describe(turn.reply.action)}</strong>
@@ -226,6 +259,7 @@ export function AssistantPanel({
           <label>
             {t('参考月份', 'Context month')} · {month.slice(0, 7)}
           </label>
+          {context && <p className="assistant-context">{t('追问范围', 'Follow-up scope')}：{context.month.slice(0, 7)} · {copy.categoryLabels[context.category]} · {context.currency} <button type="button" disabled={busy || pending} onClick={() => setContext(null)}>{t('清除', 'Clear')}</button></p>}
           <textarea
             ref={input}
             onKeyDown={(event) => {
@@ -268,6 +302,9 @@ export function AssistantPanel({
                 onClick={() => {
                   setTurns([])
                   setError('')
+                  setContext(null)
+                  setDetail(null)
+                  setDetailVisible(false)
                 }}
               >
                 {t('新对话', 'New conversation')}

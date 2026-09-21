@@ -11,7 +11,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 
 import httpx
 from fastapi import FastAPI
@@ -43,6 +43,12 @@ from bankpilot.services.report_processor import ReportProcessor
 from bankpilot.services.run_processor import RunProcessor
 
 
+async def _stop_task(task: asyncio.Task[None]) -> None:
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+
 def create_app(
     settings: Settings | None = None,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
@@ -60,51 +66,48 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         """初始化共享客户端、修复运行状态，并关闭自身持有的资源。"""
-        model_client: httpx.AsyncClient | None = None
-        resolved_gateway = model_gateway
-        if resolved_gateway is None:
-            model_client = httpx.AsyncClient(
-                base_url=str(resolved_settings.model_base_url).rstrip("/"),
-                timeout=resolved_settings.model_timeout_seconds,
-            )
-            resolved_gateway = OpenRouterModelGateway(resolved_settings, model_client)
-
-        if assistant_gateway is None:
-            if model_client is None:
+        async with AsyncExitStack() as resources:
+            if managed_engine is not None:
+                resources.push_async_callback(managed_engine.dispose)
+            model_client: httpx.AsyncClient | None = None
+            resolved_gateway = model_gateway
+            if resolved_gateway is None:
                 model_client = httpx.AsyncClient(
                     base_url=str(resolved_settings.model_base_url).rstrip("/"),
                     timeout=resolved_settings.model_timeout_seconds,
                 )
-            app.state.assistant_gateway = OpenRouterModelGateway(resolved_settings, model_client)
-        else:
-            app.state.assistant_gateway = assistant_gateway
-        app.state.settings = resolved_settings
-        app.state.session_factory = session_factory
-        resolved_review_gateway = review_gateway or LocalReviewGateway(session_factory)
-        app.state.run_processor = RunProcessor(
-            session_factory,
-            resolved_gateway,
-            resolved_review_gateway,
-            business_timezone=resolved_settings.business_timezone,
-        )
-        # 启动与周期恢复均只处理心跳过期任务，不触碰其他实例的活跃运行。
-        await app.state.run_processor.reconcile_interrupted()
-        recovery = asyncio.create_task(app.state.run_processor.recover_expired())
-        app.state.report_processor = ReportProcessor(session_factory, resolved_review_gateway)
-        reports = asyncio.create_task(app.state.report_processor.run())
-        try:
+                resources.push_async_callback(model_client.aclose)
+                resolved_gateway = OpenRouterModelGateway(resolved_settings, model_client)
+
+            if assistant_gateway is None:
+                if model_client is None:
+                    model_client = httpx.AsyncClient(
+                        base_url=str(resolved_settings.model_base_url).rstrip("/"),
+                        timeout=resolved_settings.model_timeout_seconds,
+                    )
+                    resources.push_async_callback(model_client.aclose)
+                app.state.assistant_gateway = OpenRouterModelGateway(
+                    resolved_settings, model_client
+                )
+            else:
+                app.state.assistant_gateway = assistant_gateway
+            app.state.settings = resolved_settings
+            app.state.session_factory = session_factory
+            resolved_review_gateway = review_gateway or LocalReviewGateway(session_factory)
+            app.state.run_processor = RunProcessor(
+                session_factory,
+                resolved_gateway,
+                resolved_review_gateway,
+                business_timezone=resolved_settings.business_timezone,
+            )
+            # 启动与周期恢复均只处理心跳过期任务，不触碰其他实例的活跃运行。
+            await app.state.run_processor.reconcile_interrupted()
+            recovery = asyncio.create_task(app.state.run_processor.recover_expired())
+            resources.push_async_callback(_stop_task, recovery)
+            app.state.report_processor = ReportProcessor(session_factory, resolved_review_gateway)
+            reports = asyncio.create_task(app.state.report_processor.run())
+            resources.push_async_callback(_stop_task, reports)
             yield
-        finally:
-            reports.cancel()
-            with suppress(asyncio.CancelledError):
-                await reports
-            recovery.cancel()
-            with suppress(asyncio.CancelledError):
-                await recovery
-            if model_client is not None:
-                await model_client.aclose()
-            if managed_engine is not None:
-                await managed_engine.dispose()
 
     app = FastAPI(
         title="BankPilot Agent API",

@@ -10,6 +10,17 @@
  */
 
 import type {
+  Account,
+  CurrencySummary,
+  ImportFieldMapping,
+  ImportPreview,
+  MonthlyReport,
+  OverviewSnapshot,
+  RelationKind,
+  RelationWorkspace,
+  ReportDetail,
+  ReviewItem,
+  RunResult,
   ImportBatch,
   ImportBatchList,
   ImportStatementPayload,
@@ -18,6 +29,12 @@ import type {
   TransactionCategory,
   User,
 } from './types'
+
+import type { AssistantAction, ChatMessage, Reply, SpendingPage, SpendingScope, SpendingSummary } from './features/assistant/types'
+
+import type { BudgetInput, BudgetWorkspace, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
+
+import type { Locale } from './i18n'
 
 export class ApiError extends Error {
   constructor(
@@ -50,39 +67,46 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError('服务响应格式无效', response.status, 'invalid_response')
   }
+  if (init?.method === 'POST' && /^\/api\/v1\/(?:imports(?:\/[^/]+\/revoke)?|relations|accounts\/[^/]+\/name|transactions\/[^/]+\/category|runs\/[^/]+\/transactions\/[^/]+\/category)$/.test(path)) {
+    window.dispatchEvent(new Event('bankpilot:ledger-changed'))
+  }
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }
 
 export const api = {
-  assistantChat: (messages: import('./features/assistant/types').ChatMessage[], month: string, locale: import('./i18n').Locale) => request<import('./features/assistant/types').Reply>('/api/v1/assistant/chat', { method: 'POST', body: JSON.stringify({ messages, month: `${month.slice(0, 7)}-01`, locale }) }),
-  assistantAction: (id: string, cancel: boolean) => request<import('./features/assistant/types').AssistantAction>(`/api/v1/assistant/${cancel ? 'cancel' : 'confirm'}`, { method: 'POST', body: JSON.stringify({ id }) }),
-  budgets: (month: string) => request<import('./features/planning/types').BudgetWorkspace>(`/api/v1/budgets?month=${month}-01`),
-  saveBudget: (payload: import('./features/planning/types').BudgetInput) => request<void>('/api/v1/budgets', { method: 'POST', body: JSON.stringify(payload) }),
-  deleteBudget: (payload: Omit<import('./features/planning/types').BudgetInput, 'amount'>) => request<void>('/api/v1/budgets/delete', { method: 'POST', body: JSON.stringify(payload) }),
+  assistantChat: (messages: ChatMessage[], month: string, locale: Locale, spending_context: SpendingScope | null = null) => request<Reply>('/api/v1/assistant/chat', { method: 'POST', body: JSON.stringify({ messages, month: `${month.slice(0, 7)}-01`, locale, spending_context }) }),
+  spendingEvidence: (summary: SpendingSummary, page: number) => {
+    const params = new URLSearchParams({ ...summary.scope, expected_revision: String(summary.ledger_revision), expected_calculation_version: summary.calculation_version, page: String(page) })
+    return request<SpendingPage>(`/api/v1/assistant/spending-evidence?${params}`)
+  },
+  assistantAction: (id: string, cancel: boolean) => request<AssistantAction>(`/api/v1/assistant/${cancel ? 'cancel' : 'confirm'}`, { method: 'POST', body: JSON.stringify({ id }) }),
+  budgets: (month: string) => request<BudgetWorkspace>(`/api/v1/budgets?month=${month}-01`),
+  saveBudget: (payload: BudgetInput) => request<void>('/api/v1/budgets', { method: 'POST', body: JSON.stringify(payload) }),
+  deleteBudget: (payload: Omit<BudgetInput, 'amount'>) => request<void>('/api/v1/budgets/delete', { method: 'POST', body: JSON.stringify(payload) }),
   copyBudgets: (month: string) => request<{ copied: number; source_count: number }>('/api/v1/budgets/copy', { method: 'POST', body: JSON.stringify({ month: `${month}-01` }) }),
-  recurring: (month: string) => request<import('./features/planning/types').RecurringWorkspace>(`/api/v1/recurring?month=${month}-01`),
-  recurringCandidates: (month: string) => request<import('./features/planning/types').RecurringTransaction[]>(`/api/v1/recurring/candidates?month=${month}-01`),
-  createRecurring: (payload: import('./features/planning/types').RecurringInput) => request<void>('/api/v1/recurring', { method: 'POST', body: JSON.stringify(payload) }),
-  editRecurring: (payload: import('./features/planning/types').RecurringEditInput) => request<void>(`/api/v1/recurring/${payload.id}/edit`, { method: 'POST', body: JSON.stringify(payload) }),
-  recurringDraft: (id: string) => request<import('./features/planning/types').RecurringInput>(`/api/v1/recurring/draft?transaction_id=${id}`),
+  recurring: (month: string) => request<RecurringWorkspace>(`/api/v1/recurring?month=${month}-01`),
+  recurringCandidates: (month: string) => request<RecurringTransaction[]>(`/api/v1/recurring/candidates?month=${month}-01`),
+  createRecurring: (payload: RecurringInput) => request<void>('/api/v1/recurring', { method: 'POST', body: JSON.stringify(payload) }),
+  editRecurring: (payload: RecurringEditInput) => request<void>(`/api/v1/recurring/${payload.id}/edit`, { method: 'POST', body: JSON.stringify(payload) }),
+  recurringDraft: (id: string) => request<RecurringInput>(`/api/v1/recurring/draft?transaction_id=${id}`),
   skipRecurring: (id: string, due_date: string, skipped: boolean, expected_version: number) => request<void>(`/api/v1/recurring/${id}/skip`, { method: 'POST', body: JSON.stringify({ due_date, skipped, expected_version }) }),
   cancelRecurringRevision: (id: string, effective_month: string, expected_version: number) => request<void>(`/api/v1/recurring/${id}/cancel-revision`, { method: 'POST', body: JSON.stringify({ effective_month, expected_version }) }),
-  recurringStatus: (id: string, status: import('./features/planning/types').RecurringItem['status'], expected_version: number) => request<void>(`/api/v1/recurring/${id}/status`, { method: 'POST', body: JSON.stringify({ status, expected_version }) }),
+  recurringStatus: (id: string, status: RecurringItem['status'], expected_version: number) => request<void>(`/api/v1/recurring/${id}/status`, { method: 'POST', body: JSON.stringify({ status, expected_version }) }),
   matchRecurring: (id: string, due_date: string, transaction_id: string | null, expected_version: number) => request<void>(`/api/v1/recurring/${id}/match`, { method: 'POST', body: JSON.stringify({ due_date, transaction_id, expected_version }) }),
-  overview: (start: string, end: string) => request<import('./types').OverviewSnapshot>(`/api/v1/overview?start_date=${start}&end_date=${end}`),
-  reports: (offset = 0) => request<{ items: import('./types').MonthlyReport[]; has_more: boolean }>(`/api/v1/reports?offset=${offset}&limit=20`),
-  report: (id: string) => request<import('./types').ReportDetail>(`/api/v1/reports/${id}`),
-  reportStatus: (id: string) => request<import('./types').MonthlyReport>(`/api/v1/reports/${id}/status`),
-  createReport: (month: string, idempotency_key: string) => request<import('./types').MonthlyReport>('/api/v1/reports', { method: 'POST', body: JSON.stringify({ month, idempotency_key }) }),
+  overview: (start: string, end: string) => request<OverviewSnapshot>(`/api/v1/overview?start_date=${start}&end_date=${end}`),
+  reports: (offset = 0) => request<{ items: MonthlyReport[]; has_more: boolean }>(`/api/v1/reports?offset=${offset}&limit=20`),
+  report: (id: string) => request<ReportDetail>(`/api/v1/reports/${id}`),
+  reportStatus: (id: string) => request<MonthlyReport>(`/api/v1/reports/${id}/status`),
+  createReport: (month: string, idempotency_key: string) => request<MonthlyReport>('/api/v1/reports', { method: 'POST', body: JSON.stringify({ month, idempotency_key }) }),
   deleteReport: (id: string) => request<void>(`/api/v1/reports/${id}/delete`, { method: 'POST' }),
   exportReport: (id: string) => request<unknown>(`/api/v1/reports/${id}/export`),
-  relations: (start: string, end: string) => request<import('./types').RelationWorkspace>(`/api/v1/relations?start_date=${start}&end_date=${end}`),
-  saveRelation: (payload: { kind: import('./types').RelationKind; first_id: string; second_id: string; state: 'confirmed' | 'rejected' | 'revoked'; expected_version: number }) => request<void>('/api/v1/relations', { method: 'POST', body: JSON.stringify(payload) }),
+  relations: (start: string, end: string) => request<RelationWorkspace>(`/api/v1/relations?start_date=${start}&end_date=${end}`),
+  saveRelation: (payload: { kind: RelationKind; first_id: string; second_id: string; state: 'confirmed' | 'rejected' | 'revoked'; expected_version: number }) => request<void>('/api/v1/relations', { method: 'POST', body: JSON.stringify(payload) }),
   renameAccount: (id: string, name: string) => request<void>(`/api/v1/accounts/${id}/name`, { method: 'POST', body: JSON.stringify({ name }) }),
   decodeImport: (file_name: string, data: string) => request<{content: string; content_digest: string}>('/api/v1/imports/decode', {method: 'POST', body: JSON.stringify({file_name, data})}),
-  reviews: (start: string, end: string) => request<{ summaries: import('./types').CurrencySummary[]; items: import('./types').ReviewItem[] }>(`/api/v1/reviews?start_date=${start}&end_date=${end}`),
-  saveReview: (start: string, end: string, key: string, state: import('./types').ReviewItem['state'], note: string) => request<void>('/api/v1/reviews', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end, key, state, note }) }),
+  reviews: (start: string, end: string) => request<{ summaries: CurrencySummary[]; items: ReviewItem[] }>(`/api/v1/reviews?start_date=${start}&end_date=${end}`),
+  saveReview: (start: string, end: string, key: string, state: ReviewItem['state'], note: string) => request<void>('/api/v1/reviews', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end, key, state, note }) }),
   runHistory: () => request<{ items: { id: string; message: string; status: string; created_at: string }[] }>('/api/v1/run-history'),
   register: (email: string, password: string) =>
     request<User>('/api/v1/auth/register', {
@@ -96,14 +120,14 @@ export const api = {
     }),
   me: () => request<User>('/api/v1/auth/me'),
   logout: () => request<void>('/api/v1/auth/logout', { method: 'POST' }),
-  listAccounts: () => request<{ items: import('./types').Account[] }>('/api/v1/accounts'),
-  ledger: (start: string, end: string) => request<import('./types').RunResult['transactions']>(`/api/v1/transactions?start_date=${start}&end_date=${end}`),
+  listAccounts: () => request<{ items: Account[] }>('/api/v1/accounts'),
+  ledger: (start: string, end: string) => request<RunResult['transactions']>(`/api/v1/transactions?start_date=${start}&end_date=${end}`),
   correctLedgerCategory: (id: string, category: TransactionCategory) => request<void>(`/api/v1/transactions/${id}/category`, { method: 'POST', body: JSON.stringify({ category }) }),
   listImports: () => request<ImportBatchList>('/api/v1/imports'),
-  detectImport: (content: string) => request<{ source: string; headers: string[]; mapping: import('./types').ImportFieldMapping; account_name: string | null; currency: string | null }>('/api/v1/imports/detect', { method: 'POST', body: JSON.stringify({ content }) }),
+  detectImport: (content: string) => request<{ source: string; headers: string[]; mapping: ImportFieldMapping; account_name: string | null; currency: string | null }>('/api/v1/imports/detect', { method: 'POST', body: JSON.stringify({ content }) }),
   revokeImport: (id: string) => request<void>(`/api/v1/imports/${id}/revoke`, { method: 'POST' }),
   importByKey: (key: string) => request<ImportBatch>(`/api/v1/imports/by-key/${key}`),
-  previewImport: (payload: ImportStatementPayload) => request<import('./types').ImportPreview>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify(payload) }),
+  previewImport: (payload: ImportStatementPayload) => request<ImportPreview>('/api/v1/imports/preview', { method: 'POST', body: JSON.stringify(payload) }),
   importStatement: (payload: ImportStatementPayload & { idempotency_key: string }) =>
     request<ImportBatch>('/api/v1/imports', {
       method: 'POST',

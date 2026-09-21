@@ -9,7 +9,7 @@ import { formatMoney } from '../../format'
 import type { Locale, Messages } from '../../i18n'
 import type { ReportDetail } from '../../types'
 import { ReportSummary } from './ReportSummary'
-import { ledgerCsv } from '../agent/ledgerExport'
+import { ledgerCsv } from '../../shared/ledgerExport'
 import { downloadFile } from '../../shared/download'
 import { ReviewSnapshot } from '../agent/ReviewSnapshot'
 

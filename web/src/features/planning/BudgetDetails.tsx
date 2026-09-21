@@ -4,7 +4,7 @@ import { formatMoney } from '../../format'
 import { DetailPanel } from '../../shared/DetailPanel'
 import type { TransactionCategory } from '../../types'
 import type { BudgetWorkspace, BudgetItem } from './types'
-import type { LedgerEntry } from '../agent/LedgerPage'
+import type { LedgerEntry } from '../ledger/LedgerPage'
 import { monthPeriod } from '../../shared/period'
 
 export function BudgetDetails({

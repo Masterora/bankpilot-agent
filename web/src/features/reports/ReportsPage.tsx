@@ -80,6 +80,7 @@ export function ReportsPage({ copy, locale, initialMonth, active }: Props) {
       {selected && !detail && !detailError && (
         <LoadingIndicator label={english ? 'Loading report' : '正在读取报告'} />
       )}
+      <div className="report-columns"><div className="report-main">
       {detail?.id === selected && (
         <ReportDetailPanel
           key={detail.id} report={detail} statusLabel={statusLabels[detail.status][english ? 1 : 0]}
@@ -88,7 +89,7 @@ export function ReportsPage({ copy, locale, initialMonth, active }: Props) {
         />
       )}
       {detail?.id === selected && detail.snapshot && previous && <ReportComparison key={`${detail.id}:${previous.id}`} current={detail} previous={previous} locale={locale} />}
-      <details className="report-history" open={!selected || undefined}><summary>{english ? 'Report versions & history' : '报告版本与历史'}</summary>
+      </div><details className="report-history" open><summary>{english ? 'Report versions & history' : '报告版本与历史'}</summary>
       <div className="report-list" aria-label={english ? 'Report history' : '报告历史'}>
         {items.map((item) => (
           <button
@@ -111,7 +112,7 @@ export function ReportsPage({ copy, locale, initialMonth, active }: Props) {
           {english ? 'Next' : '下一页'}
         </button>
       </div>
-      </details>
+      </details></div>
     </section>
   )
 }

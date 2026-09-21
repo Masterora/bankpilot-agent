@@ -49,7 +49,7 @@ export function PageHeader({ copy, page }: { copy: Messages; page: ProductPage }
 
 export function Logo() {
   // 页面品牌标识与浏览器 favicon 复用同一资产，避免不同入口出现两套视觉语言。
-  return <img className="logo" src="/bankpilot-mark.svg?v=3" alt="" aria-hidden="true" draggable={false} />
+  return <img className="logo" src="/bankpilot-mark.svg?v=4" alt="" aria-hidden="true" draggable={false} />
 }
 
 /** 空数据保留功能轮廓与下一步操作，不用占位数字冒充真实统计。 */
@@ -61,6 +61,7 @@ export function EmptyContent({ title, detail, kind, children }: {
 
 export function NavigationIcon({ kind }: { kind: ProductPage }) {
   const paths: Record<ProductPage, ReactNode> = {
+    settings: <><path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z" /><circle cx="12" cy="12" r="3" /></>,
     overview: <path d="m4 11 8-7 8 7v9h-5v-6H9v6H4Z" />,
     relations: <><path d="M10 7H7a5 5 0 0 0 0 10h3m4-10h3a5 5 0 0 1 0 10h-3M8 12h8" /></>,
     reports: <><path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h5" /></>,

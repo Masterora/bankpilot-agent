@@ -3,7 +3,7 @@
  * 主要内容：标准列序、UTF-8 标记、文本转义与公式防护。
  * 关键边界：用于核查导出，不是来源原账单或无损备份格式。
  */
-import type { Transaction } from '../../types'
+import type { Transaction } from '../types'
 
 /** 文本转义并阻止表格公式执行；金额字段仅接受服务端数字字符串。 */
 export function ledgerCsv(items: Transaction[]): string {

@@ -19,7 +19,6 @@ export type Locale = 'zh-CN' | 'en-US'
 
 export interface ProductPageCopy {
   navigation: string
-  eyebrow: string
   title: string
   empty: string
 }
@@ -66,8 +65,6 @@ export interface Messages {
   switchToEnglish: string
   checkingSession: string
   loginHeading: string
-  loginHint: string
-  registerHint: string
   email: string
   password: string
   confirmPassword: string
@@ -136,8 +133,6 @@ const zhCN: Messages = {
   switchToEnglish: 'Switch to English',
   checkingSession: '会话验证中',
   loginHeading: 'BankPilot',
-  loginHint: '本地财务核查',
-  registerHint: '创建财务工作区',
   email: '邮箱',
   password: '密码',
   confirmPassword: '确认密码',
@@ -156,35 +151,31 @@ const zhCN: Messages = {
   productPages: {
     overview: {
       navigation: '总览',
-      eyebrow: '财务工作区',
       title: '账单总览',
       empty: '',
     },
     agent: {
       navigation: '智能核查',
-      eyebrow: '受控财务 Agent',
       title: '智能核查',
       empty: '',
     },
     import: {
       navigation: '账户与导入',
-      eyebrow: '账单文件',
       title: '账户与导入',
       empty: '暂无导入批次',
     },
     review: {
       navigation: '账本',
-      eyebrow: '收支明细',
       title: '交易账本',
       empty: '暂无核查结果',
     },
-    relations: { navigation: '交易关系核对', eyebrow: '交易证据', title: '核对重复、转账与退款', empty: '暂无交易关系' },
-    reports: { navigation: '月度报告', eyebrow: '月度核查', title: '月度报告', empty: '报告功能尚未开放' },
-    recurring: { navigation: '固定支出', eyebrow: '支出计划', title: '固定支出', empty: '尚未添加周期项' },
-    budgets: { navigation: '预算', eyebrow: '预算偏差', title: '预算', empty: '本月尚未设置预算' },
+    relations: { navigation: '交易关系核对', title: '核对重复、转账与退款', empty: '暂无交易关系' },
+    reports: { navigation: '月度报告', title: '月度报告', empty: '报告功能尚未开放' },
+    recurring: { navigation: '固定支出', title: '固定支出', empty: '尚未添加周期项' },
+    budgets: { navigation: '预算', title: '预算', empty: '本月尚未设置预算' },
+    settings: { navigation: '设置', title: '设置', empty: '' },
     audit: {
       navigation: '运行记录',
-      eyebrow: '系统治理',
       title: '运行记录',
       empty: '暂无执行记录',
     },
@@ -321,8 +312,6 @@ const enUS: Messages = {
   switchToEnglish: 'Switch to English',
   checkingSession: 'Validating session',
   loginHeading: 'BankPilot',
-  loginHint: 'Local financial review',
-  registerHint: 'Create a financial workspace',
   email: 'Email',
   password: 'Password',
   confirmPassword: 'Confirm password',
@@ -341,35 +330,31 @@ const enUS: Messages = {
   productPages: {
     overview: {
       navigation: 'Overview',
-      eyebrow: 'FINANCE WORKSPACE',
       title: 'Statement overview',
       empty: '',
     },
     agent: {
       navigation: 'Agent review',
-      eyebrow: 'GOVERNED FINANCE AGENT',
       title: 'Agent review',
       empty: '',
     },
     import: {
       navigation: 'Accounts & import',
-      eyebrow: 'LOCAL DATA ENTRY',
       title: 'Accounts & import',
       empty: 'No import batches',
     },
     review: {
       navigation: 'Ledger',
-      eyebrow: 'DETERMINISTIC ANALYSIS',
       title: 'Ledger',
       empty: 'No review result',
     },
-    relations: { navigation: 'Relationships', eyebrow: 'EVIDENCE', title: 'Relationships', empty: 'No relationships' },
-    reports: { navigation: 'Monthly reports', eyebrow: 'MONTHLY REVIEW', title: 'Monthly reports', empty: 'Reports are not available yet' },
-    recurring: { navigation: 'Fixed expenses', eyebrow: 'RECURRING SIGNALS', title: 'Fixed expenses', empty: 'No recurring charges yet' },
-    budgets: { navigation: 'Budgets', eyebrow: 'BUDGET VARIANCE', title: 'Budgets', empty: 'No budgets this month' },
+    relations: { navigation: 'Relationships', title: 'Relationships', empty: 'No relationships' },
+    reports: { navigation: 'Monthly reports', title: 'Monthly reports', empty: 'Reports are not available yet' },
+    recurring: { navigation: 'Fixed expenses', title: 'Fixed expenses', empty: 'No recurring charges yet' },
+    budgets: { navigation: 'Budgets', title: 'Budgets', empty: 'No budgets this month' },
+    settings: { navigation: 'Settings', title: 'Settings', empty: '' },
     audit: {
       navigation: 'Audit trail',
-      eyebrow: 'SYSTEM GOVERNANCE',
       title: 'Audit trail',
       empty: 'No execution records',
     },

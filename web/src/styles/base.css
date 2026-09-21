@@ -11,26 +11,29 @@
 
 :root {
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #f3f5f7;
-  background: #0d1117;
+  color: #e8edf2;
+  background: #101419;
   color-scheme: dark;
   font-synthesis: none;
-  --bg: #0d1117;
-  --surface: #151b23;
-  --surface-raised: #1d2631;
-  --surface-hover: #222d39;
-  --text: #f3f5f7;
-  --muted: #8d99a8;
-  --accent: #f0c77e;
-  --accent-strong: #ffd58a;
-  --accent-ink: #241a09;
-  --line: #27313d;
-  --line-strong: #384657;
-  --success: #74d3a2;
-  --danger: #f39a94;
+  --bg: #101419;
+  --surface: #1a222b;
+  --surface-raised: #202b35;
+  --surface-hover: #263540;
+  --text: #e8edf2;
+  --muted: #a1b0bf;
+  --accent: #54c6b5;
+  --accent-strong: #76dfce;
+  --accent-ink: #082b28;
+  --line: #2c3742;
+  --line-strong: #435564;
+  --warning: #e9b96e;
+  --accent-soft: rgba(84, 198, 181, .12);
+  --sidebar: #13191f;
+  --success: #54c6b5;
+  --danger: #e68686;
   --danger-bg: #29191b;
-  --sidebar-width: 216px;
-  --page-width: 1280px;
+  --sidebar-width: 232px;
+  --page-width: 1520px;
   --page-gutter: clamp(24px, 3vw, 48px);
   --control-height: 38px;
   --radius-panel: 10px;
@@ -59,7 +62,7 @@ button, summary, label, th, dt, h1, h2, h3, [role="tab"],
 input, textarea, [contenteditable="true"], .selectable-text,
 .transaction-link, .error, [role="alert"], .import-errors,
 .result-heading h2, .report-detail > h2 { user-select: text; }
-::selection { color: var(--text); background: #665335; }
+::selection { color: var(--text); background: #24554f; }
 :where(button, a, input, select, textarea, summary) { scroll-margin-block: 88px 24px; }
 :where(button):disabled { opacity: .5; cursor: not-allowed; }
 :where(button)[aria-busy="true"] { cursor: wait; }
@@ -140,7 +143,7 @@ a:focus-visible {
   letter-spacing: 0.02em;
   transition: background 0.18s, transform 0.18s;
 }
-.primary:hover:not(:disabled) { background: #eddcc3; }
+.primary:hover:not(:disabled) { background: #76dfce; }
 .primary:active:not(:disabled) { transform: translateY(1px); }
 .primary:disabled { opacity: 0.55; cursor: wait; }
 .primary:disabled:not([aria-busy="true"]) { cursor: not-allowed; }
@@ -227,7 +230,7 @@ a:focus-visible {
   background: var(--surface-raised);
   box-shadow: none;
 }
-label { display: grid; gap: 7px; color: #d2d5d0; font-size: 12px; font-weight: 600; }
+label { display: grid; gap: 7px; color: #c8d3de; font-size: 12px; font-weight: 600; }
 .field-hint { color: var(--muted); font-size: 13px; font-weight: 500; }
 input {
   width: 100%;

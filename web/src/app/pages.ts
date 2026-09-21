@@ -15,10 +15,11 @@ export const pageDefinitions = [
   { id: 'recurring', visible: true },
   { id: 'budgets', visible: true },
   { id: 'audit', visible: true },
+  { id: 'settings', visible: true },
 ] as const
 
 export type ProductPage = (typeof pageDefinitions)[number]['id']
 
 /** 常用任务优先；导入、核对与运行记录保留在工具区。 */
-export const primaryPages: ProductPage[] = ['overview', 'review', 'recurring', 'budgets', 'reports']
-export const secondaryPages: ProductPage[] = ['import', 'relations', 'agent', 'audit']
+export const primaryPages: ProductPage[] = ['overview', 'review', 'budgets', 'recurring', 'reports']
+export const secondaryPages: ProductPage[] = ['import', 'agent', 'relations', 'audit']

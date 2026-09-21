@@ -1,0 +1,380 @@
+// 离线交互原型：合成状态、视图与事件；不访问业务 API。
+'use strict';
+// 展示数据：金额使用整数分，日期使用固定业务时区；来源与关系共享同一份交易集合。
+const paths = { home: 'M3 10l9-7 9 7M5 9v12h14V9M9 21v-8h6v8', import: 'M12 16V3m-4 4 4-4 4 4M4 14v7h16v-7', ledger: 'M5 3h14v18H5zM8 8h8M8 12h8M8 16h5', relations: 'M10 7H7a5 5 0 0 0 0 10h3m4-10h3a5 5 0 0 1 0 10h-3M8 12h8', agent: 'm12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3z', reports: 'M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h5', recurring: 'M4 7h13l-3-3M20 17H7l3 3M20 7a8 8 0 0 1 0 7M4 17a8 8 0 0 1 0-7', budgets: 'M21 12a9 9 0 1 1-9-9M17 12a5 5 0 1 1-5-5M12 12l9-9M16 3h5v5', settings: 'M12 3v3m0 12v3M3 12h3m12 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0', audit: 'M12 3 3 7v5c0 5 9 9 9 9s9-4 9-9V7zM8 12l3 3 5-6', arrow: 'M4 12h16m-5-5 5 5-5 5', check: 'm5 12 4 4L19 6' };
+const icon = (name) => '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="' + paths[name] + '"/></svg>';
+const t = (zh, en) => state.lang === 'zh' ? zh : en;
+const escapeHTML = (value) => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const initialTransactions = [
+    { id: 'T01', at: '2026-09-01 09:00:12', merchant: '工资', en: 'Salary', amount: 2156000, direction: 'in', account: 'bank', category: 'income', batch: 'B01', row: 2 },
+    { id: 'T02', at: '2026-09-02 08:30:05', merchant: '本人转出', en: 'Own transfer out', amount: 200000, direction: 'out', account: 'bank', category: 'transfer', batch: 'B01', row: 3 },
+    { id: 'T03', at: '2026-09-02 08:30:09', merchant: '本人转入', en: 'Own transfer in', amount: 200000, direction: 'in', account: 'wallet', category: 'transfer', batch: 'B02', row: 2 },
+    { id: 'T04', at: '2026-09-03 10:00:00', merchant: '房租', en: 'Rent', amount: 360000, direction: 'out', account: 'bank', category: 'housing', batch: 'B01', row: 4 },
+    { id: 'T05', at: '2026-09-05 12:36:18', merchant: '鲜食集市', en: 'Fresh Market', amount: 28640, direction: 'out', account: 'wallet', category: 'daily', batch: 'B02', row: 3 },
+    { id: 'T06', at: '2026-09-06 09:12:30', merchant: 'Coffee Lab', en: 'Coffee Lab', amount: 3800, direction: 'out', account: 'bank', category: 'food', batch: 'B01', row: 5 },
+    { id: 'T07', at: '2026-09-06 09:12:30', merchant: 'Coffee Lab', en: 'Coffee Lab', amount: 3800, direction: 'out', account: 'wallet', category: 'food', batch: 'B02', row: 4 },
+    { id: 'T08', at: '2026-09-07 07:00:02', merchant: 'StreamPlus', en: 'StreamPlus', amount: 6800, direction: 'out', account: 'bank', category: 'digital', batch: 'B01', row: 6 },
+    { id: 'T09', at: '2026-09-08 14:22:06', merchant: '山野装备 · 退款', en: 'Trail Supply · Refund', amount: 12000, direction: 'in', account: 'bank', category: 'other', batch: 'B01', row: 7 },
+    { id: 'T10', at: '2026-08-28 16:42:11', merchant: '山野装备', en: 'Trail Supply', amount: 30000, direction: 'out', account: 'bank', category: 'daily', batch: 'B00', row: 2 },
+    { id: 'T11', at: '2026-08-07 07:00:03', merchant: 'StreamPlus', en: 'StreamPlus', amount: 6800, direction: 'out', account: 'bank', category: 'digital', batch: 'B00', row: 3 },
+    { id: 'T12', at: '2026-07-07 07:00:01', merchant: 'StreamPlus', en: 'StreamPlus', amount: 6800, direction: 'out', account: 'bank', category: 'digital', batch: 'B00', row: 4 }
+];
+const state = { lang: 'zh', page: 'home', revision: 1, search: '', accountFilter: 'all', categoryFilter: 'all', relationFilter: 'all',
+    accounts: [{ id: 'bank', name: '日常账户', en: 'Daily account' }, { id: 'wallet', name: '支付账户', en: 'Payment account' }],
+    transactions: structuredClone(initialTransactions),
+    relations: [{ id: 'R01', kind: 'duplicate', first: 'T06', second: 'T07', status: 'pending', version: 1 }, { id: 'R02', kind: 'transfer', first: 'T02', second: 'T03', status: 'confirmed', version: 1 }, { id: 'R03', kind: 'refund', first: 'T10', second: 'T09', status: 'confirmed', version: 1 }],
+    batches: [{ id: 'B01', file: 'bank_2026-09.csv', account: 'bank', at: '2026-09-08 14:30:00', active: true }, { id: 'B02', file: 'payment_2026-09.xlsx', account: 'wallet', at: '2026-09-08 14:32:10', active: true }, { id: 'B00', file: 'bank_2026-07_08.csv', account: 'bank', at: '2026-09-01 10:20:30', active: true }],
+    preview: false, importAccount: 'wallet', snapshot: null, runs: [], reports: [], selectedReport: null, recurringStatus: 'pending', budgetLimits: { food: 10000, daily: 40000, housing: 360000, digital: 10000 }, assistantCategory: 'daily', assistantRevision: null,
+    audit: [{ at: '2026-09-08 14:35:20', zh: '确认跨期退款', en: 'Cross-period refund confirmed', detail: 'R03 · T10 / T09' }, { at: '2026-09-08 14:34:02', zh: '确认本人转账', en: 'Own transfer confirmed', detail: 'R02 · T02 / T03' }] };
+const pages = [['home', '总览', 'Overview'], ['ledger', '账本', 'Ledger'], ['budgets', '预算', 'Budgets'], ['recurring', '固定支出', 'Recurring costs'], ['reports', '月度报告', 'Monthly reports'], ['import', '账户与导入', 'Accounts & import'], ['agent', '智能核查', 'Statement review'], ['relations', '交易关系', 'Relationships'], ['audit', '运行记录', 'Run history'], ['settings', '设置', 'Settings']];
+const categories = { income: ['收入', 'Income'], transfer: ['转账', 'Transfer'], housing: ['居住', 'Housing'], daily: ['日用', 'Groceries'], food: ['餐饮', 'Dining'], digital: ['数字服务', 'Digital services'], other: ['其他', 'Other'] };
+const kindLabels = { duplicate: ['重复记录', 'Duplicate'], transfer: ['本人转账', 'Own transfer'], refund: ['跨期退款', 'Cross-period refund'] };
+const statusLabels = { pending: ['待核对', 'Pending'], confirmed: ['已确认', 'Confirmed'], excluded: ['已排除', 'Excluded'] };
+const name = (item) => t(item.merchant, item.en);
+const accountName = (id) => { const a = state.accounts.find(x => x.id === id); return a ? t(a.name, a.en) : '—'; };
+const categoryName = (id) => t(...categories[id]);
+const money = (cents) => new Intl.NumberFormat(state.lang === 'zh' ? 'zh-CN' : 'en-US', { style: 'currency', currency: 'CNY', minimumFractionDigits: 2 }).format((cents || 0) / 100);
+const now = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date());
+const button = (label, action, arg = '', primary = false) => '<button class="' + (primary ? 'primary' : 'small') + '" data-action="' + action + '" data-arg="' + escapeHTML(arg) + '">' + label + '</button>';
+const badge = (label, kind = '') => '<span class="badge ' + kind + '">' + label + '</span>';
+const panel = (title, body, extra = '') => '<article class="panel"><div class="panel-head"><h2>' + title + '</h2>' + extra + '</div><div class="panel-body">' + body + '</div></article>';
+const notice = (text, calm = false) => '<div class="notice' + (calm ? ' calm' : '') + '">' + text + '</div>';
+const header = (title, sub, actions = '') => '<header class="page-head"><div><h1>' + title + '</h1>' + (sub === scope() ? '<p class="subtitle">' + sub + '</p>' : '') + '</div><div class="actions">' + actions + '</div></header>';
+const scope = () => t('2026-09-01 — 2026-09-30 · 人民币', '2026-09-01 — 2026-09-30 · CNY');
+const currentTransactions = () => state.transactions.filter(x => x.at.startsWith('2026-09'));
+function audit(zh, en, detail) { state.audit.unshift({ at: now(), zh, en, detail }); }
+function changed(zh, en, detail) { state.revision++; audit(zh, en, detail); }
+// 统计只读取指定数据集合。重复、转账分别排除记录；退款在本期从流入转为冲减流出。
+function totals(transactions = state.transactions, relations = state.relations) {
+    const rows = transactions.filter(x => x.at.startsWith('2026-09'));
+    const rawIn = rows.filter(x => x.direction === 'in').reduce((sum, x) => sum + x.amount, 0);
+    const rawOut = rows.filter(x => x.direction === 'out').reduce((sum, x) => sum + x.amount, 0);
+    let income = rawIn, outflow = rawOut, duplicate = 0, transferOut = 0, refund = 0;
+    const excluded = new Set(), refunds = new Set();
+    for (const r of relations.filter(x => x.status === 'confirmed')) {
+        if (r.kind === 'duplicate')
+            excluded.add(r.second);
+        if (r.kind === 'transfer') {
+            excluded.add(r.first);
+            excluded.add(r.second);
+        }
+        if (r.kind === 'refund')
+            refunds.add(r.second);
+    }
+    for (const x of rows) {
+        if (excluded.has(x.id)) {
+            if (x.direction === 'in')
+                income -= x.amount;
+            else {
+                outflow -= x.amount;
+                if (relations.some(r => r.status === 'confirmed' && r.kind === 'duplicate' && r.second === x.id))
+                    duplicate += x.amount;
+                else
+                    transferOut += x.amount;
+            }
+        }
+        else if (refunds.has(x.id)) {
+            income -= x.amount;
+            outflow -= x.amount;
+            refund += x.amount;
+        }
+    }
+    return { rawIn, rawOut, income, outflow, net: income - outflow, duplicate, transferOut, refund, count: rows.length };
+}
+function metric(label, value, note) { return '<div class="metric"><small>' + label + '</small><strong>' + value + '</strong><span>' + note + '</span></div>'; }
+function metrics(s) { return '<div class="metrics">' + metric(t('调整后流入', 'Adjusted inflow'), money(s.income), t('已确认关系口径', 'Confirmed relationships')) + metric(t('调整后流出', 'Adjusted outflow'), money(s.outflow), t('退款按到账日冲减', 'Refunds by receipt date')) + metric(t('调整后净流入', 'Adjusted net flow'), money(s.net), t('非账户余额', 'Not an account balance')) + metric(t('期间流水', 'Period transactions'), s.count, t('账期完整性未验证', 'Coverage unverified')) + '</div>'; }
+function bridge(s) { return '<div class="bridge">' + [[t('原始流出', 'Raw outflow'), s.rawOut], [t('排除本人转账', 'Own transfers excluded'), -s.transferOut], [t('排除重复记录', 'Duplicates excluded'), -s.duplicate], [t('退款冲减', 'Refunds deducted'), -s.refund], [t('调整后流出', 'Adjusted outflow'), s.outflow]].map(([label, value], i) => '<div class="row ' + (i === 4 ? 'total' : '') + '"><span>' + label + '</span><strong class="number">' + money(value) + '</strong></div>').join('') + '</div>'; }
+function coverage(rows = currentTransactions()) { return notice(t(rows.length + ' 笔流水 · ' + new Set(rows.map(x => x.batch)).size + ' 个来源批次 · 账期完整性未验证', rows.length + ' transactions · ' + new Set(rows.map(x => x.batch)).size + ' batches · Coverage unverified'), true); }
+function evidence(x) { return x ? '<div class="evidence"><strong>' + escapeHTML(name(x)) + ' <span class="number">' + (x.direction === 'out' ? '−' : '+') + money(x.amount) + '</span></strong><span>' + escapeHTML(x.accountLabel ? t(...x.accountLabel) : accountName(x.account)) + '</span><small>' + x.at + ' · Asia/Shanghai</small><small>' + x.id + ' · ' + x.batch + ' · ' + t('原始行 ', 'Source row ') + x.row + '</small>' + (x.at.startsWith('2026-09') ? '' : badge(t('期间外证据', 'Outside-period evidence'), 'neutral')) + '</div>' : ''; }
+function relationCard(r, readonly = false, transactions = state.transactions) {
+    const first = transactions.find(x => x.id === r.first), second = transactions.find(x => x.id === r.second);
+    return '<div class="relation"><div class="relation-top"><h3>' + t(...kindLabels[r.kind]) + ' <span class="muted tiny">' + r.id + '</span></h3>' + badge(t(...statusLabels[r.status]), r.status === 'pending' ? 'warn' : r.status === 'excluded' ? 'neutral' : '') + '</div><div class="pair">' + evidence(first) + icon('arrow') + evidence(second) + '</div><div class="relation-bottom"><span class="tiny muted">' + t(r.kind === 'duplicate' ? '左侧保留，右侧排除' : r.kind === 'transfer' ? '排除双边收支' : '按退款到账日冲减流出', r.kind === 'duplicate' ? 'Retain left, exclude right' : r.kind === 'transfer' ? 'Exclude both cash-flow legs' : 'Deduct on refund receipt date') + ' · v' + r.version + '</span><div class="actions">' + (readonly ? '' : r.status === 'pending' ? button(t('排除', 'Exclude'), 'relation', r.id + ':excluded') + button(t('确认关系', 'Confirm'), 'relation', r.id + ':confirmed', true) + (r.kind === 'duplicate' ? button(t('交换保留记录', 'Swap retained entry'), 'swap-duplicate', r.id) : '') : button(t('撤销决定', 'Undo decision'), 'relation', r.id + ':pending')) + '</div></div></div>';
+}
+function chart() {
+    const v = totals(), max = Math.max(v.rawIn, v.rawOut, 1);
+    return [[t('收入', 'Income'), v.rawIn, v.income], [t('支出', 'Expense'), v.rawOut, v.outflow]].map(([label, raw, adjusted]) => '<div class="section-gap"><h3>' + label + '</h3><p>' + t('原始', 'Raw') + ' ' + money(raw) + '</p><div class="bar"><i style="background:var(--muted);width:' + Math.max(0, raw / max * 100) + '%"></i></div><p>' + t('调整后', 'Adjusted') + ' ' + money(adjusted) + '</p><div class="bar"><i style="width:' + Math.max(0, adjusted / max * 100) + '%"></i></div></div>').join('');
+}
+function home() {
+    const s = totals(), pending = state.relations.filter(x => x.status === 'pending').length;
+    return header(t('账单总览', 'Statement overview'), scope(), button(t('导入账单', 'Import statement'), 'nav', 'import', true)) + metrics(s) + '<div class="stack"><div class="hero"><div>' + '<h2 style="margin-top:12px">' + t(pending + ' 项关系待核对', pending + ' relationship to review') + '</h2></div>' + button(t('查看交易证据', 'Review evidence') + ' ' + icon('arrow'), 'nav', 'relations', true) + '</div><div class="grid two">' + panel(t('收支对比', 'Cash flow comparison'), chart(), '<span class="tiny muted">2026-09 · CNY</span>') + panel(t('从流水到实际收支', 'From entries to adjusted flows'), bridge(s)) + '</div>' + coverage() + '</div>';
+}
+function imports() {
+    const accounts = state.accounts.map(a => '<div class="row"><div class="row-title"><span class="tile">' + icon('ledger') + '</span><div><h3>' + escapeHTML(accountName(a.id)) + '</h3><p>' + state.transactions.filter(x => x.account === a.id).length + ' ' + t('笔流水 · 人民币', 'entries · CNY') + '</p></div></div>' + button(t('编辑', 'Edit'), 'account', a.id) + '</div>').join('');
+    const previewRows = [{ ...initialTransactions[4], id: 'P01', merchant: '城市书店', en: 'City Books', amount: 8800, at: '2026-09-08 16:10:05', category: 'other' }];
+    return header(t('账户与导入', 'Accounts & import'), t('预览账单，再确认入账', 'Preview statements before importing')) + panel(t('账本账户', 'Ledger accounts'), accounts) + '<div class="section-gap">' + panel(t('导入账单', 'Import statement'), '<div class="flow"><span class="current">01 ' + t('文件', 'File') + '</span>→<span>02 ' + t('预览', 'Preview') + '</span>→<span>03 ' + t('确认', 'Confirm') + '</span></div><div class="dropzone">' + icon('import') + '<h3>' + t('银行与支付账单', 'Bank & payment statements') + '</h3><p>CSV / XLSX · 10 MB · ' + t('最多 5,000 笔', 'Up to 5,000 entries') + '</p>' + button(t('选择账单', 'Choose statement'), 'choose', '', true) + '</div>') + '</div>' +
+        (state.preview ? '<article class="panel section-gap"><div class="panel-head"><h2>' + t('导入预览', 'Import preview') + '</h2>' + badge(t('待确认', 'Awaiting confirmation'), 'warn') + '</div><div class="panel-body"><div class="grid equal"><label class="label">' + t('账单文件', 'Statement file') + '<input value="payment_2026-09-08.csv" readonly></label><label class="label">' + t('归属账户', 'Account') + '<select id="import-account">' + state.accounts.map(a => '<option value="' + a.id + '" ' + (a.id === state.importAccount ? 'selected' : '') + '>' + escapeHTML(accountName(a.id)) + '</option>').join('') + '</select></label></div>' + evidence({ ...previewRows[0], account: state.importAccount, batch: 'B03', row: 2 }) + notice(t('1 笔可导入 · 0 笔重复 · 关系候选需另行确认', '1 entry ready · 0 duplicates · Relationship candidates require confirmation'), true) + '<div class="actions">' + button(t('取消', 'Cancel'), 'cancel-import') + button(t('确认导入', 'Confirm import'), 'confirm-import', '', true) + '</div></div></article>' : '') +
+        '<article class="panel section-gap"><div class="panel-head"><h2>' + t('导入历史', 'Import history') + '</h2><span class="tiny muted">' + t('原始行号可追溯', 'Traceable source rows') + '</span></div><div class="table-wrap"><table><thead><tr>' + [t('文件 / 批次', 'File / batch'), t('账户', 'Account'), t('导入时间', 'Imported at'), t('状态', 'Status'), ''].map(x => '<th>' + x + '</th>').join('') + '</tr></thead><tbody>' + state.batches.map(b => '<tr><td>' + b.file + '<small>' + b.id + '</small></td><td>' + escapeHTML(accountName(b.account)) + '</td><td>' + b.at + '</td><td>' + badge(b.active ? t('已导入', 'Imported') : t('已撤销', 'Reverted'), b.active ? '' : 'neutral') + '</td><td>' + (b.active ? button(t('撤销', 'Revert'), 'revert-import', b.id) : '—') + '</td></tr>').join('') + '</tbody></table></div></article>';
+}
+function ledgerRows() {
+    return currentTransactions().filter(x => (state.accountFilter === 'all' || x.account === state.accountFilter) && (state.categoryFilter === 'all' || x.category === state.categoryFilter) && [x.merchant, x.en, x.id].join(' ').toLowerCase().includes(state.search.toLowerCase()));
+}
+function ledgerTable() {
+    const rows = ledgerRows();
+    return rows.length ? '<div class="table-wrap"><table><thead><tr>' + [t('交易 / 时间', 'Transaction / time'), t('账户', 'Account'), t('分类', 'Category'), t('原始金额', 'Raw amount'), t('来源', 'Source')].map(x => '<th>' + x + '</th>').join('') + '</tr></thead><tbody>' + rows.map(x => '<tr><td>' + escapeHTML(name(x)) + '<small>' + x.at + '</small></td><td>' + escapeHTML(accountName(x.account)) + '</td><td><select data-category="' + x.id + '" aria-label="' + escapeHTML(name(x)) + ' ' + t('分类', 'category') + '">' + Object.keys(categories).map(c => '<option value="' + c + '" ' + (x.category === c ? 'selected' : '') + '>' + categoryName(c) + '</option>').join('') + '</select></td><td class="number ' + (x.direction === 'in' ? 'positive' : '') + '">' + (x.direction === 'out' ? '−' : '+') + money(x.amount) + '</td><td>' + button(x.batch + ' / ' + x.row, 'evidence', x.id) + '</td></tr>').join('') + '</tbody></table></div>' : '<div class="empty">' + t('没有符合条件的流水', 'No matching entries') + '</div>';
+}
+function ledger() { return header(t('账本', 'Ledger'), scope(), button(t('导出当前筛选', 'Export filtered entries'), 'export-ledger')) + '<article class="panel"><div class="filters"><input id="ledger-search" aria-label="' + t('搜索交易', 'Search transactions') + '" placeholder="' + t('搜索交易或编号', 'Search transaction or ID') + '" value="' + escapeHTML(state.search) + '"><select id="account-filter" aria-label="' + t('账户筛选', 'Account filter') + '"><option value="all">' + t('全部账户', 'All accounts') + '</option>' + state.accounts.map(a => '<option value="' + a.id + '" ' + (state.accountFilter === a.id ? 'selected' : '') + '>' + escapeHTML(accountName(a.id)) + '</option>').join('') + '</select><select id="category-filter" aria-label="' + t('分类筛选', 'Category filter') + '"><option value="all">' + t('全部分类', 'All categories') + '</option>' + Object.keys(categories).map(c => '<option value="' + c + '" ' + (state.categoryFilter === c ? 'selected' : '') + '>' + categoryName(c) + '</option>').join('') + '</select></div><div id="ledger-table">' + ledgerTable() + '</div></article>' + notice(t('金额保留原值；分类修改不改变已保存的核查结果。', 'Source amounts stay unchanged. Category edits do not alter saved reviews.'), true); }
+function relationships() { const rows = state.relations.filter(r => state.relationFilter === 'all' || r.status === state.relationFilter); return header(t('关系核对', 'Relationships'), scope(), button(t('手动关联', 'Link entries'), 'manual-relation')) + '<div class="grid two"><article class="panel"><div class="filters"><select id="relation-filter" aria-label="' + t('关系状态', 'Relationship status') + '">' + [['all', '全部状态', 'All statuses'], ['pending', '待核对', 'Pending'], ['confirmed', '已确认', 'Confirmed'], ['excluded', '已排除', 'Excluded']].map(([id, zh, en]) => '<option value="' + id + '" ' + (state.relationFilter === id ? 'selected' : '') + '>' + t(zh, en) + '</option>').join('') + '</select></div>' + (rows.map(r => relationCard(r)).join('') || '<div class="empty">' + t('暂无关系', 'No relationships') + '</div>') + '</article>' + panel(t('调整明细', 'Adjustments'), bridge(totals()) + notice(t('跨期交易仅作证据，不计入本期原始流水。', 'Outside-period entries are evidence, not raw entries for this period.'), true)) + '</div>'; }
+function snapshotView(s) {
+    const rows = s.transactions.filter(x => x.at.startsWith('2026-09'));
+    return '<div class="panel-body">' + coverage(rows) + '<div class="tiny muted">' + t('生成时间', 'Generated at') + ' ' + s.at + ' · Asia/Shanghai</div><div class="section-gap">' + metrics(s.totals) + '</div><div class="row"><span>' + t('原始流入', 'Raw inflow') + '</span><strong class="number">' + money(s.totals.rawIn) + '</strong></div>' + bridge(s.totals) + '<details><summary>' + t('关系证据', 'Relationship evidence') + ' · ' + s.relations.length + '</summary>' + s.relations.map(r => relationCard(r, true, s.transactions)).join('') + '</details><details><summary>' + t('原始交易', 'Source entries') + ' · ' + rows.length + '</summary>' + rows.map(evidence).join('') + '</details><details><summary>' + t('计算口径', 'Calculation basis') + '</summary><p>' + t('仅确认关系调整收支。退款按到账日冲减流出；币种独立，净额不是余额。分类分析采用原始流水。', 'Only confirmed relationships adjust totals. Refunds reduce outflow on receipt. Currencies stay separate; net flow is not a balance. Categories use raw entries.') + '</p><span class="mono">ledger-rules/1 · ' + s.id + ' · revision ' + s.revision + '</span></details></div>';
+}
+function agent() {
+    const s = state.snapshot;
+    return header(t('智能核查', 'Statement review'), t('日期查询 · 确定性统计 · 来源证据', 'Date query · Deterministic totals · Source evidence')) + panel(t('核查任务', 'Review task'), '<form id="agent-form" class="query"><input id="agent-query" aria-label="' + t('核查任务', 'Review task') + '" value="' + t('核查 2026 年 9 月账单', 'Review September 2026 statements') + '"><button class="primary">' + icon('agent') + ' ' + t('开始核查', 'Run review') + '</button></form><p class="tiny">' + t('查询日期内全部账单；单独筛选请使用账本。', 'Queries all entries in the period. Use the ledger for filters.') + '</p>') +
+        '<div class="grid two section-gap"><article class="panel"><div class="panel-head"><h2>' + t('核查结果', 'Review result') + '</h2>' + (s ? badge(t('已保存', 'Saved')) : badge(t('待运行', 'Ready'), 'neutral')) + '</div>' + (s ? ((s.revision !== state.revision ? '<div style="padding:0 22px">' + notice(t('账本已变更。重新核查生成新结果。', 'Ledger changed. Run again to create a new result.')) + '</div>' : '') + snapshotView(s)) : '<div class="empty">' + icon('agent') + '<p>' + t('运行后查看收支与关系证据', 'Run a review to inspect totals and relationship evidence') + '</p></div>') + '</article>' + panel(t('执行记录', 'Execution record'), '<div class="timeline">' + [[t('解析日期范围', 'Resolve date range'), '2026-09-01 — 2026-09-30'], [t('查询账本', 'Query ledger'), 'query_transactions'], [t('核对交易关系', 'Review relationships'), t('用户确认状态 · 统一读取快照', 'Confirmed states · Consistent read snapshot')], [t('保存结果与证据', 'Save result & evidence'), t('原始与调整统计 · 规则版本', 'Raw and adjusted totals · Rule version')]].map(([title, sub], i) => '<div class="step"><b>' + (s ? '✓' : i + 1) + '</b><div><h3>' + title + '</h3><p>' + sub + '</p></div></div>').join('') + '</div>' + notice(t('Agent 只读。分类与关系由用户在账本中修改。', 'Agent is read-only. Edit categories and relationships in the ledger.'), true), s ? button(t('查看审计', 'View audit'), 'nav', 'audit') : '') + '</div>';
+}
+function reports() {
+    const selected = state.reports.find(x => x.id === state.selectedReport);
+    return header(t('月度报告', 'Monthly reports'), scope(), button(t('生成报告', 'Generate report'), 'generate-report', '', true)) +
+        (state.reports.length ? '<div class="grid two"><article class="panel report-paper"><div class="eyebrow">MONTHLY REVIEW / CNY</div><h2>' + t('2026 年 9 月', 'September 2026') + '</h2><div class="actions">' + badge(selected.revision === state.revision ? t('与账本一致', 'Matches ledger') : t('账本已变更', 'Ledger changed'), selected.revision === state.revision ? '' : 'warn') + button(t('导出报告', 'Export report'), 'export-report', selected.id) + '</div>' + snapshotView(selected) + '</article>' + panel(t('保存的报告', 'Saved reports'), state.reports.map(r => '<div class="row"><div><h3>' + r.id + '</h3><p>' + r.at + '</p></div>' + button(r.id === state.selectedReport ? t('当前查看', 'Viewing') : t('查看', 'View'), 'view-report', r.id) + '</div>').join('') + notice(t('重新生成会保存新报告，不覆盖原报告。', 'Regeneration saves a new report without overwriting previous reports.'), true)) + '</div>' :
+            panel(t('本月核查报告', 'This month’s review'), '<div class="empty">' + icon('reports') + '<p>' + t('保存收支、待核对事项与来源证据', 'Save totals, open review items, and source evidence') + '</p></div>'));
+}
+function contributions(category) {
+    const excluded = new Set(), refunds = new Map();
+    state.relations.filter(r => r.status === 'confirmed').forEach(r => {
+        if (r.kind === 'duplicate')
+            excluded.add(r.second);
+        if (r.kind === 'transfer') {
+            excluded.add(r.first);
+            excluded.add(r.second);
+        }
+        if (r.kind === 'refund')
+            refunds.set(r.second, state.transactions.find(x => x.id === r.first));
+    });
+    return currentTransactions().flatMap(x => {
+        if (excluded.has(x.id))
+            return [];
+        const original = refunds.get(x.id);
+        if (original && original.category === category)
+            return [{ entry: x, original, value: -x.amount }];
+        if (!original && x.direction === 'out' && x.category === category)
+            return [{ entry: x, value: x.amount }];
+        return [];
+    }).sort((a, b) => b.entry.at.localeCompare(a.entry.at) || a.entry.id.localeCompare(b.entry.id));
+}
+function recurring() {
+    const entry = currentTransactions().find(x => x.merchant === 'StreamPlus');
+    return header(t('固定支出', 'Recurring costs'), scope()) + panel('StreamPlus', '<div class="row"><div><h3>' + money(6800) + ' / ' + t('月', 'month') + '</h3><p>' + t('日常账户 · 每月 7 日', 'Daily account · Day 7') + '</p></div>' + badge(state.recurringStatus === 'confirmed' ? t('已核对', 'Matched') : state.recurringStatus === 'excluded' ? t('本期未发生', 'Not occurred') : t('待核对', 'Pending'), 'neutral') + '</div><div class="row"><span>' + t('下期预计', 'Next expected') + '</span><strong>2026-10-07</strong></div>' +
+        (entry ? evidence(entry) : notice(t('未找到匹配流水', 'No matching transaction'))) +
+        '<div class="actions section-gap">' + (state.recurringStatus === 'pending' ? (entry ? button(t('关联这笔流水', 'Match transaction'), 'match-recurring', '', true) : '') + button(t('本期未发生', 'Not occurred'), 'skip-recurring') : button(t('撤回核对', 'Undo match'), 'recurring', 'pending')) + '</div>');
+}
+function budgets() {
+    return header(t('预算', 'Budgets'), scope()) + '<div class="grid equal">' + Object.entries(state.budgetLimits).map(([category, limit]) => {
+        const spent = contributions(category).reduce((n, r) => n + r.value, 0), left = limit - spent, percent = Math.max(0, Math.round(spent / limit * 100));
+        return panel(categoryName(category), '<div class="budget-value">' + money(spent) + ' <small>/ ' + money(limit) + '</small></div><div class="bar ' + (left < 0 ? 'warn' : '') + '"><i style="width:' + Math.min(100, percent) + '%"></i></div><div class="row"><span>' + t(left >= 0 ? '剩余' : '超支', left >= 0 ? 'Remaining' : 'Over budget') + '</span><strong>' + money(Math.abs(left)) + '</strong></div><div class="actions">' + button(t('查看构成', 'View breakdown'), 'spending', category) + button(t('编辑', 'Edit'), 'edit-budget', category) + '</div>');
+    }).join('') + '</div>' + coverage();
+}
+function settings() { return header(t('设置', 'Settings'), '') + '<div class="grid equal">' + panel(t('个人账户', 'Account'), '<strong>demo@example.com</strong><p>' + t('合成账户', 'Demo account') + '</p>' + button(t('登录 / 注册', 'Login / Register'), 'auth', 'login')) + panel(t('外观', 'Appearance'), badge(t('深色 · 青绿', 'Dark · Teal'))) + panel(t('语言', 'Language'), button(t('切换 English', 'Switch to 中文'), 'language')) + panel(t('数据说明', 'Data'), '<p>' + t('示例数据，刷新重置。', 'Sample data. Refresh to reset.') + '</p>') + '</div>'; }
+function spendingView(category) {
+    const rows = contributions(category), gross = rows.filter(r => r.value > 0).reduce((n, r) => n + r.value, 0), refund = -rows.filter(r => r.value < 0).reduce((n, r) => n + r.value, 0);
+    return '<p>2026-09 · ' + categoryName(category) + ' · CNY</p><div class="spending-metrics">' + metric(t('消费', 'Purchases'), money(gross), '') + metric(t('退款', 'Refunds'), money(refund), '') + metric(t('实际支出', 'Net spending'), money(gross - refund), '') + '</div><p>' + rows.length + ' ' + t('条贡献记录', 'contributions') + '</p>' + rows.map(r => '<div class="row"><div><strong>' + escapeHTML(name(r.entry)) + '</strong><p>' + r.entry.at + '</p><strong class="number">' + money(r.value) + '</strong>' + (r.original ? '<details><summary>' + t('退款原消费', 'Original purchase') + '</summary>' + evidence(r.original) + button(t('查看原流水', 'View source'), 'source', r.original.id) + '</details>' : '') + '</div>' + button(t('查看流水', 'View entry'), 'source', r.entry.id) + '</div>').join('') + coverage();
+}
+function showSpending(category) { state.assistantCategory = category; state.assistantRevision = state.revision; dialog(t('消费构成', 'Spending breakdown'), spendingView(category), button(t('返回助手', 'Back to assistant'), 'assistant') + button(t('关闭', 'Close'), 'close')); }
+function assistant() {
+    const cat = state.assistantCategory;
+    dialog(t('问助手', 'Ask assistant'), '<p>' + t('示例问题 · 不调用模型', 'Sample questions · No model calls') + '</p><div class="actions">' + button(t('本月日用花了多少？', 'Monthly groceries?'), 'spending', 'daily') + button(t('本月餐饮有哪些？', 'Dining breakdown?'), 'spending', 'food') + button(t('餐饮预算改成 200 元', 'Set dining budget to CNY 200'), 'propose-budget') + '</div>' + (state.assistantRevision !== null ? '<div class="section-gap">' + (state.assistantRevision !== state.revision ? notice(t('账本已更新，请重新查询。', 'Ledger changed. Query again.')) : spendingView(cat)) + '</div>' : ''), button(t('查看预算', 'View budgets'), 'assistant-budgets') + button(t('关闭', 'Close'), 'close'));
+}
+function auditPage() { return header(t('运行记录', 'Run history'), t('操作时间 · 关联对象 · 保存结果', 'Operation time · Related records · Saved results'), button(t('导出记录', 'Export audit'), 'export-audit')) + panel(t('数据边界', 'Data boundaries'), '<div class="grid equal"><div><h3>' + t('账单留在账本', 'Statements stay in the ledger') + '</h3><p class="tiny">' + t('金额和权限由程序校验。', 'Amounts and permissions are validated by code.') + '</p></div><div><h3>' + t('结果保留生成时证据', 'Results retain their original evidence') + '</h3><p class="tiny">' + t('账本更新不重写历史核查结果。', 'Ledger updates never rewrite saved review results.') + '</p></div></div>') + '<article class="panel section-gap"><div class="table-wrap"><table><thead><tr><th>' + t('操作', 'Action') + '</th><th>' + t('关联对象', 'Reference') + '</th><th>' + t('时间 · Asia/Shanghai', 'Time · Asia/Shanghai') + '</th></tr></thead><tbody>' + state.audit.map(a => '<tr><td>' + escapeHTML(t(a.zh, a.en)) + '</td><td class="mono">' + (state.runs.some(r => r.id === a.detail) ? button(escapeHTML(a.detail), 'view-run', a.detail) : escapeHTML(a.detail)) + '</td><td>' + a.at + '</td></tr>').join('') + '</tbody></table></div></article>'; }
+const renderers = { home, import: imports, ledger, relations: relationships, agent, reports, recurring, budgets, audit: auditPage, settings };
+// 页面状态与语言共享；切换语言不触发任务、不重置用户决定或覆盖快照。
+function render() {
+    document.documentElement.lang = state.lang === 'zh' ? 'zh-CN' : 'en';
+    document.title = t('BankPilot · 账单核查', 'BankPilot · Statement review');
+    document.getElementById('nav').innerHTML = pages.map(([id, zh, en]) => '<button class="' + (state.page === id ? 'active' : '') + '" data-action="nav" data-arg="' + id + '" ' + (state.page === id ? 'aria-current="page"' : '') + '>' + icon(id) + '<span>' + t(zh, en) + '</span></button>').join('');
+    document.getElementById('nav-label').textContent = '';
+    document.getElementById('assistant-trigger').textContent = t('问助手', 'Ask assistant');
+    document.getElementById('sidebar-foot').innerHTML = '<span class="live-dot"></span>' + t('交互原型 · 示例数据', 'Prototype · Sample data') + '<br>' + t('刷新重置 · 不连接后端', 'Refresh resets · Offline');
+    document.getElementById('crumb').textContent = t('工作区 / ', 'Workspace / ') + t(...pages.find(x => x[0] === state.page).slice(1));
+    document.getElementById('lang').textContent = state.lang === 'zh' ? 'EN' : '中文';
+    document.getElementById('lang').setAttribute('aria-label', t('切换至英文', 'Switch to Chinese'));
+    document.getElementById('profile').setAttribute('aria-label', t('账户设置', 'Account settings'));
+    document.getElementById('menu').setAttribute('aria-label', t('打开导航', 'Open navigation'));
+    document.getElementById('shade').setAttribute('aria-label', t('关闭导航', 'Close navigation'));
+    document.getElementById('close-dialog').setAttribute('aria-label', t('关闭', 'Close'));
+    document.getElementById('content').innerHTML = renderers[state.page]() + '<footer class="note"><span>' + t('已导入数据 · 不代表银行余额', 'Imported data · Not a bank balance') + '</span><span>BankPilot / CNY / UTC+08:00</span></footer>';
+}
+let toastTimer;
+function notify(text) { const node = document.getElementById('toast'); node.textContent = text; clearTimeout(toastTimer); toastTimer = setTimeout(() => node.textContent = '', 3500); }
+function navigate(page) { state.page = page; document.body.classList.remove('nav-open'); render(); window.scrollTo(0, 0); }
+let focusBeforeDialog;
+function dialog(title, body, actions = '') { focusBeforeDialog = document.activeElement; document.getElementById('dialog-title').textContent = title; document.getElementById('dialog-body').innerHTML = body; document.getElementById('dialog-foot').innerHTML = actions || button(t('关闭', 'Close'), 'close'); if (!document.getElementById('dialog').open)
+    document.getElementById('dialog').showModal(); }
+function closeDialog() { document.getElementById('dialog').close(); if (focusBeforeDialog?.isConnected)
+    focusBeforeDialog.focus(); }
+function confirm(title, body, action, arg) { dialog(title, body, button(t('取消', 'Cancel'), 'close') + button(t('确认', 'Confirm'), action, arg, true)); }
+function makeSnapshot(prefix) { return { id: prefix + '-' + String(state.audit.length + 1).padStart(3, '0'), at: now(), revision: state.revision, currency: 'CNY', period: { start: '2026-09-01', end: '2026-09-30' }, coverage: 'unverified', ruleVersion: 'ledger-rules/1', totals: totals(), transactions: state.transactions.map(x => ({ ...structuredClone(x), accountLabel: (() => { const a = state.accounts.find(a => a.id === x.account); return [a.name, a.en]; })() })), relations: structuredClone(state.relations) }; }
+function download(filename, data) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify(t('文件已生成', 'File generated'));
+}
+function accountEditor(id) {
+    const a = state.accounts.find(x => x.id === id);
+    dialog(t(a ? '编辑账户' : '添加账户', a ? 'Edit account' : 'Add account'), '<label class="label">' + t('账户名称', 'Account name') + '<input id="account-name" maxlength="40" value="' + escapeHTML(a ? accountName(id) : '') + '"></label><p class="tiny">' + t('用于归属账单，不连接银行账户。', 'Organizes statements; does not connect to a bank.') + '</p>', button(t('取消', 'Cancel'), 'close') + button(t('保存', 'Save'), 'save-account', id, true));
+}
+function auth(mode = 'login') {
+    const signup = mode === 'signup';
+    dialog(t(signup ? '注册账户' : '登录账户', signup ? 'Create account' : 'Sign in'), '<div class="auth-tabs">' + button(t('登录', 'Sign in'), 'auth', 'login') + button(t('注册', 'Register'), 'auth', 'signup') + '</div><form id="auth-form"><label class="label">' + t('邮箱', 'Email') + '<input type="email" required autocomplete="email" placeholder="name@example.com"></label><label class="label">' + t('密码', 'Password') + '<input type="password" required minlength="8" maxlength="128" ' + (signup ? 'pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,128}"' : '') + ' autocomplete="' + (signup ? 'new-password' : 'current-password') + '"></label><p class="tiny">' + t('8–128 位，包含大小写字母、数字与符号。', '8–128 characters with uppercase, lowercase, numbers and symbols.') + '</p>' + (signup ? '<label class="label">' + t('确认密码', 'Confirm password') + '<input id="password-confirmation" type="password" required minlength="8" maxlength="128" autocomplete="new-password"></label>' : '') + '<button class="primary" style="width:100%">' + t(signup ? '注册' : '登录', signup ? 'Register' : 'Sign in') + '</button></form>');
+}
+// 手动关联复用同币种、等额、方向与时间约束；待确认关系不改变统计。
+function manualRelation() {
+    const options = state.transactions.map(x => '<option value="' + x.id + '">' + x.id + ' · ' + escapeHTML(name(x)) + ' · ' + money(x.amount) + ' · ' + x.at + '</option>').join('');
+    dialog(t('手动关联', 'Link entries'), '<label class="label">' + t('关系类型', 'Relationship type') + '<select id="manual-kind">' + Object.keys(kindLabels).map(k => '<option value="' + k + '">' + t(...kindLabels[k]) + '</option>').join('') + '</select></label><label class="label">' + t('第一笔 · 保留记录 / 转出 / 原消费', 'First · Retained / Outgoing / Purchase') + '<select id="manual-first">' + options + '</select></label><label class="label">' + t('第二笔 · 副本 / 转入 / 退款', 'Second · Copy / Incoming / Refund') + '<select id="manual-second">' + options + '</select></label><p class="tiny">' + t('支持跨期关联，保存后仍需确认。', 'Cross-period links supported. Confirmation is required after saving.') + '</p>', button(t('取消', 'Cancel'), 'close') + button(t('保存候选', 'Save candidate'), 'save-manual', '', true));
+}
+function saveManual() {
+    const kind = document.getElementById('manual-kind').value;
+    const first = state.transactions.find(x => x.id === document.getElementById('manual-first').value);
+    const second = state.transactions.find(x => x.id === document.getElementById('manual-second').value);
+    const days = (Date.parse(second.at.replace(' ', 'T') + '+08:00') - Date.parse(first.at.replace(' ', 'T') + '+08:00')) / 86400000;
+    const valid = first.id !== second.id && (kind === 'duplicate' ? first.batch !== second.batch && first.direction === second.direction && first.amount === second.amount && Math.abs(days) <= 1 : kind === 'transfer' ? first.account !== second.account && first.direction === 'out' && second.direction === 'in' && first.amount === second.amount && Math.abs(days) <= 3 : first.direction === 'out' && second.direction === 'in' && second.amount <= first.amount && days >= 0 && days <= 90);
+    if (!valid) {
+        notify(t('交易不符合金额、方向或时间条件', 'Entries do not meet amount, direction, or time constraints'));
+        return;
+    }
+    if (state.relations.some(r => [r.first, r.second].includes(first.id) || [r.first, r.second].includes(second.id))) {
+        notify(t('交易已有关系，请先核对现有关系', 'Entries already have relationships. Review the existing links first.'));
+        return;
+    }
+    const id = 'R' + String(state.audit.length + 1).padStart(2, '0');
+    state.relations.push({ id, kind, first: first.id, second: second.id, status: 'pending', version: 1 });
+    changed('添加关系候选', 'Relationship candidate added', id);
+    closeDialog();
+    render();
+}
+// 所有操作仅改变本页面数据；破坏性动作二次确认，历史快照以独立副本保留。
+const actions = {
+    nav: navigate, close: closeDialog,
+    'manual-relation': manualRelation, 'save-manual': saveManual,
+    'swap-duplicate': id => { const r = state.relations.find(x => x.id === id); [r.first, r.second] = [r.second, r.first]; r.version++; changed('更换保留记录', 'Retained entry changed', id); render(); },
+    'view-run': id => { state.snapshot = state.runs.find(r => r.id === id); navigate('agent'); },
+    choose: () => dialog(t('选择账单', 'Choose statement'), '<div class="row"><div><h3>payment_2026-09-08.csv</h3><p>' + t('支付账户 · 1 笔流水', 'Payment account · 1 entry') + '</p></div>' + badge('CSV', 'neutral') + '</div>', button(t('取消', 'Cancel'), 'close') + button(t('预览账单', 'Preview statement'), 'preview', '', true)),
+    preview: () => { state.preview = true; closeDialog(); render(); },
+    'cancel-import': () => { state.preview = false; render(); },
+    'confirm-import': () => { if (state.batches.some(b => b.id === 'B03' && b.active)) {
+        notify(t('该账单已导入', 'Statement already imported'));
+        return;
+    } state.transactions.push({ id: 'T13', at: '2026-09-08 16:10:05', merchant: '城市书店', en: 'City Books', amount: 8800, direction: 'out', account: state.importAccount, category: 'other', batch: 'B03', row: 2 }); state.batches = state.batches.filter(b => b.id !== 'B03'); state.batches.unshift({ id: 'B03', file: 'payment_2026-09-08.csv', account: state.importAccount, at: now(), active: true }); state.preview = false; changed('导入账单', 'Statement imported', 'B03 · T13'); render(); notify(t('已导入 1 笔流水', '1 entry imported')); },
+    'revert-import': id => confirm(t('撤销导入', 'Revert import'), notice(t('删除此批次流水及关联关系，已保存报告不变。', 'Removes batch entries and their relationships. Saved reports remain unchanged.')), 'apply-revert', id),
+    'apply-revert': id => { const ids = new Set(state.transactions.filter(x => x.batch === id).map(x => x.id)); state.transactions = state.transactions.filter(x => !ids.has(x.id)); state.relations = state.relations.filter(r => !ids.has(r.first) && !ids.has(r.second)); state.batches.find(b => b.id === id).active = false; changed('撤销导入', 'Import reverted', id); closeDialog(); render(); },
+    account: accountEditor,
+    'save-account': id => { const value = document.getElementById('account-name').value.trim(); if (!value) {
+        notify(t('请输入账户名称', 'Enter an account name'));
+        return;
+    } if (state.accounts.some(x => x.id !== id && (x.name === value || x.en === value))) {
+        notify(t('账户名称已存在', 'Account name already exists'));
+        return;
+    } const a = state.accounts.find(x => x.id === id); if (a) {
+        a.name = value;
+        a.en = value;
+    }
+    else
+        state.accounts.push({ id: 'account-' + state.accounts.length, name: value, en: value }); changed('保存账本账户', 'Ledger account saved', value); closeDialog(); render(); },
+    relation: value => { const [id, status] = value.split(':'); const r = state.relations.find(x => x.id === id); confirm(t(...statusLabels[status]), relationCard({ ...r, status }, true), 'apply-relation', value); },
+    'apply-relation': value => { const [id, status] = value.split(':'); const r = state.relations.find(x => x.id === id); r.status = status; r.version++; changed('更新交易关系', 'Relationship updated', id + ' · ' + status + ' · v' + r.version); closeDialog(); render(); notify(t('关系已更新', 'Relationship updated')); },
+    evidence: id => dialog(t('来源证据', 'Source evidence'), evidence(state.transactions.find(x => x.id === id))),
+    'export-ledger': () => download('bankpilot-ledger.json', { currency: 'CNY', period: '2026-09', exportedAt: now(), entries: ledgerRows() }),
+    'generate-report': () => { const report = makeSnapshot('REPORT'); state.reports.unshift(report); state.selectedReport = report.id; audit('生成月度报告', 'Monthly report generated', report.id); render(); },
+    'view-report': id => { state.selectedReport = id; render(); },
+    'export-report': id => { const report = state.reports.find(x => x.id === id); download('bankpilot-' + id + '.json', report); audit('导出报告', 'Report exported', id); },
+    recurring: status => { state.recurringStatus = status; audit('更新固定支出核对', 'Recurring match updated', 'StreamPlus · ' + status); closeDialog(); render(); },
+    'match-recurring': () => confirm(t('关联流水', 'Match transaction'), evidence(currentTransactions().find(x => x.merchant === 'StreamPlus')), 'recurring', 'confirmed'),
+    'skip-recurring': () => confirm(t('本期未发生', 'Not occurred'), notice(t('有同商户同金额流水，仍标记未发生？', 'A matching entry exists. Mark as not occurred?')), 'recurring', 'excluded'),
+    assistant, spending: showSpending,
+    'propose-budget': () => { state.prototypeProposalVersion = state.budgetLimits.food; confirm(t('确认预算修改', 'Confirm budget change'), '<p>2026-09 · ' + categoryName('food') + ' · CNY</p><div class="row"><strong>' + money(state.budgetLimits.food) + '</strong><span>→</span><strong>' + money(20000) + '</strong></div>', 'confirm-budget'); },
+    'confirm-budget': () => { if (state.prototypeProposalVersion !== state.budgetLimits.food) {
+        notify(t('预算已变更，请重新提案', 'Budget changed. Create a new proposal.'));
+        return;
+    } state.budgetLimits.food = 20000; state.prototypeProposalVersion = null; audit('确认助手预算提案', 'Assistant budget confirmed', 'food · CNY 200'); closeDialog(); render(); notify(t('示例预算已更新', 'Demo budget updated')); },
+    'assistant-budgets': () => { closeDialog(); navigate('budgets'); },
+    source: id => { const x = state.transactions.find(x => x.id === id); dialog(t('流水详情', 'Transaction detail'), x ? evidence(x) : notice(t('流水已撤销', 'Entry removed')), button(t('返回构成', 'Back to breakdown'), 'spending', state.assistantCategory)); },
+    language: () => { state.lang = state.lang === 'zh' ? 'en' : 'zh'; render(); },
+    'edit-budget': category => dialog(t('编辑预算', 'Edit budget'), '<p>2026-09 · ' + categoryName(category) + ' · CNY</p><label class="label">' + t('额度', 'Limit') + '<input id="budget-value" type="number" min="0.01" max="100000000" step="0.01" value="' + state.budgetLimits[category] / 100 + '"></label>', button(t('取消', 'Cancel'), 'close') + button(t('保存', 'Save'), 'save-budget', category, true)),
+    'save-budget': category => { const input = document.getElementById('budget-value'); if (!input.reportValidity() || !input.value)
+        return; state.budgetLimits[category] = Math.round(Number(input.value) * 100); audit('更新分类预算', 'Category budget updated', category); closeDialog(); render(); },
+    'export-audit': () => download('bankpilot-audit.json', state.audit),
+    auth: mode => { closeDialog(); auth(mode); }
+};
+document.addEventListener('click', event => { const target = event.target.closest('[data-action]'); if (target)
+    actions[target.dataset.action]?.(target.dataset.arg); });
+document.addEventListener('change', event => {
+    const el = event.target;
+    if (el.id === 'account-filter') {
+        state.accountFilter = el.value;
+        render();
+    }
+    if (el.id === 'category-filter') {
+        state.categoryFilter = el.value;
+        render();
+    }
+    if (el.id === 'relation-filter') {
+        state.relationFilter = el.value;
+        render();
+    }
+    if (el.id === 'import-account') {
+        state.importAccount = el.value;
+        render();
+    }
+    if (el.dataset.category) {
+        const x = state.transactions.find(x => x.id === el.dataset.category);
+        x.category = el.value;
+        changed('修正交易分类', 'Category corrected', x.id + ' · ' + x.category);
+        notify(t('分类已更新', 'Category updated'));
+    }
+});
+document.addEventListener('input', event => { if (event.target.id === 'ledger-search') {
+    state.search = event.target.value;
+    document.getElementById('ledger-table').innerHTML = ledgerTable();
+} });
+document.addEventListener('submit', event => {
+    if (event.target.id === 'agent-form') {
+        event.preventDefault();
+        const query = document.getElementById('agent-query').value.trim();
+        if (!['核查 2026 年 9 月账单', 'Review September 2026 statements'].includes(query)) {
+            notify(t('此静态页面仅可运行预置日期任务', 'This static page runs the preset date task only'));
+            return;
+        }
+        state.snapshot = makeSnapshot('RUN');
+        state.runs.unshift(state.snapshot);
+        audit('完成 Agent 核查', 'Agent review completed', state.snapshot.id);
+        render();
+    }
+    if (event.target.id === 'auth-form') {
+        event.preventDefault();
+        const password = event.target.querySelector('input[type="password"]');
+        const confirmation = document.getElementById('password-confirmation');
+        if (confirmation && password.value !== confirmation.value) {
+            notify(t('两次密码不一致', 'Passwords do not match'));
+            confirmation.focus();
+            return;
+        }
+        notify(t('静态页面不提交账户信息', 'This static page does not submit account information'));
+    }
+});
+document.getElementById('lang').onclick = () => { state.lang = state.lang === 'zh' ? 'en' : 'zh'; render(); };
+document.getElementById('profile').onclick = () => navigate('settings');
+document.getElementById('menu').onclick = () => document.body.classList.toggle('nav-open');
+document.getElementById('shade').onclick = () => document.body.classList.remove('nav-open');
+document.getElementById('close-dialog').onclick = closeDialog;
+document.getElementById('dialog').addEventListener('click', event => { if (event.target === event.currentTarget) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)
+        closeDialog();
+} });
+document.addEventListener('keydown', event => { if (event.key === 'Escape')
+    document.body.classList.remove('nav-open'); });
+// 初始即展示完整结果，避免以空页面代替最终产品；后续操作沿用同一份计算规则。
+state.snapshot = makeSnapshot('RUN');
+state.snapshot.id = 'RUN-001';
+state.snapshot.at = '2026-09-08 14:36:10';
+state.runs.push(state.snapshot);
+const firstReport = makeSnapshot('REPORT');
+firstReport.id = 'REPORT-001';
+firstReport.at = '2026-09-08 14:37:20';
+state.reports.push(firstReport);
+state.selectedReport = firstReport.id;
+state.audit.unshift({ at: firstReport.at, zh: '生成月度报告', en: 'Monthly report generated', detail: firstReport.id }, { at: state.snapshot.at, zh: '完成 Agent 核查', en: 'Agent review completed', detail: state.snapshot.id });
+render();
