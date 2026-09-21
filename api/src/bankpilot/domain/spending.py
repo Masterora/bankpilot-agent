@@ -5,8 +5,9 @@
 """
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.planning import BudgetEvidence, Currency, PlanningInput
@@ -40,6 +41,7 @@ class SpendingQuery(SpendingScope):
 
 class SpendingCoverage(BaseModel):
     transaction_count: int
+    earliest_transaction_date: date | None = None
     latest_transaction_date: date | None
 
 
@@ -57,6 +59,82 @@ class SpendingSummary(BaseModel):
 
 class SpendingPage(BaseModel):
     summary: SpendingSummary
+    page: int
+    page_size: int
+    total: int
+    items: list[BudgetEvidence]
+
+
+class SpendingComparisonScope(PlanningInput):
+    baseline_month: date
+    target_month: date
+    currency: Currency
+
+    @model_validator(mode="after")
+    def valid_months(self) -> "SpendingComparisonScope":
+        months = (self.baseline_month, self.target_month)
+        if any(value.day != 1 or not 1900 <= value.year <= 9998 for value in months):
+            raise ValueError("Comparison months must be eligible month starts")
+        if self.baseline_month >= self.target_month:
+            raise ValueError("Baseline month must precede target month")
+        return self
+
+
+class SpendingComparisonCoverage(BaseModel):
+    transaction_count: int
+    earliest_transaction_date: date | None
+    latest_transaction_date: date | None
+
+
+class SpendingComparisonPeriod(BaseModel):
+    month: date
+    start_date: date
+    end_date: date
+    gross_spending: Decimal
+    refund_offset: Decimal
+    net_spending: Decimal
+    contribution_count: int
+    coverage: SpendingComparisonCoverage
+
+
+class SpendingCategoryComparison(BaseModel):
+    category: TransactionCategory
+    baseline_gross: Decimal
+    baseline_refund: Decimal
+    baseline_net: Decimal
+    baseline_count: int
+    target_gross: Decimal
+    target_refund: Decimal
+    target_net: Decimal
+    target_count: int
+    delta: Decimal
+
+
+class SpendingComparison(BaseModel):
+    scope: SpendingComparisonScope
+    baseline: SpendingComparisonPeriod
+    target: SpendingComparisonPeriod
+    gross_delta: Decimal
+    refund_delta: Decimal
+    net_delta: Decimal
+    categories: list[SpendingCategoryComparison]
+    data_status: Literal["comparable", "baseline_missing", "target_missing", "both_missing"]
+    ledger_revision: int
+    calculation_version: str
+    comparison_version: str
+    calculated_at: datetime
+
+
+class ComparisonEvidenceQuery(PlanningInput):
+    side: Literal["baseline", "target"]
+    category: TransactionCategory
+    page: int = Field(default=1, ge=1, le=1_000_000)
+
+
+class ComparisonEvidencePage(BaseModel):
+    comparison: SpendingComparison
+    side: Literal["baseline", "target"]
+    category: TransactionCategory
     page: int
     page_size: int
     total: int

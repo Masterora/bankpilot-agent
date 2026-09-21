@@ -6,7 +6,8 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import (
@@ -17,7 +18,12 @@ from bankpilot.api.dependencies import (
 )
 from bankpilot.api.errors import ApiProblem
 from bankpilot.db.assistant_repository import conversation_record, delete_history, lock_owner
-from bankpilot.db.models import AssistantActionRecord, UserRecord
+from bankpilot.db.models import (
+    AssistantActionRecord,
+    AssistantConversationRecord,
+    AssistantTurnRecord,
+    UserRecord,
+)
 from bankpilot.domain.assistant import (
     ActionInput,
     ConversationDetail,
@@ -28,14 +34,33 @@ from bankpilot.domain.assistant import (
     TurnInput,
     TurnView,
 )
-from bankpilot.domain.spending import SpendingPage, SpendingQuery, SpendingScope
+from bankpilot.domain.spending import (
+    ComparisonEvidencePage,
+    ComparisonEvidenceQuery,
+    SpendingComparison,
+    SpendingPage,
+    SpendingQuery,
+    SpendingScope,
+)
 from bankpilot.errors import BankPilotError, PlanningError, RelationError
 from bankpilot.services.assistant import resolve_action
 from bankpilot.services.conversations import ConversationService, conversation_view, current_action
-from bankpilot.services.spending import spending_page
+from bankpilot.services.spending import comparison_evidence_page, spending_page
 from bankpilot.services.transaction_search import validate_ownership
 
-router = APIRouter(prefix="/api/v1/assistant", tags=["assistant"])
+
+def require_protocol(
+    version: Annotated[str | None, Header(alias="X-Assistant-Protocol")] = None,
+) -> None:
+    if version != "4":
+        raise ApiProblem(409, "assistant_protocol_upgrade", "Refresh the page to upgrade")
+
+
+router = APIRouter(
+    prefix="/api/v1/assistant",
+    tags=["assistant"],
+    dependencies=[Depends(require_protocol)],
+)
 
 
 @router.get("/spending-evidence", response_model=SpendingPage)
@@ -59,6 +84,47 @@ async def evidence(
 async def legacy_conversation() -> None:
     raise ApiProblem(
         409, "assistant_protocol_upgrade", "Refresh the page to use conversation history"
+    )
+
+
+@router.get(
+    "/turns/{turn_id}/comparison-evidence", response_model=ComparisonEvidencePage
+)
+async def comparison_evidence(
+    turn_id: UUID,
+    query: Annotated[ComparisonEvidenceQuery, Query()],
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
+) -> ComparisonEvidencePage:
+    turn = await session.scalar(
+        select(AssistantTurnRecord)
+        .join(
+            AssistantConversationRecord,
+            AssistantConversationRecord.id == AssistantTurnRecord.conversation_id,
+        )
+        .where(
+            AssistantTurnRecord.id == turn_id,
+            AssistantTurnRecord.status == "completed",
+            AssistantTurnRecord.result_version == 3,
+            AssistantConversationRecord.user_id == user.id,
+            AssistantConversationRecord.deleted.is_(False),
+        )
+    )
+    if turn is None:
+        raise PlanningError("assistant_comparison_not_found", 404)
+    items = [
+        item
+        for item in (turn.result or {}).get("evidence", [])
+        if isinstance(item, dict) and item.get("tool") == "compare_spending"
+    ]
+    if len(items) != 1:
+        raise PlanningError("assistant_comparison_not_found", 404)
+    try:
+        comparison = SpendingComparison.model_validate(items[0].get("data"))
+    except ValueError as exc:
+        raise PlanningError("assistant_comparison_not_found", 404) from exc
+    return await comparison_evidence_page(
+        session, user.id, comparison, query.side, query.category, query.page
     )
 
 

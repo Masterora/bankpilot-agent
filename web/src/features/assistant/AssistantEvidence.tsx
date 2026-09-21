@@ -23,7 +23,7 @@ export function AssistantEvidence({
 }) {
   const en = locale === 'en-US'
   const money = (value: string, currency: string) => formatMoney(value, currency, locale)
-  const otherEvidence = evidence.filter(item => item.tool !== 'spending' && item.tool !== 'find_transactions')
+  const otherEvidence = evidence.filter(item => item.tool !== 'spending' && item.tool !== 'find_transactions' && item.tool !== 'compare_spending')
   return (
     evidence.length > 0 && (
       <>

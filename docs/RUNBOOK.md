@@ -136,13 +136,12 @@ HTTP 响应提供 X-Request-ID 与 Server-Timing（db、connection、parse，毫
 账本、预算、固定支出、月报和已执行回执保留。未完成清理及复核前不得开放恢复环境。
 此降级会同时清除原本未删除的聊天；旧备份本体不改写，恢复后的账本 RPO 仍由备份时间决定。
 
-本地固定验收：`make verify-conversations`（需要仅指向本机管理员库的
-`BANKPILOT_ACCEPTANCE_ADMIN_URL`），自动新建随机库、验证后清理；不会使用默认业务库配置。
+仓库内固定验收脚本及对应 Makefile 入口已于 2026-09-21 删除。后续会话与恢复验收仍须使用显式指定的隔离库，不得使用默认业务库配置。
 
 ## R3 发布与验证
 
 迁移为 `20260921_0014`，仍为 20 张业务表。会话请求协议升级为 3，旧保存请求缺上下文版本会被拒绝；分类与核查保存必须携带账本修订号。前后端须同批升级，旧页面需刷新。共享业务数据库迁移和部署须另行授权。
 
-`make verify-search` 使用 `BANKPILOT_ACCEPTANCE_ADMIN_URL` 指向本机管理员库，创建随机一次性库，验证后删除；包含确定性 API 和搜索 Hook 回归。继续运行 `make verify`、`make verify-business`、`make verify-conversations` 和 `make verify-interactions`。会话回归包含实际 dump/restore、准备清理幂等和隔离库迁移往返。
+运行 `make verify` 执行静态检查与构建。搜索、会话、业务和交互自动回归入口已删除；发布前仍需在隔离环境另行验证这些行为，包括实际 dump/restore、准备清理幂等和迁移往返。
 
-备份结构校验版本已同步。旧备份由与其迁移配套的应用先验证，再按升级流程处理，不跳过结构校验。删除/恢复清理包括新增 `search_context`，墓碑不残留商户文本。真实模型的 22 个待验收场景见 `scripts/acceptance/search-model-cases.json`；本轮未调用外部模型。
+备份结构校验版本已同步。旧备份由与其迁移配套的应用先验证，再按升级流程处理，不跳过结构校验。删除/恢复清理包括新增 `search_context`，墓碑不残留商户文本。真实模型场景文件已随测试删除；历史 R3 验证未调用外部模型。

@@ -29,7 +29,7 @@ import type { ProjectionRequest, ReviewProjection } from './features/ledger/Ledg
 import type { SearchFilters, SearchPage, SearchItem } from './features/ledger/search'
 import type { Conversation } from './features/assistant/types'
 
-import type { AssistantAction, TurnInput, SavedTurn, ConversationPage, ConversationDetail, SpendingPage, SpendingScope, SpendingSummary } from './features/assistant/types'
+import type { AssistantAction, TurnInput, SavedTurn, ConversationPage, ConversationDetail, SpendingPage, SpendingScope, SpendingSummary, ComparisonEvidencePage, SpendingCategoryComparison } from './features/assistant/types'
 
 import type { BudgetInput, BudgetWorkspace, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
 
@@ -49,7 +49,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(path.startsWith('/api/v1/assistant') ? { 'X-Assistant-Protocol': '4' } : {}),
+      ...init?.headers,
+    },
   })
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null)
@@ -88,6 +92,10 @@ export const api = {
   spendingEvidence: (summary: SpendingSummary, page: number) => {
     const params = new URLSearchParams({ ...summary.scope, expected_revision: String(summary.ledger_revision), expected_calculation_version: summary.calculation_version, page: String(page) })
     return request<SpendingPage>(`/api/v1/assistant/spending-evidence?${params}`)
+  },
+  comparisonEvidence: (turnId: string, side: 'baseline' | 'target', category: SpendingCategoryComparison['category'], page: number) => {
+    const params = new URLSearchParams({ side, category, page: String(page) })
+    return request<ComparisonEvidencePage>(`/api/v1/assistant/turns/${turnId}/comparison-evidence?${params}`)
   },
   assistantAction: (id: string, cancel: boolean) => request<AssistantAction>(`/api/v1/assistant/${cancel ? 'cancel' : 'confirm'}`, { method: 'POST', body: JSON.stringify({ id }) }),
   budgets: (month: string) => request<BudgetWorkspace>(`/api/v1/budgets?month=${month}-01`),

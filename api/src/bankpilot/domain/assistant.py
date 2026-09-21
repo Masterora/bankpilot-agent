@@ -11,7 +11,7 @@ from pydantic import Field, TypeAdapter, field_validator, model_validator
 
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.planning import Currency, Money, PlanningInput
-from bankpilot.domain.spending import SpendingScope
+from bankpilot.domain.spending import SpendingComparisonScope, SpendingScope
 from bankpilot.domain.transaction_search import SearchFilters
 
 
@@ -77,6 +77,11 @@ class ReadSpending(PlanningInput):
     arguments: SpendingScope
 
 
+class CompareSpending(PlanningInput):
+    kind: Literal["compare_spending"]
+    arguments: SpendingComparisonScope
+
+
 class FindArguments(SearchFilters):
     account_name: str | None = Field(default=None, min_length=1, max_length=100)
 
@@ -107,6 +112,7 @@ Decision = Annotated[
     | ReadRecurring
     | ReadOverview
     | ReadSpending
+    | CompareSpending
     | FindTransactions
     | ProposeBudget
     | Answer,
@@ -120,7 +126,7 @@ class ActionInput(PlanningInput):
 
 
 class TurnInput(MonthArguments):
-    protocol_version: Literal[3]
+    protocol_version: Literal[4]
     expected_context_version: int = Field(ge=0)
     request_id: UUID
     creation_id: UUID | None = None
@@ -129,6 +135,7 @@ class TurnInput(MonthArguments):
     locale: Literal["zh-CN", "en-US"] = "zh-CN"
     spending_context: SpendingScope | None = None
     retry_of: UUID | None = None
+    recompare_of: UUID | None = None
 
     @model_validator(mode="after")
     def target(self) -> "TurnInput":
@@ -136,6 +143,8 @@ class TurnInput(MonthArguments):
             raise ValueError("Provide one conversation identity")
         if not self.question.strip():
             raise ValueError("Question cannot be blank")
+        if self.retry_of is not None and self.recompare_of is not None:
+            raise ValueError("Retry and recompare are mutually exclusive")
         return self
 
 
@@ -161,6 +170,7 @@ class TurnView(PlanningInput):
     created_at: datetime
     completed_at: datetime | None
     result_version: int
+    recompare_of: UUID | None = None
     reply: dict[str, Any] | None
     error_code: str | None
 

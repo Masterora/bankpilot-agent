@@ -34,10 +34,12 @@ from bankpilot.domain.assistant import (
     TurnView,
 )
 from bankpilot.domain.planning import BudgetInput
+from bankpilot.domain.spending import SpendingComparison, SpendingComparisonScope
 from bankpilot.domain.transaction_search import SearchFilters
 from bankpilot.errors import BankPilotError, PlanningError
 from bankpilot.ports import AssistantGateway
 from bankpilot.services.assistant import action_view, chat
+from bankpilot.services.spending import compare_spending
 
 
 async def database_now(session: AsyncSession) -> datetime:
@@ -83,19 +85,30 @@ async def current_action(session: AsyncSession, row: AssistantActionRecord) -> d
 
 
 async def turn_view(session: AsyncSession, row: AssistantTurnRecord) -> TurnView:
-    reply = dict(row.result) if row.result else None
-    if reply and row.result_version not in (1, 2):
+    stored = dict(row.result) if row.result else {}
+    request_summary = stored.get("request_summary", {})
+    recompare_of = (
+        request_summary.get("recompare_of") if isinstance(request_summary, dict) else None
+    )
+    reply = stored if stored and row.status == "completed" else None
+    if reply and row.result_version != 3:
         reply = {
-            "text": str(reply.get("text", "")),
+            "text": "",
             "evidence": [],
             "action": None,
-            "history_unavailable": True,
+            "assistant_result_unavailable": True,
         }
     elif reply and row.action_id:
         action = await session.get(AssistantActionRecord, row.action_id)
         reply["action"] = await current_action(session, action) if action else None
     return TurnView(
-        **{key: getattr(row, key) for key in TurnView.model_fields if key != "reply"}, reply=reply
+        **{
+            key: getattr(row, key)
+            for key in TurnView.model_fields
+            if key not in {"reply", "recompare_of"}
+        },
+        recompare_of=recompare_of,
+        reply=reply,
     )
 
 
@@ -134,6 +147,7 @@ class ConversationService:
 
     async def submit(self, uid: UUID, payload: TurnInput, gateway: AssistantGateway) -> TurnView:
         digest = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()
+        recompare_scope: SpendingComparisonScope | None = None
         async with self.factory.begin() as session:
             await lock_owner(session, uid)
             if payload.creation_id:
@@ -215,27 +229,60 @@ class ConversationService:
                     or original.status != "failed"
                 ):
                     raise PlanningError("assistant_retry_invalid", 409)
+            if payload.recompare_of:
+                original = await session.get(AssistantTurnRecord, payload.recompare_of)
+                if (
+                    not original
+                    or original.conversation_id != row.id
+                    or original.status != "completed"
+                    or original.result_version != 3
+                ):
+                    raise PlanningError("assistant_recompare_invalid", 409)
+                comparison_items = [
+                    item
+                    for item in (original.result or {}).get("evidence", [])
+                    if isinstance(item, dict) and item.get("tool") == "compare_spending"
+                ]
+                if len(comparison_items) != 1:
+                    raise PlanningError("assistant_recompare_invalid", 409)
+                try:
+                    recompare_scope = SpendingComparison.model_validate(
+                        comparison_items[0].get("data")
+                    ).scope
+                except ValueError as exc:
+                    raise PlanningError("assistant_recompare_invalid", 409) from exc
             now = await database_now(session)
+            turn_month = row.month if recompare_scope is not None else payload.month
+            turn_scope = row.scope if recompare_scope is not None else (
+                payload.spending_context.model_dump(mode="json")
+                if payload.spending_context
+                else None
+            )
+            if turn_month is None:
+                raise PlanningError("assistant_recompare_invalid", 409)
             turn: AssistantTurnRecord | None = AssistantTurnRecord(
                 conversation_id=row.id,
                 search_context=row.search_context,
-                result_version=2,
+                result_version=3,
                 request_id=payload.request_id,
                 digest=digest,
                 sequence=count + 1,
                 question=payload.question,
                 locale=payload.locale,
-                month=payload.month,
-                scope=payload.spending_context.model_dump(mode="json")
-                if payload.spending_context
-                else None,
+                month=turn_month,
+                scope=turn_scope,
                 business_date=now.astimezone(ZoneInfo(self.settings.business_timezone)).date(),
                 retry_of=payload.retry_of,
+                result={"request_summary": {"recompare_of": str(payload.recompare_of)}}
+                if payload.recompare_of
+                else None,
                 deadline=now + timedelta(seconds=90),
             )
             assert turn is not None
             session.add(turn)
-            row.month, row.scope, row.updated_at, row.accessed_at = turn.month, turn.scope, now, now
+            if recompare_scope is None:
+                row.month, row.scope = turn.month, turn.scope
+            row.updated_at, row.accessed_at = now, now
             history = list(
                 (
                     await session.scalars(
@@ -243,7 +290,7 @@ class ConversationService:
                         .where(
                             AssistantTurnRecord.conversation_id == row.id,
                             AssistantTurnRecord.status == "completed",
-                            AssistantTurnRecord.result_version.in_((1, 2)),
+                            AssistantTurnRecord.result_version == 3,
                         )
                         .order_by(AssistantTurnRecord.sequence.desc())
                         .limit(7)
@@ -268,19 +315,45 @@ class ConversationService:
         # No session/transaction spans model execution. Deadline is never renewed.
         try:
             async with asyncio.timeout(90):
-                reply = await chat(
-                    self.factory,
-                    gateway,
-                    uid,
-                    ChatInput(
-                        messages=messages,
-                        month=payload.month,
-                        locale=payload.locale,
-                        spending_context=payload.spending_context,
-                        search_context=search_context,
-                    ),
-                    today,
-                )
+                reply: dict[str, Any]
+                if recompare_scope is not None:
+                    async with self.factory() as session:
+                        await session.connection(
+                            execution_options={"isolation_level": "REPEATABLE READ"}
+                        )
+                        comparison = await compare_spending(
+                            session, uid, recompare_scope, today
+                        )
+                    reply = {
+                        "text": (
+                            "已按当前日期重新比较，请核对新的实际范围。"
+                            if payload.locale == "zh-CN"
+                            else "Recomputed as of today. Review the updated date ranges."
+                        ),
+                        "evidence": [
+                            {
+                                "tool": "compare_spending",
+                                "data": comparison.model_dump(mode="json"),
+                            }
+                        ],
+                        "action": None,
+                    }
+                else:
+                    reply = await chat(
+                        self.factory,
+                        gateway,
+                        uid,
+                        ChatInput(
+                            messages=messages,
+                            month=payload.month,
+                            locale=payload.locale,
+                            spending_context=payload.spending_context,
+                            search_context=search_context,
+                        ),
+                        today,
+                    )
+                if payload.recompare_of:
+                    reply["request_summary"] = {"recompare_of": str(payload.recompare_of)}
                 if len(json.dumps(reply)) > self.settings.assistant_max_result_chars:
                     raise PlanningError("assistant_result_too_large", 422)
                 async with self.factory.begin() as session:

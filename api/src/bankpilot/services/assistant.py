@@ -19,6 +19,7 @@ from bankpilot.db.planning_repository import PlanningRepository
 from bankpilot.domain.assistant import (
     Answer,
     ChatInput,
+    CompareSpending,
     FindTransactions,
     ProposeBudget,
     ReadSpending,
@@ -30,13 +31,15 @@ from bankpilot.domain.transaction_search import SearchFilters, SearchRequest, no
 from bankpilot.errors import PlanningError
 from bankpilot.ports import AssistantGateway
 from bankpilot.services import budgets, recurring
-from bankpilot.services.spending import read_spending
+from bankpilot.services.spending import compare_spending, read_spending
 from bankpilot.services.transaction_search import search
 
 SYSTEM = """你是 BankPilot 账本助手。你能回答问题，并提出需要用户点击确认的预算修改。
-根据问题和工具实际返回的数据决定下一步，可查询不同月份进行比较，不要机械执行所有工具。
+根据问题和工具实际返回的数据决定下一步，不要机械执行所有工具。
 工具：overview 返回整月调整后收支，不代表完整覆盖；budgets 返回各分类实际支出、预算和覆盖；
 spending 查询单月、单支出分类、单币种的消费构成；budgets 和 spending 都提供查看构成入口。
+compare_spending 比较两个不同月份的同币种实际支出；比较问题必须使用它，
+禁止分别查两个月后自行做减法。
 recurring 返回固定支出状态；propose_budget 仅提出单个月份、分类、币种、额度的修改。
 日期参数必须为月份第一天。金额不可跨币种相加。未导入不代表没有支出，净额不是余额。
 提案前必须查询目标月份预算；category 使用工具返回的枚举，收入不可设置支出预算。
@@ -55,6 +58,7 @@ recurring 返回固定支出状态；propose_budget 仅提出单个月份、分�
 不支持模糊匹配、商户别名、自然语言SQL、自动退款调查、关系修改、创建固定支出、外部通知和银行操作；明确说明边界。
 不要把创建固定支出说成已设置提醒。禁止声称执行了预算确认接口以外的操作。
 用户问某类消费优先使用 spending，问预算、超支或全部分类用 budgets。两者的金额由服务端计算。
+用户问两个期间的支出变化、增加或减少来源时使用 compare_spending；月份或币种不明确先澄清。
 选中的消费范围仅用于明确追问；新问题明确指定月份/分类/币种时优先使用新条件。
 未选范围且历史有多个分类/币种时先澄清，不猜测。财务追问必须重新查询，不能复用历史金额。
 “具体哪些”也查询对应 spending 并引导点击查看构成，不编造商户或流水名单。
@@ -184,6 +188,40 @@ async def chat(
                 }
             )
             continue
+        if isinstance(decision, CompareSpending):
+            async with factory() as session:
+                await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+                comparison = await compare_spending(
+                    session, uid, decision.arguments, today
+                )
+            if comparison.data_status == "both_missing":
+                text = (
+                    "两个期间都没有该币种的已导入流水，暂无可比较数据。"
+                    if request.locale == "zh-CN"
+                    else (
+                        "Neither period has imported transactions in this currency, "
+                        "so there is no comparable data."
+                    )
+                )
+            else:
+                text = (
+                    "比较已按同一账务口径完成，请核对差额、覆盖范围和分类构成。"
+                    if request.locale == "zh-CN"
+                    else (
+                        "The comparison is ready using one accounting basis. "
+                        "Review the difference, coverage, and category breakdown."
+                    )
+                )
+            return {
+                "text": text,
+                "evidence": [
+                    {
+                        "tool": "compare_spending",
+                        "data": comparison.model_dump(mode="json"),
+                    }
+                ],
+                "action": None,
+            }
         month = decision.arguments.month
         async with factory() as session:
             await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})

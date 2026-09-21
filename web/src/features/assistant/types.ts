@@ -32,8 +32,9 @@ export type Evidence =
   | { tool: 'budgets'; month: string; data: Omit<BudgetWorkspace, 'evidence'> & { spending_refs: SpendingSummary[] } }
   | { tool: 'recurring'; month: string; data: Omit<RecurringWorkspace, 'candidates'> }
   | { tool: 'overview'; month: string; data: Pick<OverviewSnapshot, 'summaries'> }
+  | { tool: 'compare_spending'; data: SpendingComparison }
 export interface Reply {
-  history_unavailable?: boolean
+  assistant_result_unavailable?: boolean
   text: string
   evidence: Evidence[]
   action: AssistantAction | null
@@ -62,6 +63,51 @@ export interface SpendingPage {
   total: number
   items: BudgetEvidence[]
 }
+export interface SpendingComparisonPeriod {
+  month: string
+  start_date: string
+  end_date: string
+  gross_spending: string
+  refund_offset: string
+  net_spending: string
+  contribution_count: number
+  coverage: { transaction_count: number; earliest_transaction_date: string | null; latest_transaction_date: string | null }
+}
+export interface SpendingCategoryComparison {
+  category: TransactionCategory
+  baseline_gross: string
+  baseline_refund: string
+  baseline_net: string
+  baseline_count: number
+  target_gross: string
+  target_refund: string
+  target_net: string
+  target_count: number
+  delta: string
+}
+export interface SpendingComparison {
+  scope: { baseline_month: string; target_month: string; currency: string }
+  baseline: SpendingComparisonPeriod
+  target: SpendingComparisonPeriod
+  gross_delta: string
+  refund_delta: string
+  net_delta: string
+  categories: SpendingCategoryComparison[]
+  data_status: 'comparable' | 'baseline_missing' | 'target_missing' | 'both_missing'
+  ledger_revision: number
+  calculation_version: string
+  comparison_version: string
+  calculated_at: string
+}
+export interface ComparisonEvidencePage {
+  comparison: SpendingComparison
+  side: 'baseline' | 'target'
+  category: TransactionCategory
+  page: number
+  page_size: number
+  total: number
+  items: BudgetEvidence[]
+}
 export interface EvidenceTarget { id: string; booking_date: string; version?: { expected_revision: number; expected_search_version: string } }
 
 export function spendingRefs(evidence: Evidence[]): SpendingSummary[] {
@@ -75,7 +121,7 @@ export function spendingRefs(evidence: Evidence[]): SpendingSummary[] {
 }
 
 export interface TurnInput {
-  protocol_version: 3
+  protocol_version: 4
   expected_context_version: number
   request_id: string
   conversation_id?: string
@@ -85,6 +131,7 @@ export interface TurnInput {
   locale: string
   spending_context: SpendingScope | null
   retry_of?: string
+  recompare_of?: string
 }
 export interface SavedTurn {
   id: string
@@ -97,6 +144,8 @@ export interface SavedTurn {
   status: 'processing' | 'completed' | 'failed'
   created_at: string
   completed_at: string | null
+  result_version: number
+  recompare_of: string | null
   reply: Reply | null
   error_code: string | null
 }

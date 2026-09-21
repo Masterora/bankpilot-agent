@@ -14,10 +14,12 @@ import { LoadingIndicator } from '../../shared/ui'
 import type { AssistantAction } from './types'
 import { AssistantEvidence } from './AssistantEvidence'
 import { SpendingDetails } from './SpendingDetails'
+import { SpendingComparison } from './SpendingComparison'
+import { ComparisonEvidenceDetails } from './ComparisonEvidenceDetails'
 import { SearchResultCard } from './SearchResultCard'
 import type { SearchFilters } from '../ledger/search'
 import { useConversations } from './useConversations'
-import type { EvidenceTarget, SpendingScope, SpendingSummary } from './types'
+import type { EvidenceTarget, SpendingCategoryComparison, SpendingScope, SpendingSummary } from './types'
 export function AssistantPanel({
   userId,
   open,
@@ -51,6 +53,7 @@ export function AssistantPanel({
   const busy = sending || history.loading
   const [error, setError] = useState('')
   const [detail, setDetail] = useState<{ summary: SpendingSummary; revision: number } | null>(null)
+  const [comparisonDetail, setComparisonDetail] = useState<{ turnId: string; side: 'baseline' | 'target'; category: SpendingCategoryComparison['category']; revision: number } | null>(null)
   const [detailVisible, setDetailVisible] = useState(false)
   const conversation = useRef<HTMLDivElement>(null)
   const readingPosition = useRef(0)
@@ -58,6 +61,14 @@ export function AssistantPanel({
     readingPosition.current = conversation.current?.parentElement?.scrollTop ?? 0
     setContext(summary.scope)
     setDetail({ summary, revision })
+    setComparisonDetail(null)
+    setDetailVisible(true)
+    conversation.current?.parentElement?.scrollTo({ top: 0 })
+  }
+  function showComparisonDetail(turnId: string, side: 'baseline' | 'target', category: SpendingCategoryComparison['category']) {
+    readingPosition.current = conversation.current?.parentElement?.scrollTop ?? 0
+    setDetail(null)
+    setComparisonDetail({ turnId, side, category, revision: ledgerRevision })
     setDetailVisible(true)
     conversation.current?.parentElement?.scrollTo({ top: 0 })
   }
@@ -128,7 +139,7 @@ export function AssistantPanel({
     setBusy(true)
     setError('')
     try {
-      const accepted = await history.send({ protocol_version: 3, expected_context_version: history.contextVersion, request_id: crypto.randomUUID(),
+      const accepted = await history.send({ protocol_version: 4, expected_context_version: history.contextVersion, request_id: crypto.randomUUID(),
         ...(history.id ? { conversation_id: history.id } : { creation_id: crypto.randomUUID() }),
         question: message.trim(), month: history.month, locale, spending_context: context })
       if (accepted) setMessage('')
@@ -155,6 +166,28 @@ export function AssistantPanel({
       setBusy(false)
     }
   }
+  async function recompare(turnId: string) {
+    if (lock.current || !history.id || pending) return
+    lock.current = true
+    setBusy(true)
+    setError('')
+    try {
+      await history.send({
+        protocol_version: 4,
+        expected_context_version: history.contextVersion,
+        conversation_id: history.id,
+        request_id: crypto.randomUUID(),
+        recompare_of: turnId,
+        question: t('按当前日期重新比较', 'Recompare as of today'),
+        month: history.month,
+        locale,
+        spending_context: context,
+      })
+      setDetailVisible(false)
+      setComparisonDetail(null)
+    } catch (cause) { setError(failure(cause)) }
+    finally { lock.current = false; setBusy(false) }
+  }
   return (
     <DetailPanel
       docked
@@ -164,7 +197,7 @@ export function AssistantPanel({
       onClose={onClose}
     >
       <div className="assistant-toolbar">
-        <button disabled={busy || !!history.unknown} onClick={() => { history.fresh(); setHistoryVisible(false); setMessage(''); setDetail(null); setDetailVisible(false) }}><span aria-hidden="true">＋</span>{t('新对话', 'New conversation')}</button>
+        <button disabled={busy || !!history.unknown} onClick={() => { history.fresh(); setHistoryVisible(false); setMessage(''); setDetail(null); setComparisonDetail(null); setDetailVisible(false) }}><span aria-hidden="true">＋</span>{t('新对话', 'New conversation')}</button>
         <button aria-expanded={historyVisible} aria-controls="assistant-history" disabled={busy} onClick={() => setHistoryVisible(value => !value)}>{t('历史对话', 'History')}</button>
         {history.id && <button disabled={busy} onClick={() => {
           if (window.confirm(t('删除对话及待确认提案？已执行的预算修改不会撤销，历史备份可能仍保留对话。', 'Delete this conversation and pending proposals? Applied budgets are kept; old backups may retain history.'))) void history.remove().catch(cause => history.setError(cause))
@@ -172,11 +205,12 @@ export function AssistantPanel({
       </div>
       {historyVisible && <nav id="assistant-history" className="assistant-history" aria-label={t('历史对话', 'Conversation history')}>
         {history.items.map(item => <button key={item.id} aria-current={history.id === item.id ? "page" : undefined} disabled={busy || !!history.unknown} onClick={() => {
-          setDetail(null); setDetailVisible(false); setMessage(''); void history.load(item.id).catch(cause => history.setError(cause))
+          setDetail(null); setComparisonDetail(null); setDetailVisible(false); setMessage(''); void history.load(item.id).catch(cause => history.setError(cause))
         }}><strong>{item.title}</strong><time dateTime={item.updated_at}>{new Date(item.updated_at).toLocaleString(locale)}</time></button>)}
         {history.cursor && <button onClick={() => void history.list(history.cursor!).catch(cause => history.setError(cause))}>{t('更多', 'More')}</button>}
       </nav>}
       {history.storageFailed && <p role="alert">{t('浏览器存储不可用，刷新可能丢失待处理请求。', 'Browser storage unavailable: unacknowledged requests may not survive refresh.')}</p>}
+      {history.recoveryUpgradeRequired && <p role="status">{t('升级前有一条请求尚未确认接收，已保留其标识。', 'A request from before the upgrade is still unconfirmed. Its identity is retained.')} <button disabled={busy || pending} onClick={() => void history.lookupUnsupported()}>{t('核对原请求', 'Check original request')}</button></p>}
       {history.unknown && <section role="status">
         <p>{t('接收状态未知，请先查询结果。', 'Receipt unknown. Check the result first.')}</p>
         <button disabled={busy} onClick={() => void history.lookup()}>{t('重新查询状态', 'Check status')}</button>
@@ -193,6 +227,12 @@ export function AssistantPanel({
             backToAnswer()
             requestAnimationFrame(() => input.current?.focus())
           }} />
+      </div>}
+      {comparisonDetail && <div hidden={!detailVisible}>
+        <ComparisonEvidenceDetails key={`${comparisonDetail.turnId}:${comparisonDetail.side}:${comparisonDetail.category}`}
+          turnId={comparisonDetail.turnId} side={comparisonDetail.side} category={comparisonDetail.category}
+          copy={copy} locale={locale} active={open && detailVisible} stale={comparisonDetail.revision !== ledgerRevision}
+          onBack={backToAnswer} onRecompare={() => void recompare(comparisonDetail.turnId)} onInspect={onInspect} />
       </div>}
       <div className="assistant-conversation" ref={conversation} hidden={detailVisible}>
         {!turns.length && (
@@ -222,15 +262,21 @@ export function AssistantPanel({
             <details className="assistant-message-meta"><summary>{t('详情', 'Details')}</summary><time dateTime={turn.created_at}>{new Date(turn.created_at).toLocaleString(locale)}</time><span>{turn.month.slice(0, 7)}{turn.scope && ` · ${copy.categoryLabels[turn.scope.category]} · ${turn.scope.currency}`}</span></details>
             {turn.status === 'processing' && <p role="status">{t('处理中…', 'Working…')}</p>}
             {turn.status === 'failed' && <p>{t('处理失败', 'Failed')} · {turn.error_code} <button disabled={busy || pending} onClick={() => {
-              setBusy(true); void history.send({ protocol_version: 3, expected_context_version: history.contextVersion, conversation_id: turn.conversation_id, request_id: crypto.randomUUID(), retry_of: turn.id,
-                question: turn.question, month: turn.month, spending_context: turn.scope, locale }).finally(() => setBusy(false))
-            }}>{t('重新处理', 'Retry')}</button></p>}
+              if (turn.recompare_of) void recompare(turn.recompare_of)
+              else {
+                setBusy(true); void history.send({ protocol_version: 4, expected_context_version: history.contextVersion, conversation_id: turn.conversation_id, request_id: crypto.randomUUID(), retry_of: turn.id,
+                  question: turn.question, month: turn.month, spending_context: turn.scope, locale }).finally(() => setBusy(false))
+              }
+            }}>{turn.recompare_of ? t('重新比较', 'Recompare') : t('重新处理', 'Retry')}</button></p>}
             {turn.reply && <>
             <p className="assistant-answer">{turn.reply.text}</p>
-            {turn.reply.history_unavailable && <p>{t("历史详情不可用，请重新查询。", "History details unavailable. Query again.")}</p>}
-            <button disabled={busy || pending} onClick={() => { setContext(turn.scope); setMessage(`${turn.month.slice(0, 7)} ${turn.scope ? copy.categoryLabels[turn.scope.category] + ' ' + turn.scope.currency : ''} ${t('重新查询当前账本', 'Query current ledger')}`) }}>{t('重新查询', 'Query again')}</button>
+            {turn.reply.assistant_result_unavailable && <p>{t("旧版本结果不可用，请重新查询。", "This older result is unavailable. Query again.")}</p>}
+            {!turn.reply.evidence.some(item => item.tool === 'compare_spending') && <button disabled={busy || pending} onClick={() => { setContext(turn.scope); setMessage(`${turn.month.slice(0, 7)} ${turn.scope ? copy.categoryLabels[turn.scope.category] + ' ' + turn.scope.currency : ''} ${t('重新查询当前账本', 'Query current ledger')}`) }}>{t('重新查询', 'Query again')}</button>}
             {turn.reply.evidence.filter(item => item.tool === 'find_transactions').map((item, index) => <SearchResultCard key={`${history.id}:${turn.id}:${index}`} initial={item.data} english={english} copy={copy} onInspect={onInspect} onLedger={onSearchLedger} onSave={history.selectSearch} onUnsaved={() => history.setSearchUnsaved(true)} />)}
             <AssistantEvidence evidence={turn.reply.evidence} copy={copy} locale={locale} stale={loadedRevision.current !== ledgerRevision} onInspect={summary => showDetail(summary, ledgerRevision)} />
+            {turn.reply.evidence.filter(item => item.tool === 'compare_spending').map(item => <SpendingComparison
+              key={`${turn.id}:${item.data.calculated_at}`} comparison={item.data} turnId={turn.id} copy={copy} locale={locale}
+              ledgerRevision={ledgerRevision} onEvidence={showComparisonDetail} onRecompare={() => void recompare(turn.id)} />)}
             {turn.reply.action && (
               <section className="assistant-proposal" aria-label={t('预算修改', 'Budget change')}>
                 <strong>{describe(turn.reply.action)}</strong>

@@ -468,7 +468,7 @@ class AssistantTurnRecord(Base):
     deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    result_version: Mapped[int] = mapped_column(Integer, default=1)
+    result_version: Mapped[int] = mapped_column(Integer, default=3)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(80))
     action_id: Mapped[UUID | None] = mapped_column(ForeignKey("assistant_actions.id"))

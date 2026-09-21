@@ -23,6 +23,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   const [loading, setLoading] = useState(true)
   const [limit, setLimit] = useState(200)
   const [unknown, setUnknown] = useState<TurnInput | null>(null)
+  const [recoveryUpgradeRequired, setRecoveryUpgradeRequired] = useState(false)
   const [storageFailed, setStorageFailed] = useState(() => {
     try {
       const probe = `assistant-probe:${userId}`
@@ -35,16 +36,28 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   const active = useRef<string | null>(null)
   const alive = useRef(true)
   const recovery = useRef<TurnInput | null>(null)
+  const unsupportedRecovery = useRef<string | null>(null)
   const key = `assistant:${userId}`
+  const upgradeKey = `assistant-unverified:${userId}`
   const currentKey = `assistant-current:${userId}`
+  const preserveUnsupported = useCallback((raw: string) => {
+    const archived = sessionStorage.getItem(upgradeKey)
+    if (archived && archived !== raw) throw new Error('Unverified request already exists')
+    sessionStorage.setItem(upgradeKey, raw)
+    unsupportedRecovery.current = raw
+    setRecoveryUpgradeRequired(true)
+  }, [upgradeKey])
   const saveRecovery = useCallback((payload: TurnInput | null) => {
-    recovery.current = payload
-    setUnknown(payload)
     try {
+      const raw = sessionStorage.getItem(key)
+      if (raw && JSON.parse(raw).protocol_version !== 4) preserveUnsupported(raw)
       if (payload) sessionStorage.setItem(key, JSON.stringify(payload))
       else sessionStorage.removeItem(key)
-    } catch { setStorageFailed(true) }
-  }, [key])
+      recovery.current = payload
+      setUnknown(payload)
+      return true
+    } catch { setStorageFailed(true); return false }
+  }, [key, preserveUnsupported])
   const list = useCallback(async (next?: string) => {
     const result = await api.assistantHistory(next)
     if (!alive.current) return result
@@ -86,10 +99,15 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
       let stored: string | null = null
       try {
         stored = sessionStorage.getItem(currentKey)
+        const archived = sessionStorage.getItem(upgradeKey)
+        if (archived) {
+          unsupportedRecovery.current = archived
+          setRecoveryUpgradeRequired(true)
+        }
         const raw = sessionStorage.getItem(key)
         if (raw) {
-          const payload: TurnInput = JSON.parse(raw)
-          if (payload.protocol_version === 3 && payload.request_id && typeof payload.question === 'string') {
+          const payload = JSON.parse(raw) as TurnInput
+          if (payload.protocol_version === 4 && payload.request_id && typeof payload.question === 'string') {
             recovery.current = payload
             setUnknown(payload)
             const turn = await api.assistantLookup(payload).catch(() => null)
@@ -99,7 +117,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
               // Acceptance is durable: discard question body, keep only the lookup identity.
               saveRecovery(null)
             }
-          }
+          } else preserveUnsupported(raw)
         }
       } catch { setStorageFailed(true) }
       const result = await list()
@@ -110,7 +128,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
       })
     })().catch(cause => { if (!cancelled) setError(cause) }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true; alive.current = false; invalidate() }
-  }, [key, currentKey, list, load, saveRecovery, invalidate])
+  }, [key, upgradeKey, currentKey, list, load, saveRecovery, invalidate, preserveUnsupported])
   useEffect(() => {
     const logout = () => { alive.current = false; invalidate(); recovery.current = null }
     window.addEventListener('bankpilot-logout', logout)
@@ -138,7 +156,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   async function send(payload: TurnInput) {
     const version = epoch.current
     setError(null)
-    saveRecovery(payload)
+    if (!saveRecovery(payload)) return false
     try {
       const result = await api.assistantTurn(payload)
       if (!alive.current || epoch.current !== version) return
@@ -170,6 +188,27 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
       saveRecovery(null)
       await load(result.conversation_id)
     } catch (cause) { setError(cause) }
+  }
+  async function lookupUnsupported() {
+    const raw = unsupportedRecovery.current
+    if (!raw) return
+    const version = epoch.current
+    try {
+      // Only use the envelope's identity. Never convert or replay the old request body.
+      const value: unknown = JSON.parse(raw)
+      if (!value || typeof value !== 'object' || !('request_id' in value) || typeof value.request_id !== 'string') throw new Error('Missing request identity')
+      const cid = 'conversation_id' in value && typeof value.conversation_id === 'string' ? value.conversation_id : undefined
+      const creation = 'creation_id' in value && typeof value.creation_id === 'string' ? value.creation_id : undefined
+      if (!!cid === !!creation) throw new Error('Missing conversation identity')
+      const result = await api.assistantLookup({ request_id: value.request_id, conversation_id: cid, creation_id: creation })
+      if (!alive.current || epoch.current !== version) return
+      await load(result.conversation_id)
+      if (!alive.current || epoch.current !== version + 1) return
+      sessionStorage.removeItem(upgradeKey)
+      if (sessionStorage.getItem(key) === raw) sessionStorage.removeItem(key)
+      unsupportedRecovery.current = null
+      setRecoveryUpgradeRequired(false)
+    } catch (cause) { if (alive.current && epoch.current <= version + 1) setError(cause) }
   }
   function fresh(inherit = false) {
     epoch.current++
@@ -217,6 +256,6 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     fresh()
     await list()
   }
-  return { searchContext, contextVersion, searchUnsaved, selectSearch, setSearchUnsaved, items, turns, setTurns, id, scope, month, cursor, before, limit, unknown, storageFailed,
-    error, setError, loading, processing, load, list, send, lookup, fresh, selectScope, remove }
+  return { searchContext, contextVersion, searchUnsaved, selectSearch, setSearchUnsaved, items, turns, setTurns, id, scope, month, cursor, before, limit, unknown, storageFailed, recoveryUpgradeRequired,
+    error, setError, loading, processing, load, list, send, lookup, lookupUnsupported, fresh, selectScope, remove }
 }

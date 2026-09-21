@@ -93,6 +93,8 @@ class PlanningRepository:
         user_id: UUID,
         *,
         month: date | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
         ids: set[UUID] | None = None,
     ) -> list[tuple[TransactionRecord, str, str | None]]:
         statement = (
@@ -113,6 +115,10 @@ class PlanningRepository:
             statement = statement.where(
                 TransactionRecord.booking_date.between(*month_period(month))
             )
+        if start_date is not None:
+            statement = statement.where(TransactionRecord.booking_date >= start_date)
+        if end_date is not None:
+            statement = statement.where(TransactionRecord.booking_date <= end_date)
         if ids is not None:
             statement = statement.where(TransactionRecord.id.in_(ids))
         return list(
