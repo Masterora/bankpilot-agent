@@ -21,7 +21,7 @@ export function Accounts({ english, onChanged }: { english: boolean; onChanged?:
   return <section className="accounts-section"><h2>{english ? 'Accounts' : '资金账户'}</h2>
     {state === 'loading' ? <LoadingIndicator label={english ? 'Loading accounts' : '正在读取账户'} />
       : state === 'failed' ? <button onClick={() => setAttempt(attempt + 1)}>{english ? 'Retry' : '重新读取账户'}</button>
-        : items.length === 0 ? <EmptyContent kind="import" title={english ? 'No accounts yet' : '尚未添加账户'} detail={english ? 'Choose an account name when importing your first statement.' : '导入第一份账单时，为它选择账户名称。'} />
+        : items.length === 0 ? <EmptyContent kind="import" title={english ? 'No accounts yet' : '尚未添加账户'} detail={english ? 'Import a statement to add an account.' : '导入账单以添加账户。'} />
           : <div className="account-list">{items.map((item) => <AccountTile key={item.id} item={item} english={english} onSaved={() => { setAttempt((a) => a + 1); onChanged?.() }} />)}</div>}
   </section>
 }
@@ -36,7 +36,7 @@ function AccountTile({ item, english, onSaved }: { item: Account; english: boole
     {editing ? <form onSubmit={async (event) => {
       event.preventDefault(); setBusy(true); setError('')
       try { await api.renameAccount(item.id, name.trim()); setEditing(false); onSaved() }
-      catch { setError(english ? 'Save failed. Check for an existing name.' : '保存失败，请检查名称是否重复。') }
+      catch { setError(english ? 'Save failed. Retry.' : '保存失败，请重试。') }
       finally { setBusy(false) }
     }}><input aria-label={english ? 'Account name' : '账户名称'} value={name} maxLength={100} required disabled={busy} onChange={(e) => setName(e.target.value)} /><button disabled={busy || !name.trim()}>{english ? 'Save' : '保存'}</button><button type="button" disabled={busy} onClick={() => setEditing(false)}>{english ? 'Cancel' : '取消'}</button>{error && <p role="alert">{error}</p>}</form>
       : <button onClick={() => { setName(item.name); setEditing(true) }}>{english ? 'Rename' : '重命名'}</button>}

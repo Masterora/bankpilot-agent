@@ -43,6 +43,11 @@ class Settings(BaseSettings):
         default="http://localhost:5173", validation_alias="BANKPILOT_CORS_ORIGINS"
     )
 
+    assistant_max_conversations: int = Field(default=100, ge=1, le=10000)
+    assistant_max_turns: int = Field(default=200, ge=1, le=10000)
+    assistant_max_result_chars: int = Field(default=400000, ge=1000, le=1000000)
+    assistant_context_chars: int = Field(default=24000, ge=6000, le=100000)
+
     model_provider: str = Field(default="openrouter", validation_alias="MODEL_PROVIDER")
     model_id: str = Field(default="", validation_alias="MODEL_ID")
     model_base_url: str = Field(

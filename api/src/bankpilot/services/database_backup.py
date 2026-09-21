@@ -49,8 +49,15 @@ def pg_environment(url: str) -> dict[str, str]:
     # asyncpg 与 libpq 对服务文件、hostaddr 和缺省凭据的解释不同。
     # 在任何连接之前拒绝第二套目标配置，不允许校验库与实际还原库分离。
     connection_variables = {
-        "PGHOST", "PGHOSTADDR", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD",
-        "PGSERVICE", "PGSERVICEFILE", "PGPASSFILE",
+        "PGHOST",
+        "PGHOSTADDR",
+        "PGPORT",
+        "PGDATABASE",
+        "PGUSER",
+        "PGPASSWORD",
+        "PGSERVICE",
+        "PGSERVICEFILE",
+        "PGPASSFILE",
     }
     if connection_variables.intersection(os.environ):
         raise ValueError("Remove PG connection overrides; use the explicit operation URL")
@@ -173,7 +180,7 @@ async def validate_target(
         raise ValueError("Recovery database has other clients; stop its consumers first")
 
 
-async def restore_database(url: str, directory: Path, expected_db: str) -> dict[str, int]:
+async def restore_database(url: str, directory: Path, expected_db: str) -> dict[str, int | str]:
     pg_environment(url)
     manifest = read_manifest(directory)
     engine = create_engine(url)
@@ -212,9 +219,10 @@ async def check_restored(
     directory: Path,
     expected_db: str,
     *,
+    clear_assistant_history: bool = False,
     prepare: bool = False,
     apply: bool = False,
-) -> dict[str, int]:
+) -> dict[str, int | str]:
     pg_environment(url)
     manifest = read_manifest(directory)
     engine = create_engine(url)
@@ -239,6 +247,8 @@ async def check_restored(
             if evidence != manifest.evidence:
                 raise ValueError("Restored database differs from backup evidence")
             if prepare:
+                if apply and not clear_assistant_history:
+                    raise ValueError("Explicit --clear-assistant-history is required")
                 # dry-run 不执行 FOR UPDATE；显式 apply 才锁行。
                 if not apply:
                     reports = int(
@@ -256,8 +266,24 @@ async def check_restored(
                         )
                         or 0
                     )
-                    return {"reports": reports, "runs": runs}
-                result = await prepare_restored_tasks(session)
+                    history = int(
+                        await session.scalar(
+                            text("SELECT count(*) FROM assistant_conversations WHERE NOT deleted")
+                        )
+                        or 0
+                    )
+                    turns = int(
+                        await session.scalar(text("SELECT count(*) FROM assistant_turns")) or 0
+                    )
+                    return {
+                        "database": expected_db,
+                        "reports": reports,
+                        "runs": runs,
+                        "conversations_to_clear": history,
+                        "turns_to_clear": turns,
+                        "preserved": "ledger, budgets, recurring plans, reports, applied receipts",
+                    }
+                result: dict[str, int | str] = dict(await prepare_restored_tasks(session))
                 await session.flush()
                 prepared = await database_evidence(session)
                 receipt = {

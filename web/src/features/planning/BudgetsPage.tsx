@@ -178,10 +178,6 @@ export function BudgetsPage({
         <EmptyContent
           kind="budgets"
           title={t('本月尚未设置预算', 'No budgets this month')}
-          detail={t(
-            '设置一个分类额度，开始跟踪实际支出。',
-            'Set a category limit to track actual spending.',
-          )}
         />
       )}
       {state.data && state.data.coverage.every((row) => row.transaction_count === 0) && (

@@ -1,7 +1,7 @@
 /**
- * 文件职责：展示 BankPilot 数据边界与当前 Agent 运行审计事件。
+ * 文件职责：展示 BankPilot 当前与历史 Agent 运行审计事件。
  *
- * 主要内容：自托管数据、模型、账户与密钥边界，以及按序号排列的运行事件。
+ * 主要内容：历史结果快照与按序号排列的运行事件。
  * 关键边界：页面只读取当前运行快照，不提供数据或权限修改入口。
  */
 
@@ -33,12 +33,6 @@ export function AuditPage({ copy, run, locale }: { copy: Messages; run: Run | nu
     return () => { active = false }
   }, [selectedId, attempt])
   const displayed = selectedId ? selected : run
-  const boundaries = [
-    [copy.sourceDataBoundary, copy.sourceDataBoundaryDetail],
-    [copy.modelBoundary, copy.modelBoundaryDetail],
-    [copy.accountBoundary, copy.accountBoundaryDetail],
-    [copy.secretBoundary, copy.secretBoundaryDetail],
-  ]
   return (
     <section className="product-page audit-page">
       <PageHeader copy={copy} page="audit" />
@@ -49,18 +43,6 @@ export function AuditPage({ copy, run, locale }: { copy: Messages; run: Run | nu
       {displayed?.result && <details><summary>{english ? 'Result snapshot' : '结果快照'}</summary><p>{displayed.result.message}</p><p>{english ? 'Snapshot · Query again after changes' : '历史快照 · 更新后需重新查询'}</p><div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant', 'Amount', 'Category'] : ['时间', '账户', '商户', '金额', '分类']).map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{displayed.result.transactions.items.map((item) => <tr key={item.id}><td className="time-cell">{formatTransactionTime(item, english ? 'en-US' : 'zh-CN')}</td><td>{item.account_name}</td><td>{item.merchant}</td><td className="ledger-amount">{item.amount} {item.currency}</td><td>{copy.categoryLabels[item.category]}</td></tr>)}</tbody></table></div></details>}
       {displayed?.result?.review && <ReviewSnapshot review={displayed.result.review} locale={english ? 'en-US' : 'zh-CN'} />}
       {displayed?.result && !displayed.result.review && <p className="scope-note">{english ? 'This result has no relationship review snapshot.' : '此结果未包含关系核查快照。'}</p>}
-      <div className="audit-grid">
-        <details className="audit-panel scope-note">
-          <summary>{copy.auditBoundaryHeading}</summary>
-          <div className="boundary-list">
-            {boundaries.map(([title, detail]) => (
-              <div className="boundary-item" key={title}>
-                <span aria-hidden="true" />
-                <div><strong>{title}</strong><p>{detail}</p></div>
-              </div>
-            ))}
-          </div>
-        </details>
         <article className="audit-panel">
           <p className="eyebrow">{copy.auditEventsHeading}</p>
           {displayed?.events.length ? (
@@ -71,9 +53,8 @@ export function AuditPage({ copy, run, locale }: { copy: Messages; run: Run | nu
                 </li>
               ))}
             </ol>
-          ) : <EmptyContent kind="audit" title={english ? 'No events to display' : '暂无可显示的事件'} detail={english ? 'Run a query or select a saved run to inspect its events.' : '发起核查或选择历史运行，查看对应事件。'}><a className="primary" href="#page=agent">{english ? 'Open review' : '前往核查'}</a></EmptyContent>}
+          ) : <EmptyContent kind="audit" title={english ? 'No events to display' : '暂无可显示的事件'}><a className="primary" href="#page=agent">{english ? 'Open review' : '前往核查'}</a></EmptyContent>}
         </article>
-      </div>
     </section>
   )
 }

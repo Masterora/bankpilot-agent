@@ -1,6 +1,5 @@
 /* 全局对话侧栏：结果与证据分层，不将模型文本解析成 HTML。 */
-.assistant-intro h3 { font-size: 20px; font-weight: 500; }
-.assistant-intro p, .assistant-evidence, .assistant-proposal p { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.assistant-evidence, .assistant-proposal p { color: var(--muted); font-size: 12px; line-height: 1.7; }
 .assistant-turn { padding: 18px 0; border-bottom: 1px solid var(--line); }
 .assistant-question { margin: 0 0 18px; padding-left: 12px; border-left: 2px solid var(--accent); color: var(--text); }
 .assistant-answer { white-space: pre-wrap; font-size: 14px; line-height: 1.8; }

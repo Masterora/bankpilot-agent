@@ -1,7 +1,7 @@
 """助手对话与工具契约：模型只能读取业务数据或提出预算修改，不能批准操作。"""
 
-from datetime import date
-from typing import Annotated, Literal
+from datetime import date, datetime
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import Field, TypeAdapter, field_validator, model_validator
@@ -91,3 +91,64 @@ decision_adapter: TypeAdapter[Decision] = TypeAdapter(Decision)
 
 class ActionInput(PlanningInput):
     id: UUID
+
+
+class TurnInput(MonthArguments):
+    protocol_version: Literal[2]
+    request_id: UUID
+    creation_id: UUID | None = None
+    conversation_id: UUID | None = None
+    question: str = Field(min_length=1, max_length=1000)
+    locale: Literal["zh-CN", "en-US"] = "zh-CN"
+    spending_context: SpendingScope | None = None
+    retry_of: UUID | None = None
+
+    @model_validator(mode="after")
+    def target(self) -> "TurnInput":
+        if (self.creation_id is None) == (self.conversation_id is None):
+            raise ValueError("Provide one conversation identity")
+        if not self.question.strip():
+            raise ValueError("Question cannot be blank")
+        return self
+
+
+class ScopeInput(MonthArguments):
+    spending_context: SpendingScope | None = None
+
+
+class TurnView(PlanningInput):
+    id: UUID
+    conversation_id: UUID
+    request_id: UUID
+    sequence: int
+    question: str
+    month: date
+    scope: SpendingScope | None
+    status: Literal["processing", "completed", "failed"]
+    created_at: datetime
+    completed_at: datetime | None
+    result_version: int
+    reply: dict[str, Any] | None
+    error_code: str | None
+
+
+class ConversationView(PlanningInput):
+    id: UUID
+    title: str
+    month: date
+    scope: SpendingScope | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationPage(PlanningInput):
+    items: list[ConversationView]
+    next_cursor: UUID | None
+    recent_id: UUID | None
+
+
+class ConversationDetail(PlanningInput):
+    conversation: ConversationView
+    turns: list[TurnView]
+    next_before: int | None
+    turn_limit: int

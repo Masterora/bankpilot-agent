@@ -33,12 +33,17 @@ class LifecycleChecks(unittest.IsolatedAsyncioTestCase):
             patch("bankpilot.api.app.create_engine", return_value=engine) as create_engine,
             patch("bankpilot.api.app.create_session_factory", return_value=Mock()),
             patch("bankpilot.api.app.httpx.AsyncClient", return_value=client) as create_client,
+            patch(
+                "bankpilot.api.app.ConversationService",
+                return_value=Mock(reconcile=AsyncMock(), recover_expired=worker),
+            ),
             patch("bankpilot.api.app.RunProcessor", return_value=processor),
             patch("bankpilot.api.app.ReportProcessor", return_value=Mock(run=report_worker)),
         ):
             dependencies = (
                 {"session_factory": Mock(), "model_gateway": Mock(), "assistant_gateway": Mock()}
-                if injected else {}
+                if injected
+                else {}
             )
             app = create_app(settings=Settings(_env_file=None), **dependencies)
 

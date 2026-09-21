@@ -29,6 +29,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     func,
 )
@@ -418,6 +419,9 @@ class AssistantActionRecord(Base):
     __tablename__ = "assistant_actions"
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("assistant_conversations.id", ondelete="SET NULL"), index=True
+    )
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
     before_amount: Mapped[str | None] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16), default="pending")
@@ -427,5 +431,63 @@ class AssistantActionRecord(Base):
     __table_args__ = (
         CheckConstraint(
             "status IN ('pending', 'applied', 'cancelled')", name="ck_assistant_action_status"
+        ),
+    )
+
+
+class AssistantConversationRecord(Base):
+    """Deleted records retain only ownership and creation identity to reject replay."""
+
+    __tablename__ = "assistant_conversations"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    creation_id: Mapped[UUID] = mapped_column(Uuid)
+    title: Mapped[str | None] = mapped_column(String(80))
+    scope: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    month: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    accessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    deleted: Mapped[bool] = mapped_column(default=False)
+    __table_args__ = (UniqueConstraint("user_id", "creation_id", name="uq_assistant_creation"),)
+
+
+class AssistantTurnRecord(Base):
+    __tablename__ = "assistant_turns"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    conversation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("assistant_conversations.id", ondelete="CASCADE"), index=True
+    )
+    request_id: Mapped[UUID] = mapped_column(Uuid)
+    digest: Mapped[str] = mapped_column(String(64))
+    sequence: Mapped[int] = mapped_column(Integer)
+    question: Mapped[str] = mapped_column(Text)
+    locale: Mapped[str] = mapped_column(String(8))
+    month: Mapped[date] = mapped_column(Date)
+    scope: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    business_date: Mapped[date] = mapped_column(Date)
+    retry_of: Mapped[UUID | None] = mapped_column(Uuid)
+    status: Mapped[str] = mapped_column(String(16), default="processing")
+    completion_token: Mapped[UUID] = mapped_column(Uuid, default=uuid4)
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result_version: Mapped[int] = mapped_column(Integer, default=1)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    action_id: Mapped[UUID | None] = mapped_column(ForeignKey("assistant_actions.id"))
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "request_id", name="uq_assistant_request"),
+        UniqueConstraint("conversation_id", "sequence", name="uq_assistant_sequence"),
+        CheckConstraint(
+            "status IN ('processing', 'completed', 'failed')", name="ck_assistant_turn_status"
+        ),
+        Index(
+            "uq_assistant_processing",
+            "conversation_id",
+            unique=True,
+            postgresql_where=(status == "processing"),
         ),
     )

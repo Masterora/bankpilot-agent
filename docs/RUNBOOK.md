@@ -38,7 +38,7 @@ make web
 
 ## 数据与配置
 
-`make api` 会执行 `alembic upgrade head`。数据库结构变化先在隔离 PostgreSQL 验证升降级，再迁移业务库；当前代码结构版本是 `20260916_0012`（由 `api/src/bankpilot/db/base.py` 的 `SCHEMA_REVISION` 声明，与迁移 head 一致）；共享业务库是否升级需现场核对。
+`make api` 会执行 `alembic upgrade head`。数据库结构变化先在隔离 PostgreSQL 验证升降级，再迁移业务库；当前代码结构版本是 `20260921_0013`（由 `api/src/bankpilot/db/base.py` 的 `SCHEMA_REVISION` 声明，与迁移 head 一致）；共享业务库是否升级需现场核对。
 
 ```bash
 cd api
@@ -97,7 +97,7 @@ uv run bankpilot backup-db --directory /secure/backups/bankpilot-20260915 --appl
 uv run bankpilot restore-db --directory /secure/backups/bankpilot-20260915 --expected-db bankpilot_recovery
 uv run bankpilot restore-check --directory /secure/backups/bankpilot-20260915 --expected-db bankpilot_recovery
 uv run bankpilot restore-prepare --directory /secure/backups/bankpilot-20260915 --expected-db bankpilot_recovery
-uv run bankpilot restore-prepare --directory /secure/backups/bankpilot-20260915 --expected-db bankpilot_recovery --apply
+uv run bankpilot restore-prepare --directory /secure/backups/bankpilot-20260915 --expected-db bankpilot_recovery --apply --clear-assistant-history
 ```
 
 restore-db 校验备份大小/摘要，拒绝同源库名、非空库或存在其他客户端的目标，事务化还原后核对完整证据。restore-check 是只读操作，比较所有表有序摘要、列类型/空值/默认值/标识列/排序规则、约束条件与验证状态、索引定义、币种总额与快照模型。原始核对必须先于 prepare。
@@ -117,3 +117,24 @@ HTTP 响应提供 X-Request-ID 与 Server-Timing（db、connection、parse，毫
 本地数据库与 SSH/Tailscale 链路分开测量；连接获取预算或网络延迟不能当成 SQL 执行慢。readyz 实际查询数据库，总预算 3 秒，断连/超时返回 503；healthz 无数据库依赖。
 
 助手请求的服务端总预算为 90 秒，Web 代理读取超时为 120 秒；调整时须保留代理余量。部署必须同时更新 API 和 Web，不能仅以本地 Vite 请求成功代替代理链路验收。
+
+
+## R2 会话历史与恢复降级
+
+必须同批升级前后端。旧 `POST /api/v1/assistant/chat` 返回 `assistant_protocol_upgrade`，
+刷新后使用协议版本 2 的 `/assistant/turns`。迁移取消未关联会话的旧待确认提案，保留已执行回执。
+只在明确授权后对共享业务库执行迁移；本轮仅验证一次性本地库。
+
+集中配置 `ASSISTANT_MAX_CONVERSATIONS=100`、`ASSISTANT_MAX_TURNS=200`、
+`ASSISTANT_MAX_RESULT_CHARS=400000`、`ASSISTANT_CONTEXT_CHARS=24000`。
+处理截止从数据库受理时间起算 90 秒；每个实例启动时及每 15 秒扫描到期记录，读取状态也收敛。
+数据库不可用时不承诺扫描时限，恢复后继续；不重跑模型。
+
+`restore-prepare` 预览现在同时显示目标库名、聊天和轮次数量、保留的业务范围。
+执行需要 `--apply --clear-assistant-history` 并在终端确认。清除恢复库的**全部**聊天内容、
+取消待确认提案和清除登录会话；保留无内容创建标识，拒绝旧客户端重建已清理会话。
+账本、预算、固定支出、月报和已执行回执保留。未完成清理及复核前不得开放恢复环境。
+此降级会同时清除原本未删除的聊天；旧备份本体不改写，恢复后的账本 RPO 仍由备份时间决定。
+
+本地固定验收：`make verify-conversations`（需要仅指向本机管理员库的
+`BANKPILOT_ACCEPTANCE_ADMIN_URL`），自动新建随机库、验证后清理；不会使用默认业务库配置。

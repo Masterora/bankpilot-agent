@@ -19,7 +19,7 @@ from bankpilot.api.dependencies import (
     get_db_session,
 )
 from bankpilot.api.errors import ApiProblem
-from bankpilot.api.schemas import LoginRequest, RegisterRequest, UserResponse
+from bankpilot.api.schemas import ChangePasswordRequest, LoginRequest, RegisterRequest, UserResponse
 from bankpilot.config import Settings
 from bankpilot.db.models import UserRecord
 from bankpilot.db.user_repository import SessionRepository, UserRepository
@@ -30,6 +30,7 @@ from bankpilot.security import (
     hash_session_token,
     verify_password,
 )
+from bankpilot.services.passwords import change_password
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -85,7 +86,7 @@ async def login(
     session: AsyncSession = Depends(get_db_session),
 ) -> UserResponse:
     async with session.begin():
-        user = await UserRepository(session).by_email(str(payload.email))
+        user = await UserRepository(session).by_email(str(payload.email), lock=True)
         candidate_hash = user.password_hash if user is not None else DUMMY_PASSWORD_HASH
         valid = await asyncio.to_thread(verify_password, payload.password, candidate_hash)
         if user is None or not valid:
@@ -126,3 +127,32 @@ async def logout(
 @router.get("/me", response_model=UserResponse)
 async def me(user: UserRecord = Depends(get_current_user)) -> UserResponse:
     return UserResponse(id=user.id, email=user.email)
+
+
+@router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
+async def update_password(
+    payload: ChangePasswordRequest,
+    user: UserRecord = Depends(get_current_user),
+    settings: Settings = Depends(get_app_settings),
+    session: AsyncSession = Depends(get_db_session),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> None:
+    token_hash = hash_session_token(session_token or "", settings.session_secret.get_secret_value())
+    try:
+        await change_password(
+            session,
+            user_id=user.id,
+            token_hash=token_hash,
+            new_password=payload.new_password,
+        )
+        await session.commit()
+    except ValueError as exc:
+        await session.rollback()
+        code = str(exc)
+        messages = {
+            "session_expired": "Session expired",
+            "password_unchanged": "New password must differ from current password",
+        }
+        if code not in messages:
+            raise
+        raise ApiProblem(401 if code == "session_expired" else 400, code, messages[code]) from exc

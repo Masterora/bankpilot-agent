@@ -17,3 +17,12 @@ BANKPILOT_ACCEPTANCE_ADMIN_URL=postgresql://localhost/postgres make verify-busin
 前端请求竞争回归：`make verify-interactions`。脚本使用现有 TypeScript 编译器及最小 Hook 调度器，验证迟到响应、隐藏后重读、分页旧数据隐藏、冲突提示和本地变更事件；它不替代真实 React DOM、焦点和浏览器布局验收。
 
 真实模型场景：在提供相同管理员连接变量后执行 `make verify-model`，模型配置读取项目环境配置。脚本创建独立合成库，发送 20 个查询/追问/能力边界场景，并输出逐例结果；会调用已配置模型供应商。自动门槛检查工具范围与无写提案，输出文字需另行复核，不能将结构检查通过率等同于文字质量。
+
+
+## R2
+
+`make verify-conversations` 使用与 business.py 相同的本机随机库保护，覆盖请求受理/去重、
+中断与迟到完成、提案原子性、用户隔离、容量、分页、上下文上限、历史版本降级、
+恢复清理、真实 pg_dump/pg_restore 与迁移往返。无需模型配置，不产生外部调用。
+`make verify-interactions` 另运行 conversations-frontend.cjs 的四组恢复与响应竞争检查。
+真实模型脚本已更新至协议 2；这次未运行，不以固定输出证明自然语言指代理解质量。

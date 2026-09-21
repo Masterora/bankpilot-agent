@@ -2,13 +2,14 @@
 
 import calendar
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import date
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from bankpilot.db.assistant_repository import AssistantRepository
+from bankpilot.db.assistant_repository import AssistantRepository, conversation_record, lock_owner
 from bankpilot.db.models import AssistantActionRecord
 from bankpilot.db.overview_repository import read_overview
 from bankpilot.db.planning_repository import PlanningRepository
@@ -68,7 +69,8 @@ async def chat(
         {
             "role": "system",
             "content": SYSTEM
-            + f"\n今天 {today}；参考月份 {request.month:%Y-%m}；语言 {request.locale}。",
+            + f"\n今天 {today}（本月、上个月按今天解释，不能沿用历史日期）；"
+            + f"参考月份 {request.month:%Y-%m}；语言 {request.locale}。",
         }
     ]
     messages.extend(message.model_dump() for message in request.messages)
@@ -105,20 +107,16 @@ async def chat(
                     budget_id=record.id if record else None,
                     expected_version=record.version if record else 0,
                 )
-                row = AssistantActionRecord(
-                    user_id=uid,
-                    payload=payload.model_dump(mode="json"),
-                    before_amount=str(record.amount) if record else None,
-                    expires_at=datetime.now(UTC) + timedelta(minutes=15),
-                )
-                AssistantRepository(session).add(row)
-                await session.commit()
                 return {
                     "text": "请核对修改内容。"
                     if request.locale == "zh-CN"
                     else "Review this change.",
                     "evidence": observations,
-                    "action": action_view(row),
+                    "action": None,
+                    "proposal": {
+                        "payload": payload.model_dump(mode="json"),
+                        "before_amount": str(record.amount) if record else None,
+                    },
                 }
             if decision.kind == "budgets":
                 calculation = await read_spending(session, uid, month)
@@ -163,15 +161,20 @@ async def chat(
 async def resolve_action(
     session: AsyncSession, uid: UUID, identity: UUID, *, cancel: bool
 ) -> dict[str, Any]:
+    await lock_owner(session, uid)
     row = await AssistantRepository(session).locked_action(uid, identity)
     if row is None:
         raise PlanningError("assistant_action_not_found", 404)
     if row.status != "pending":
         return action_view(row)
+    if row.conversation_id is None:
+        raise PlanningError("assistant_action_expired", 409)
+    await conversation_record(session, uid, row.conversation_id, lock=True)
     if cancel:
         row.status = "cancelled"
     else:
-        if row.expires_at <= datetime.now(UTC):
+        now = (await session.execute(select(func.clock_timestamp()))).scalar_one()
+        if row.expires_at <= now:
             raise PlanningError("assistant_action_expired", 409)
         payload = BudgetInput.model_validate(row.payload)
         await budgets.save_budget(session, uid, payload)

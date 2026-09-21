@@ -39,6 +39,7 @@ from bankpilot.config import Settings, get_settings
 from bankpilot.db.session import create_engine, create_session_factory
 from bankpilot.observability import RequestTimingMiddleware
 from bankpilot.ports import AssistantGateway, ModelGateway, ReviewGateway
+from bankpilot.services.conversations import ConversationService
 from bankpilot.services.report_processor import ReportProcessor
 from bankpilot.services.run_processor import RunProcessor
 
@@ -107,6 +108,10 @@ def create_app(
             app.state.report_processor = ReportProcessor(session_factory, resolved_review_gateway)
             reports = asyncio.create_task(app.state.report_processor.run())
             resources.push_async_callback(_stop_task, reports)
+            conversations = ConversationService(session_factory, resolved_settings)
+            await conversations.reconcile()
+            assistant_recovery = asyncio.create_task(conversations.recover_expired())
+            resources.push_async_callback(_stop_task, assistant_recovery)
             yield
 
     app = FastAPI(

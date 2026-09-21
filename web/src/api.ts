@@ -30,11 +30,10 @@ import type {
   User,
 } from './types'
 
-import type { AssistantAction, ChatMessage, Reply, SpendingPage, SpendingScope, SpendingSummary } from './features/assistant/types'
+import type { AssistantAction, TurnInput, SavedTurn, ConversationPage, ConversationDetail, SpendingPage, SpendingScope, SpendingSummary } from './features/assistant/types'
 
 import type { BudgetInput, BudgetWorkspace, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
 
-import type { Locale } from './i18n'
 
 export class ApiError extends Error {
   constructor(
@@ -75,7 +74,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  assistantChat: (messages: ChatMessage[], month: string, locale: Locale, spending_context: SpendingScope | null = null) => request<Reply>('/api/v1/assistant/chat', { method: 'POST', body: JSON.stringify({ messages, month: `${month.slice(0, 7)}-01`, locale, spending_context }) }),
+  assistantTurn: (payload: TurnInput) => request<SavedTurn>('/api/v1/assistant/turns', { method: 'POST', body: JSON.stringify(payload) }),
+  assistantLookup: (payload: Pick<TurnInput, 'request_id' | 'conversation_id' | 'creation_id'>) => request<SavedTurn>(`/api/v1/assistant/turns/${payload.request_id}?${new URLSearchParams(payload.conversation_id ? { conversation_id: payload.conversation_id } : { creation_id: payload.creation_id! })}`),
+  assistantHistory: (cursor?: string) => request<ConversationPage>(`/api/v1/assistant/conversations${cursor ? `?cursor=${cursor}` : ''}`),
+  assistantConversation: (id: string, before?: number) => request<ConversationDetail>(`/api/v1/assistant/conversations/${id}${before ? `?before=${before}` : ''}`),
+  assistantDelete: (id: string) => request(`/api/v1/assistant/conversations/${id}/delete`, { method: 'POST' }),
+  assistantScope: (id: string, month: string, spending_context: SpendingScope | null) => request(`/api/v1/assistant/conversations/${id}/scope`, { method: 'POST', body: JSON.stringify({ month, spending_context }) }),
   spendingEvidence: (summary: SpendingSummary, page: number) => {
     const params = new URLSearchParams({ ...summary.scope, expected_revision: String(summary.ledger_revision), expected_calculation_version: summary.calculation_version, page: String(page) })
     return request<SpendingPage>(`/api/v1/assistant/spending-evidence?${params}`)
@@ -119,6 +123,7 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<User>('/api/v1/auth/me'),
+  changePassword: (new_password: string) => request<void>('/api/v1/auth/password', { method: 'POST', body: JSON.stringify({ new_password }) }),
   logout: () => request<void>('/api/v1/auth/logout', { method: 'POST' }),
   listAccounts: () => request<{ items: Account[] }>('/api/v1/accounts'),
   ledger: (start: string, end: string) => request<RunResult['transactions']>(`/api/v1/transactions?start_date=${start}&end_date=${end}`),

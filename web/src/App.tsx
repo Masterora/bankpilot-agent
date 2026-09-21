@@ -19,6 +19,7 @@ export default function App() {
   // 语言是本地界面偏好；认证状态仍由服务端通过 HttpOnly Cookie 管理。
   const [locale, setLocale] = useState<Locale>(storedLocale)
   const [user, setUser] = useState<User | null>(null)
+  const [switchingAccount, setSwitchingAccount] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
   const copy = messages[locale]
 
@@ -43,17 +44,19 @@ export default function App() {
         copy={copy}
         locale={locale}
         onLocaleChange={setLocale}
-        onAuthenticated={setUser}
+        switchingAccount={switchingAccount}
+        onAuthenticated={(nextUser) => { setSwitchingAccount(false); setUser(nextUser) }}
       />
     )
   }
   return (
     <Workspace
+      key={user.id}
       copy={copy}
       locale={locale}
       onLocaleChange={setLocale}
       user={user}
-      onLogout={() => setUser(null)}
+      onLogout={(switchAccount = false) => { setSwitchingAccount(switchAccount); setUser(null) }}
     />
   )
 }

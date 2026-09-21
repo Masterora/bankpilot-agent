@@ -104,7 +104,7 @@ export function ImportHistory({
       {error && <p role="alert">{english ? 'Revocation failed. Retry.' : '撤销失败，请重试。'}</p>}
       {loading ? <LoadingIndicator label={copy.imports.loading} />
         : failed ? <p className="error">{copy.imports.loadFailed}</p>
-          : imports.length === 0 ? <EmptyContent kind="import" title={english ? 'No import history' : '暂无导入记录'} detail={english ? 'Imported files and their processing results will appear here.' : '导入后的文件、处理结果和来源记录会保存在这里。'} />
+          : imports.length === 0 ? <EmptyContent kind="import" title={english ? 'No import history' : '暂无导入记录'} />
             : <div className="import-history-cards">{imports.map(batch => <article className="import-batch-card" key={batch.id}>
               <header><strong>{batch.file_name}</strong><ImportStatus batch={batch} copy={copy} /></header>
               <p>{batch.account_name} · {batch.currency}</p>

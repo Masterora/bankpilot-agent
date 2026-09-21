@@ -40,9 +40,21 @@ def passed(name):
 
 
 async def request(client, method, path, payload=None, status=200):
+    legacy_chat = path == "/assistant/chat"
+    if legacy_chat:
+        path = "/assistant/turns"
+        payload = {
+            **payload,
+            "protocol_version": 2,
+            "request_id": str(uuid4()),
+            "creation_id": str(uuid4()),
+            "question": payload["messages"][-1]["content"],
+        }
+        payload.pop("messages")
     response = await client.request(method, "/api/v1" + path, json=payload)
     assert response.status_code == status, (path, response.status_code, response.text)
-    return response.json() if response.content else None
+    result = response.json() if response.content else None
+    return result["reply"] if legacy_chat and status == 200 else result
 
 
 async def seed(client, *, currency="CNY", name="acceptance", rows=None):

@@ -86,8 +86,8 @@ export function RelationsPanel({ start, end, english, seedId, onImport }: { onIm
       {!data.summaries.length && <p>{english ? 'No transactions in this period' : '当前期间暂无流水'}</p>}
       <details className="scope-note"><summary>{english ? 'Adjustments' : '调整明细'}</summary>
         {data.summaries.map((s) => <p key={s.currency}>{s.currency} · {english ? 'Raw' : '原始'} {s.raw_inflow} / {s.raw_outflow} · {english ? 'Duplicates' : '重复'} {s.duplicate_excluded} · {english ? 'Transfers' : '转账'} {s.transfer_excluded} · {english ? 'Refunds' : '退款'} {s.refund_amount}</p>)}
-      </details>
-      <p className="coverage-note">{english ? 'Only confirmed relationships adjust totals. Net flow is not a balance.' : '仅确认关系调整统计，净流入不代表余额。'}</p>
+      <p className="coverage-note">{english ? 'Only confirmed relationships adjust totals. Net flow is not a balance.' : '仅确认关系调整统计，净流入不代表余额。'}</p></details>
+
       </aside><div className="relation-main">
       <ManualRelation onImport={onImport} relations={data.items} seedId={seedId} transactions={data.transactions} start={start} end={end} english={english} busy={busy || loading} onConfirm={(kind, first_id, second_id) => {
         const saved = data.items.find((r) => r.kind === kind && ((r.first_id === first_id && r.second_id === second_id) || (kind === 'duplicate' && r.first_id === second_id && r.second_id === first_id)))
@@ -95,7 +95,7 @@ export function RelationsPanel({ start, end, english, seedId, onImport }: { onIm
       }} />
       <div className="relation-tabs" role="group" aria-label={english ? 'Relation status' : '关联状态'}>{(['pending', 'confirmed', 'rejected', 'revoked'] as const).map((s) => <button key={s} aria-pressed={filter === s} onClick={() => { setFilter(s); setPage(0) }}>{({ pending: ['待确认', 'Pending'], confirmed: ['已确认', 'Confirmed'], rejected: ['已排除', 'Rejected'], revoked: ['已撤销', 'Revoked'] })[s][english ? 1 : 0]} · {data.items.filter((i) => i.state === s).length}</button>)}</div>
       {data.truncated && <p role="status">{english ? 'Candidate search limited. Narrow the period or link records manually.' : '候选搜索已达上限，可缩短期间或手动关联。'}</p>}
-      {!rows.length && <EmptyContent kind="relations" title={english ? 'No matching relationships' : '暂无对应关系'} detail={english ? 'Relationships appear here when matching entries are available. You can also link entries manually.' : '匹配到交易后在这里核对，也可以手动关联已有流水。'} />}
+      {!rows.length && <EmptyContent kind="relations" title={english ? 'No matching relationships' : '暂无对应关系'} />}
       {rows.slice(safePage * 20, (safePage + 1) * 20).map((r) => <RelationCard key={`${r.kind}-${r.first_id}-${r.second_id}-${r.version}`} relation={r} first={evidence.get(r.first_id)!} second={evidence.get(r.second_id)!} busy={busy || loading} english={english} onDecide={decide} />)}
       {rows.length > 20 && <div className="relation-tabs"><button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>{english ? 'Previous' : '上一页'}</button><span>{safePage + 1} / {Math.ceil(rows.length / 20)}</span><button disabled={(safePage + 1) * 20 >= rows.length} onClick={() => setPage(safePage + 1)}>{english ? 'Next' : '下一页'}</button></div>}
     </div></div>}

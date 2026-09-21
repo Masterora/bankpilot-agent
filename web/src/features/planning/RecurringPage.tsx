@@ -280,10 +280,6 @@ export function RecurringPage({
         <EmptyContent
           kind="recurring"
           title={t('还没有周期项', 'No recurring charges')}
-          detail={t(
-            '添加房租、会员或其他固定扣款，逐月核对。',
-            'Add rent, subscriptions or other recurring charges to review each month.',
-          )}
         />
       )}
       <div className="relation-tabs" aria-label={t('核对状态', 'Review status')}>

@@ -88,16 +88,7 @@ export interface Messages {
   quickTasksHeading: string
   openAgent: string
   openReview: string
-  auditBoundaryHeading: string
   auditEventsHeading: string
-  sourceDataBoundary: string
-  sourceDataBoundaryDetail: string
-  modelBoundary: string
-  modelBoundaryDetail: string
-  accountBoundary: string
-  accountBoundaryDetail: string
-  secretBoundary: string
-  secretBoundaryDetail: string
   queryInputLabel: string
   queryShortcut: string
   defaultQuery: string
@@ -144,7 +135,7 @@ const zhCN: Messages = {
   registering: '创建中…',
   loginFailed: '登录失败',
   registerFailed: '注册失败',
-  invalidCredentials: '凭证无效',
+  invalidCredentials: '账号或密码错误',
   emailAlreadyRegistered: '该邮箱已注册',
   passwordMismatch: '两次输入的密码不一致',
   navigationLabel: '工作区',
@@ -187,16 +178,7 @@ const zhCN: Messages = {
   quickTasksHeading: '快捷操作',
   openAgent: '发起核查',
   openReview: '查看结果',
-  auditBoundaryHeading: '数据边界',
   auditEventsHeading: 'Agent 审计',
-  sourceDataBoundary: '原始账单',
-  sourceDataBoundaryDetail: '原文件不保存 · 标准交易进入自托管 PostgreSQL',
-  modelBoundary: 'OpenRouter',
-  modelBoundaryDetail: '仅接收任务与规划所需信息',
-  accountBoundary: '账户信息',
-  accountBoundaryDetail: '账本账户名称与币种',
-  secretBoundary: '模型密钥',
-  secretBoundaryDetail: '服务端环境注入 · 不进入代码与镜像',
   queryInputLabel: '核查任务',
   queryShortcut: '⌘ / Ctrl + Enter 提交',
   defaultQuery: '核查本月交易',
@@ -209,7 +191,7 @@ const zhCN: Messages = {
   emptyResult: '暂无核查结果',
   resultEyebrow: '核查结果',
   timelineEyebrow: '执行链',
-  analysisEyebrow: '确定性统计',
+  analysisEyebrow: '收支统计',
   incomeLabel: '流入',
   expenseLabel: '流出',
   netLabel: '净额',
@@ -323,7 +305,7 @@ const enUS: Messages = {
   registering: 'Creating…',
   loginFailed: 'Sign-in failed',
   registerFailed: 'Registration failed',
-  invalidCredentials: 'Invalid credentials',
+  invalidCredentials: 'Incorrect email or password',
   emailAlreadyRegistered: 'Email is already registered',
   passwordMismatch: 'Passwords do not match',
   navigationLabel: 'Workspace',
@@ -366,16 +348,7 @@ const enUS: Messages = {
   quickTasksHeading: 'Quick actions',
   openAgent: 'Start review',
   openReview: 'View result',
-  auditBoundaryHeading: 'Data boundaries',
   auditEventsHeading: 'Agent audit',
-  sourceDataBoundary: 'Source statements',
-  sourceDataBoundaryDetail: 'Source file discarded · Normalized records are self-hosted',
-  modelBoundary: 'OpenRouter',
-  modelBoundaryDetail: 'Receives task and planning context only',
-  accountBoundary: 'Account data',
-  accountBoundaryDetail: 'Ledger account name and currency',
-  secretBoundary: 'Model secret',
-  secretBoundaryDetail: 'Server environment only · Excluded from code and images',
   queryInputLabel: 'Review task',
   queryShortcut: '⌘ / Ctrl + Enter to submit',
   defaultQuery: 'Review transactions this month',
@@ -392,7 +365,7 @@ const enUS: Messages = {
   emptyResult: 'No review result',
   resultEyebrow: 'REVIEW RESULT',
   timelineEyebrow: 'EXECUTION TRACE',
-  analysisEyebrow: 'DETERMINISTIC SUMMARY',
+  analysisEyebrow: 'INCOME & SPENDING',
   incomeLabel: 'Inflow',
   expenseLabel: 'Outflow',
   netLabel: 'Net',

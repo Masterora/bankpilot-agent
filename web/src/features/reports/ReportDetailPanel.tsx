@@ -39,15 +39,15 @@ export function ReportDetailPanel({
       {pending && (
         <p role="status">
           {english
-            ? 'The saved task will continue after you leave this page.'
-            : '任务已保存，离开页面后仍会继续处理。'}
+            ? 'Generating in the background…'
+            : '后台生成中…'}
         </p>
       )}
       {report.status === 'FAILED' && (
         <p role="alert">
           {english
-            ? 'Generation failed. Check data availability or the monthly transaction limit (10,000), then generate again.'
-            : '生成失败，请检查数据连接或当月交易是否超过 10,000 笔，再重新生成。'}
+            ? 'Generation failed. Try generating again.'
+            : '生成失败，请重新生成。'}
         </p>
       )}
       {snapshot && <ReportSummary report={report} locale={locale} />}

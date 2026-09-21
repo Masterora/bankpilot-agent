@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import { api } from '../api'
+import { ApiError, api } from '../api'
 import { AssistantPanel } from '../features/assistant/AssistantPanel'
 import { LedgerPage } from '../features/ledger/LedgerPage'
 import { AgentPage } from '../features/agent/AgentPage'
@@ -27,7 +27,7 @@ import type { RecurringInput } from '../features/planning/types'
 import type { LedgerEntry } from '../features/ledger/LedgerPage'
 import { useWorkspaceRoute } from './routing'
 import type { Messages } from '../i18n'
-import { IconButton, LanguageSwitch, Logo, NavigationIcon } from '../shared/ui'
+import { IconButton, Logo, NavigationIcon } from '../shared/ui'
 import type { LanguageProps } from '../shared/ui'
 import type { ImportBatch, User } from '../types'
 import { primaryPages, secondaryPages } from './pages'
@@ -35,7 +35,7 @@ import type { ProductPage } from './pages'
 
 interface WorkspaceProps extends LanguageProps {
   user: User
-  onLogout: () => void
+  onLogout: (switchAccount?: boolean) => void
 }
 
 export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspaceProps) {
@@ -116,12 +116,34 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     }
   }, [importsAttempt])
 
-  async function logout() {
+  const endingSession = useRef(false)
+  const [sessionBusy, setSessionBusy] = useState(false)
+
+  async function endSession(switchAccount: boolean) {
+    if (endingSession.current) return
+    if ((drafts.budgets || drafts.recurring) && !window.confirm(locale === 'en-US'
+      ? 'Discard unsaved planning changes and sign out?'
+      : '未保存的预算或固定支出修改将丢失，仍要退出当前账号？')) return
+    endingSession.current = true
+    setSessionBusy(true)
+    try {
+      await api.logout()
+    } catch (cause) {
+      if (!(cause instanceof ApiError && cause.status === 401)) {
+        setNavigationNotice(locale === 'en-US' ? 'Could not sign out. Check your connection and try again.' : '退出失败，请检查网络后重试。')
+        endingSession.current = false
+        setSessionBusy(false)
+        return
+      }
+    }
+    window.dispatchEvent(new Event('bankpilot-logout'))
+    try { sessionStorage.removeItem(`assistant:${user.id}`); sessionStorage.removeItem(`assistant-current:${user.id}`) } catch { /* storage unavailable */ }
     clearPendingImport()
-    // 即使远程 Cookie 已过期，也要清理本地会话界面状态。
-    await api.logout().catch(() => undefined)
-    onLogout()
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    onLogout(switchAccount)
   }
+  const logout = () => { void endSession(false) }
+  const switchAccount = () => { void endSession(true) }
 
   function openPlanning(page: 'budgets' | 'recurring', month: string, target = '') {
     positions.current[activePage] = window.scrollY
@@ -208,7 +230,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
       onPeriodChange={setReviewPeriod}
     />,
     relations: <RelationsPage onImport={() => navigate('import')} seedId={relationSeed} copy={copy} english={locale === 'en-US'} period={reviewPeriod} onPeriodChange={setReviewPeriod} />,
-    settings: <SettingsPage copy={copy} locale={locale} onLocaleChange={onLocaleChange} user={user} onLogout={logout} />,
+    settings: <SettingsPage copy={copy} locale={locale} onLocaleChange={onLocaleChange} user={user} onLogout={logout} onSwitchAccount={switchAccount} busy={sessionBusy} />,
     reports: <ReportsPage copy={copy} locale={locale} initialMonth={reviewPeriod.start} active={activePage === 'reports'} />,
     audit: <AuditPage copy={copy} run={agent.run} locale={locale} />,
     recurring: <RecurringPage onSaved={planningSaved} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} />,
@@ -217,21 +239,22 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
 
   return (
     <div className={`product-shell${assistantOpen ? ' assistant-is-open' : ''}`}>
+      <a className="skip-link" href="#workspace-main" onClick={event => { event.preventDefault(); document.getElementById("workspace-main")?.focus() }}>{locale === "en-US" ? "Skip to content" : "跳到主要内容"}</a>
       <aside className="product-sidebar">
-        <div className="sidebar-brand brand"><Logo /> BankPilot</div>
+        <div className="sidebar-brand brand"><Logo /><span>BankPilot<small>{locale === "en-US" ? "PERSONAL LEDGER" : "个人账本"}</small></span></div>
         <Navigation
           activePage={activePage}
+          locale={locale}
           copy={copy}
           onNavigate={navigate}
         />
         <div className="sidebar-utilities">
           <button className="settings-link" aria-current={activePage === 'settings' ? 'page' : undefined} onClick={() => navigate('settings')}><NavigationIcon kind="settings" />{copy.productPages.settings.navigation}</button>
-          <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
         </div>
         <div className="sidebar-account">
           <span className="account-avatar" aria-hidden="true">{user.email.slice(0, 1).toUpperCase()}</span>
           <span className="account-identity"><strong>{user.email}</strong></span>
-          <IconButton icon="logout" label={copy.logout} onClick={logout} />
+          <IconButton icon="logout" label={copy.logout} disabled={sessionBusy} onClick={logout} />
         </div>
       </aside>
 
@@ -248,20 +271,19 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         } else menuRef.current?.focus()
       }} aria-label={copy.navigationLabel}>
         <div className="mobile-navigation-heading"><div className="brand"><Logo /> BankPilot</div><IconButton icon="close" onClick={() => setMenuOpen(false)} label={locale === 'en-US' ? 'Close navigation' : '关闭导航'} /></div>
-        <Navigation activePage={activePage} copy={copy} onNavigate={navigate} />
+        <Navigation activePage={activePage} locale={locale} copy={copy} onNavigate={navigate} />
         <div className="sidebar-utilities">
           <button onClick={() => { mobileAssistantTarget.current = true; setMenuOpen(false) }}>{locale === 'en-US' ? 'Assistant' : '问助手'}</button>
-          <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
         </div>
-        <IconButton icon="logout" label={copy.logout} onClick={logout} />
+        <IconButton icon="logout" label={copy.logout} disabled={sessionBusy} onClick={logout} />
       </dialog>
 
-      <AssistantPanel key={user.id} ledgerRevision={ledgerRevision} onInspect={target => {
+      <AssistantPanel userId={user.id} key={user.id} ledgerRevision={ledgerRevision} onInspect={target => {
         setAssistantOpen(false)
         inspectLedger({ transactionId: target.id, period: { start: target.booking_date, end: target.booking_date } })
       }} open={assistantOpen} onClose={() => setAssistantOpen(false)} month={activePage === 'budgets' ? budgetMonth : activePage === 'recurring' ? recurringMonth : activePage === 'overview' ? overviewPeriod.start : reviewPeriod.start} copy={copy} locale={locale} onSaved={() => { planningSaved(); setAssistantRevision(value => value + 1) }} />
-      <main className="workspace-shell">
-        <header className="workspace-topbar"><span className="workspace-location">{locale === 'en-US' ? 'Personal workspace' : '个人工作区'}<span>/</span>{copy.productPages[activePage].navigation}</span><button className="assistant-trigger" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(value => !value)}><NavigationIcon kind="agent" />{locale === 'en-US' ? 'Ledger assistant' : '账本助手'}</button></header>
+      <main className="workspace-shell" id="workspace-main" tabIndex={-1}>
+        <header className="workspace-topbar"><button className="assistant-trigger" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(value => !value)}><NavigationIcon kind="agent" />{locale === 'en-US' ? 'Ledger assistant' : '账本助手'}</button></header>
         <IconButton icon="menu" ref={menuRef} className="menu-toggle" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} label={locale === 'en-US' ? 'Open navigation' : '打开导航'} />
 
         <div className="workspace-content" ref={contentRef}>
@@ -272,7 +294,6 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
             .map((page) => <div key={page} hidden={activePage !== page} data-active-page={activePage === page ? '' : undefined}>{pages[page]}</div>)}
           {!['import', 'review', 'budgets', 'recurring', 'reports'].includes(activePage) && <div data-active-page="">{pages[activePage]}</div>}
           {activePage === 'review' && agent.error && <p className="error" role="alert">{agent.error}</p>}
-          <footer className="workspace-footer"><span>{locale === 'en-US' ? 'Imported data · Not a bank balance' : '已导入数据 · 不代表银行余额'}</span></footer>
         </div>
       </main>
     </div>
@@ -281,9 +302,11 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
 
 function Navigation({
   activePage,
+  locale,
   copy,
   onNavigate,
 }: {
+  locale: string
   activePage: ProductPage
   copy: Messages
   onNavigate: (page: ProductPage) => void
@@ -296,8 +319,9 @@ function Navigation({
     </button>)
   }
   return <nav className="product-nav" aria-label={copy.navigationLabel}>
-    <div className="navigation-group">{links(primaryPages)}</div>
+    <div className="navigation-group"><span className="navigation-label">{locale === "en-US" ? "WORKSPACE" : "日常账本"}</span>{links(primaryPages)}</div>
     <div className="navigation-group">
+      <span className="navigation-label">{locale === "en-US" ? "DATA & REVIEW" : "数据与核对"}</span>
       {links(secondaryPages)}
     </div>
     <div className="mobile-settings-link">{links(['settings'])}</div>

@@ -20,11 +20,11 @@ class UserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def by_email(self, email: str) -> UserRecord | None:
-        return cast(
-            UserRecord | None,
-            await self.session.scalar(select(UserRecord).where(UserRecord.email == email.lower())),
-        )
+    async def by_email(self, email: str, *, lock: bool = False) -> UserRecord | None:
+        statement = select(UserRecord).where(UserRecord.email == email.lower())
+        if lock:
+            statement = statement.with_for_update()
+        return cast(UserRecord | None, await self.session.scalar(statement))
 
     async def by_id(self, user_id: UUID) -> UserRecord | None:
         return await self.session.get(UserRecord, user_id)
@@ -75,4 +75,11 @@ class SessionRepository:
     async def delete(self, token_hash: str) -> None:
         await self.session.execute(
             delete(SessionRecord).where(SessionRecord.token_hash == token_hash)
+        )
+
+    async def delete_others(self, user_id: UUID, token_hash: str) -> None:
+        await self.session.execute(
+            delete(SessionRecord).where(
+                SessionRecord.user_id == user_id, SessionRecord.token_hash != token_hash
+            )
         )

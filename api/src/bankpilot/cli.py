@@ -200,10 +200,21 @@ def restore_prepare(
     directory: Annotated[Path, typer.Option()],
     expected_db: Annotated[str, typer.Option()],
     apply: Annotated[bool, typer.Option("--apply")] = False,
+    clear_assistant_history: Annotated[bool, typer.Option("--clear-assistant-history")] = False,
 ) -> None:
     """默认仅报告中断任务数量；--apply 原子失效旧任务令牌和会话。"""
     from bankpilot.services.database_backup import check_restored
 
+    if apply and not clear_assistant_history:
+        raise typer.BadParameter(
+            "--apply requires --clear-assistant-history; all restored chats will be cleared"
+        )
+    if apply:
+        typer.echo(
+            f"Restore target: {expected_db}. Clear all assistant history; "
+            "retain ledger, budgets and applied receipts."
+        )
+        typer.confirm("Clear ALL assistant history in this isolated restore database?", abort=True)
     os.umask(0o077)
     result = asyncio.run(
         check_restored(
@@ -211,6 +222,7 @@ def restore_prepare(
             directory,
             expected_db,
             prepare=True,
+            clear_assistant_history=clear_assistant_history,
             apply=apply,
         )
     )

@@ -101,7 +101,7 @@ export function LedgerPage({ copy, english, period, onPeriodChange, active, entr
     try {
       await api.correctLedgerCategory(id, category)
       setItems((current) => current.map((i) => i.id === id ? { ...i, category, category_source: 'user' } : i))
-      setNotice(english ? 'Category saved. Budgets will use this category.' : '分类已保存，预算会按此分类统计。')
+      setNotice(english ? 'Saved' : '已保存')
     } catch { setNotice(english ? 'Save failed. Retry the change.' : '保存失败，请重新选择分类。') }
     finally { setSaving(false) }
   }
@@ -175,7 +175,7 @@ export function LedgerPage({ copy, english, period, onPeriodChange, active, entr
       {loadedPeriod && <>
       {stale && <p className="overview-retained-period">{english ? 'Displayed period' : '当前显示期间'}：{loadedPeriod.start} — {loadedPeriod.end}</p>}
       <div className="ledger-toolbar"><span>{filtered.length} {english ? 'transactions' : '笔交易'}</span><button disabled={!filtered.length || stale} onClick={download}>{english ? 'Export CSV' : '导出 CSV'}</button></div>
-      <div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant / Source', 'Amount', 'Category'] : ['时间', '账户', '商户／来源', '金额', '分类']).map((text) => <th scope="col" key={text}>{text}</th>)}</tr></thead><tbody>{!filtered.length && <tr><td colSpan={5}><EmptyContent kind="review" title={english ? 'No transactions to display' : '暂无可显示的流水'} detail={items.length ? (english ? 'Try clearing the filters.' : '调整筛选条件，查看其他交易。') : (english ? 'Import a statement or select another period.' : '导入账单，或选择其他期间。')}>
+      <div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant / Source', 'Amount', 'Category'] : ['时间', '账户', '商户／来源', '金额', '分类']).map((text) => <th scope="col" key={text}>{text}</th>)}</tr></thead><tbody>{!filtered.length && <tr><td colSpan={5}><EmptyContent kind="review" title={english ? 'No transactions to display' : '暂无可显示的流水'} detail={items.length ? (english ? 'Try clearing the filters.' : '请调整筛选条件。') : (english ? 'Import a statement or select another period.' : '导入账单，或选择其他期间。')}>
         {items.length ? <button onClick={clearFilters}>{english ? 'Clear filters' : '清除筛选'}</button> : <button className="primary" onClick={onImport}>{english ? 'Import statement' : '导入账单'}</button>}
       </EmptyContent></td></tr>}{filtered.map((item) => <tr key={item.id}>
         <td className="time-cell">{formatTransactionTime(item, english ? 'en-US' : 'zh-CN')}</td><td>{item.account_name}</td><td><button className="transaction-link" onClick={() => setSelected(item)}>{item.merchant}</button>{item.description && <small className="ledger-note">{item.description}</small>}</td>
@@ -205,6 +205,6 @@ function ReviewForm({ review, english, start, end, evidence }: { review: ReviewI
     {evidence.map((i) => <p key={i.id}>{formatTransactionTime(i, english ? 'en-US' : 'zh-CN')} · {i.account_name} · {i.merchant} · {i.amount} {i.currency}</p>)}
     <label>{english ? 'Decision' : '核查状态'}<select value={status} disabled={busy} onChange={(e) => setStatus(e.target.value as ReviewItem['state'])}><option value="pending">{english ? 'Pending' : '待处理'}</option><option value="normal">{english ? 'Confirmed normal' : '确认为正常'}</option><option value="follow_up">{english ? 'Follow up' : '待进一步核实'}</option></select></label>
     <label>{english ? 'Note' : '核查备注'}<input value={note} disabled={busy} maxLength={500} onChange={(e) => setNote(e.target.value)} /></label>
-    <button disabled={busy}>{english ? 'Save decision' : '保存结论'}</button><p role="status">{message}</p>
+    <button disabled={busy}>{english ? 'Save decision' : '保存结论'}</button>{message && <p role="status">{message}</p>}
   </form>
 }

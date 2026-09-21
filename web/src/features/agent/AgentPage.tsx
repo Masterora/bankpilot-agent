@@ -104,7 +104,7 @@ export function AgentPage({
 
 function RunPanel({ copy, correctingId, locale, onCategoryChange, run }: RunViewProps) {
   if (!run) {
-    return <section className="result-placeholder"><header>{copy.resultEyebrow}</header><EmptyContent kind="agent" title={copy.emptyResult} detail={locale === 'en-US' ? 'Run a query above to view totals, relationships and source evidence.' : '在上方发起查询，查看收支、关系与来源证据。'} /></section>
+    return <section className="result-placeholder"><EmptyContent kind="agent" title={copy.emptyResult} /></section>
   }
   const transactions = run.result?.transactions.items ?? []
   const resultMessage = run.result

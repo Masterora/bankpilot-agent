@@ -3,6 +3,7 @@
 import asyncio
 import json
 from datetime import date
+from uuid import uuid4
 
 import httpx
 from business import PASSWORD, SCOPE, main, request, seed
@@ -82,17 +83,17 @@ async def run_model(factory, url):
             for index, (question, expected) in enumerate(CASES):
                 payload = {
                     "month": "2026-09-01",
-                    "messages": [{"role": "user", "content": question}],
+                    "question": question,
+                    "protocol_version": 2,
+                    "request_id": str(uuid4()),
+                    "creation_id": str(uuid4()),
                 }
                 if 10 <= index <= 14:
                     payload["spending_context"] = SCOPE
-                    payload["messages"] = [
-                        {"role": "user", "content": "九月人民币餐饮花了多少？"},
-                        {"role": "assistant", "content": "请查看消费构成。"},
-                        {"role": "user", "content": question},
-                    ]
-                response = await c.post("/api/v1/assistant/chat", json=payload)
+                response = await c.post("/api/v1/assistant/turns", json=payload)
                 body = response.json()
+                if response.status_code == 200:
+                    body = body["reply"]
                 refs = []
                 for observation in body.get("evidence", []):
                     if observation["tool"] == "spending":

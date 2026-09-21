@@ -54,9 +54,9 @@ export function Logo() {
 
 /** 空数据保留功能轮廓与下一步操作，不用占位数字冒充真实统计。 */
 export function EmptyContent({ title, detail, kind, children }: {
-  title: string; detail: string; kind: ProductPage; children?: ReactNode
+  title: string; detail?: string; kind: ProductPage; children?: ReactNode
 }) {
-  return <div className="empty-content"><span className="empty-content-icon" aria-hidden="true"><NavigationIcon kind={kind} /></span><h3>{title}</h3><p>{detail}</p>{children && <div className="empty-content-actions">{children}</div>}</div>
+  return <div className="empty-content"><span className="empty-content-icon" aria-hidden="true"><NavigationIcon kind={kind} /></span><h3>{title}</h3>{detail && <p>{detail}</p>}{children && <div className="empty-content-actions">{children}</div>}</div>
 }
 
 export function NavigationIcon({ kind }: { kind: ProductPage }) {

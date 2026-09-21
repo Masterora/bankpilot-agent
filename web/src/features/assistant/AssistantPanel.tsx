@@ -1,4 +1,4 @@
-/** 全局助手：会话仅保存在当前工作区内存，确认操作使用服务端提案 ID。 */
+/** 全局助手：会话保存在服务端，确认操作使用服务端提案 ID。 */
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
@@ -7,17 +7,13 @@ import { formatMoney } from '../../format'
 import type { Locale, Messages } from '../../i18n'
 import { DetailPanel } from '../../shared/DetailPanel'
 import { LoadingIndicator } from '../../shared/ui'
-import type { AssistantAction, ChatMessage, Reply } from './types'
+import type { AssistantAction } from './types'
 import { AssistantEvidence } from './AssistantEvidence'
 import { SpendingDetails } from './SpendingDetails'
-import { spendingRefs } from './types'
+import { useConversations } from './useConversations'
 import type { EvidenceTarget, SpendingScope, SpendingSummary } from './types'
-interface Turn {
-  question: string
-  reply: Reply
-  ledgerRevision: number
-}
 export function AssistantPanel({
+  userId,
   open,
   onClose,
   month,
@@ -27,6 +23,7 @@ export function AssistantPanel({
   ledgerRevision,
   onInspect,
 }: {
+  userId: string
   open: boolean
   onClose: () => void
   month: string
@@ -36,11 +33,15 @@ export function AssistantPanel({
   ledgerRevision: number
   onInspect: (target: EvidenceTarget) => void
 }) {
-  const [turns, setTurns] = useState<Turn[]>([])
+  const history = useConversations(userId, open, month)
+  const turns = history.turns
+  const context = history.scope
+  const setContext = (scope: SpendingScope | null) => { void history.selectScope(scope).catch(cause => history.setError(cause)) }
+  const [historyVisible, setHistoryVisible] = useState(false)
   const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [sending, setBusy] = useState(false)
+  const busy = sending || history.loading
   const [error, setError] = useState('')
-  const [context, setContext] = useState<SpendingScope | null>(null)
   const [detail, setDetail] = useState<{ summary: SpendingSummary; revision: number } | null>(null)
   const [detailVisible, setDetailVisible] = useState(false)
   const conversation = useRef<HTMLDivElement>(null)
@@ -60,7 +61,8 @@ export function AssistantPanel({
   const lock = useRef(false)
   const english = locale === 'en-US'
   const t = (zh: string, en: string) => (english ? en : zh)
-  const pending = turns.some((turn) => turn.reply.action?.status === 'pending')
+  const loadedRevision = useRef(ledgerRevision)
+  const pending = history.processing || !!history.unknown
   const money = (amount: string, currency: string) => formatMoney(amount, currency, locale)
   const describe = (action: AssistantAction) => {
     const p = action.payload
@@ -68,6 +70,11 @@ export function AssistantPanel({
   }
   function failure(cause: unknown) {
     return apiErrorMessage(cause, english, {
+      assistant_conversation_limit: ['历史对话已达上限，请先删除不再需要的对话。', 'History limit reached. Delete a conversation to continue.'],
+      assistant_turn_limit: ['本段对话已达上限，请新建对话继续。', 'Conversation limit reached. Start a new conversation.'],
+      assistant_conversation_busy: ['正在处理，请稍后查看。', 'Processing. Check back shortly.'],
+      assistant_conversation_deleted: ['这段对话已删除，请新建对话。', 'This conversation was deleted. Start a new one.'],
+      assistant_request_not_found: ['尚未确认接收，可稍后查询或重试原问题。', 'Receipt unconfirmed. Check again or retry the original question.'],
       planning_stale: [
         '预算已被修改，请取消此提案并重新提出修改。',
         'Budget changed. Cancel this proposal and request a new one.',
@@ -77,8 +84,8 @@ export function AssistantPanel({
         'Proposal expired. Cancel it and request a new one.',
       ],
       assistant_timeout: [
-        '本次处理超时，输入已保留，请重试。',
-        'Request timed out. Your input is retained; retry.',
+        '处理超时，请重试。',
+        'Request timed out. Retry.',
       ],
       assistant_step_limit: [
         '本次查询步骤过多，请缩小问题范围。',
@@ -101,46 +108,24 @@ export function AssistantPanel({
         'The assistant returned an invalid result. Please retry.',
       ],
       MODEL_UNAVAILABLE: [
-        '助手暂不可用，输入已保留，请稍后重试。',
-        'The assistant is unavailable. Your input is retained; retry later.',
+        '助手暂不可用，请稍后重试。',
+        'Assistant unavailable. Retry later.',
       ],
     })
   }
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (lock.current || pending || !message.trim() || turns.length >= 7) return
+    if (lock.current || pending || !message.trim()) return
     lock.current = true
     setBusy(true)
     setError('')
-    const question = message.trim()
-    const messages: ChatMessage[] = turns.flatMap((turn) => [
-      { role: 'user', content: turn.question },
-      {
-        role: 'assistant',
-        content:
-          turn.reply.text +
-          (turn.reply.action
-            ? `\n${describe(turn.reply.action)}; status=${turn.reply.action.status}`
-            : ''),
-      },
-    ])
     try {
-      const reply = await api.assistantChat(
-        [...messages, { role: 'user', content: question }],
-        month,
-        locale,
-        context,
-      )
-      setTurns((current) => [...current, { question, reply, ledgerRevision }])
-      const refs = spendingRefs(reply.evidence)
-      setContext(refs.length === 1 ? refs[0].scope : null)
-      setMessage('')
-    } catch (cause) {
-      setError(failure(cause))
-    } finally {
-      lock.current = false
-      setBusy(false)
-    }
+      const accepted = await history.send({ protocol_version: 2, request_id: crypto.randomUUID(),
+        ...(history.id ? { conversation_id: history.id } : { creation_id: crypto.randomUUID() }),
+        question: message.trim(), month: history.month, locale, spending_context: context })
+      if (accepted) setMessage('')
+    } catch (cause) { setError(failure(cause)) }
+    finally { lock.current = false; setBusy(false) }
   }
   async function resolve(id: string, cancel: boolean) {
     if (lock.current) return
@@ -149,9 +134,9 @@ export function AssistantPanel({
     setError('')
     try {
       const action = await api.assistantAction(id, cancel)
-      setTurns((current) =>
+      history.setTurns((current) =>
         current.map((turn) =>
-          turn.reply.action?.id === id ? { ...turn, reply: { ...turn.reply, action } } : turn,
+          turn.reply?.action?.id === id ? { ...turn, reply: { ...turn.reply!, action } } : turn,
         ),
       )
       if (action.status === 'applied') onSaved()
@@ -170,6 +155,26 @@ export function AssistantPanel({
       closeLabel={t('收起', 'Close')}
       onClose={onClose}
     >
+      <div className="assistant-toolbar">
+        <button disabled={busy || !!history.unknown} onClick={() => { history.fresh(); setHistoryVisible(false); setMessage(''); setDetail(null); setDetailVisible(false) }}><span aria-hidden="true">＋</span>{t('新对话', 'New conversation')}</button>
+        <button aria-expanded={historyVisible} aria-controls="assistant-history" disabled={busy} onClick={() => setHistoryVisible(value => !value)}>{t('历史对话', 'History')}</button>
+        {history.id && <button disabled={busy} onClick={() => {
+          if (window.confirm(t('删除对话及待确认提案？已执行的预算修改不会撤销，历史备份可能仍保留对话。', 'Delete this conversation and pending proposals? Applied budgets are kept; old backups may retain history.'))) void history.remove().catch(cause => history.setError(cause))
+        }}>{t('删除对话', 'Delete conversation')}</button>}
+      </div>
+      {historyVisible && <nav id="assistant-history" className="assistant-history" aria-label={t('历史对话', 'Conversation history')}>
+        {history.items.map(item => <button key={item.id} aria-current={history.id === item.id ? "page" : undefined} disabled={busy || !!history.unknown} onClick={() => {
+          setDetail(null); setDetailVisible(false); setMessage(''); void history.load(item.id).catch(cause => history.setError(cause))
+        }}><strong>{item.title}</strong><time dateTime={item.updated_at}>{new Date(item.updated_at).toLocaleString(locale)}</time></button>)}
+        {history.cursor && <button onClick={() => void history.list(history.cursor!).catch(cause => history.setError(cause))}>{t('更多', 'More')}</button>}
+      </nav>}
+      {history.storageFailed && <p role="alert">{t('浏览器存储不可用，刷新可能丢失待处理请求。', 'Browser storage unavailable: unacknowledged requests may not survive refresh.')}</p>}
+      {history.unknown && <section role="status">
+        <p>{t('接收状态未知，请先查询结果。', 'Receipt unknown. Check the result first.')}</p>
+        <button disabled={busy} onClick={() => void history.lookup()}>{t('重新查询状态', 'Check status')}</button>
+        <button disabled={busy} onClick={() => { setBusy(true); void history.send(history.unknown!).finally(() => setBusy(false)) }}>{t('重试本次发送', 'Retry original request')}</button>
+      </section>}
+      {history.before && <button disabled={busy} onClick={() => void history.load(history.id!, history.before!).catch(cause => history.setError(cause))}>{t('更早消息', 'Earlier messages')}</button>}
       {detail && <div hidden={!detailVisible}>
         <SpendingDetails key={`${detail.summary.calculated_at}:${JSON.stringify(detail.summary.scope)}`} summary={detail.summary} copy={copy} locale={locale}
           active={open && detailVisible} stale={detail.revision !== ledgerRevision} onBack={backToAnswer} onInspect={onInspect}
@@ -184,11 +189,10 @@ export function AssistantPanel({
       <div className="assistant-conversation" ref={conversation} hidden={detailVisible}>
         {!turns.length && (
           <div className="assistant-intro">
-            <h3>{t('想了解本月开销？', 'What would you like to know?')}</h3>
             <div className="suggestions">
               {[
                 t('本月哪些分类超预算了？', 'Which categories are over budget this month?'),
-                t('本月和上月的支出有什么变化？', 'How did spending change from last month?'),
+                t('本月餐饮实际花了多少？', 'How much did I spend on dining this month?'),
               ].map((text) => (
                 <button
                   key={text}
@@ -204,15 +208,24 @@ export function AssistantPanel({
             </div>
           </div>
         )}
-        {turns.map((turn, index) => (
-          <article className="assistant-turn" key={index}>
+        {turns.map((turn) => (
+          <article className="assistant-turn" key={turn.id}>
             <p className="assistant-question">{turn.question}</p>
+            <details className="assistant-message-meta"><summary>{t('详情', 'Details')}</summary><time dateTime={turn.created_at}>{new Date(turn.created_at).toLocaleString(locale)}</time><span>{turn.month.slice(0, 7)}{turn.scope && ` · ${copy.categoryLabels[turn.scope.category]} · ${turn.scope.currency}`}</span></details>
+            {turn.status === 'processing' && <p role="status">{t('处理中…', 'Working…')}</p>}
+            {turn.status === 'failed' && <p>{t('处理失败', 'Failed')} · {turn.error_code} <button disabled={busy || pending} onClick={() => {
+              setBusy(true); void history.send({ protocol_version: 2, conversation_id: turn.conversation_id, request_id: crypto.randomUUID(), retry_of: turn.id,
+                question: turn.question, month: turn.month, spending_context: turn.scope, locale }).finally(() => setBusy(false))
+            }}>{t('重新处理', 'Retry')}</button></p>}
+            {turn.reply && <>
             <p className="assistant-answer">{turn.reply.text}</p>
-            <AssistantEvidence evidence={turn.reply.evidence} copy={copy} locale={locale} stale={turn.ledgerRevision !== ledgerRevision} onInspect={summary => showDetail(summary, turn.ledgerRevision)} />
+            {turn.reply.history_unavailable && <p>{t("历史详情不可用，请重新查询。", "History details unavailable. Query again.")}</p>}
+            <button disabled={busy || pending} onClick={() => { setContext(turn.scope); setMessage(`${turn.month.slice(0, 7)} ${turn.scope ? copy.categoryLabels[turn.scope.category] + ' ' + turn.scope.currency : ''} ${t('重新查询当前账本', 'Query current ledger')}`) }}>{t('重新查询', 'Query again')}</button>
+            <AssistantEvidence evidence={turn.reply.evidence} copy={copy} locale={locale} stale={loadedRevision.current !== ledgerRevision} onInspect={summary => showDetail(summary, ledgerRevision)} />
             {turn.reply.action && (
               <section className="assistant-proposal" aria-label={t('预算修改', 'Budget change')}>
                 <strong>{describe(turn.reply.action)}</strong>
-                {turn.reply.action.status === 'pending' ? (
+                {turn.reply.action.can_confirm ? (
                   <>
                     <p>
                       {t(
@@ -224,13 +237,13 @@ export function AssistantPanel({
                       <button
                         className="primary"
                         disabled={busy}
-                        onClick={() => void resolve(turn.reply.action!.id, false)}
+                        onClick={() => void resolve(turn.reply!.action!.id, false)}
                       >
                         {t('确认修改', 'Confirm change')}
                       </button>
                       <button
                         disabled={busy}
-                        onClick={() => void resolve(turn.reply.action!.id, true)}
+                        onClick={() => void resolve(turn.reply!.action!.id, true)}
                       >
                         {t('取消', 'Cancel')}
                       </button>
@@ -238,26 +251,25 @@ export function AssistantPanel({
                   </>
                 ) : (
                   <p role="status">
-                    {turn.reply.action.status === 'cancelled'
-                      ? t('已取消', 'Cancelled')
-                      : t('已修改', 'Saved')}
+                    {turn.reply.action.effective_status === 'applied' ? t('当时已执行', 'Applied then') : ({ cancelled: t("已取消", "Cancelled"), expired: t("已过期", "Expired"), conflict: t("预算已变化，请重新提出修改", "Budget changed; request a new proposal"), unavailable: t("会话不可用", "Conversation unavailable"), pending: t("等待核对", "Awaiting review") }[turn.reply.action.effective_status])}
                     {turn.reply.action.result &&
                       ` · ${t('执行后剩余', 'Remaining after change')} ${money(turn.reply.action.result.remaining, turn.reply.action.result.currency)}`}
                   </p>
                 )}
               </section>
             )}
+            </>}
           </article>
         ))}
         {busy && <LoadingIndicator label={t('正在处理', 'Working')} />}
-        {error && (
+        {Boolean(error || history.error) && (
           <p className="error" role="alert">
-            {error}
+            {error || failure(history.error)}
           </p>
         )}
         <form onSubmit={(event) => void submit(event)} className="assistant-composer">
           <label>
-            {t('参考月份', 'Context month')} · {month.slice(0, 7)}
+            {t('月份', 'Month')} · {history.month.slice(0, 7)}
           </label>
           {context && <p className="assistant-context">{t('追问范围', 'Follow-up scope')}：{context.month.slice(0, 7)} · {copy.categoryLabels[context.category]} · {context.currency} <button type="button" disabled={busy || pending} onClick={() => setContext(null)}>{t('清除', 'Clear')}</button></p>}
           <textarea
@@ -278,11 +290,11 @@ export function AssistantPanel({
             onChange={(event) => setMessage(event.target.value)}
             maxLength={1000}
             rows={3}
-            disabled={busy || pending || turns.length >= 7}
+            disabled={busy || pending || (turns.at(-1)?.sequence ?? 0) >= history.limit}
             placeholder={
               pending
-                ? t('先确认或取消上面的修改', 'Confirm or cancel the proposal first')
-                : t('提问，或告诉我你想调整什么', 'Ask a question or request a change')
+                ? t('先核对正在处理的请求', 'Check the pending request first')
+                : t('输入问题', 'Enter a question')
             }
           />
           <div className="planning-actions">
@@ -291,27 +303,26 @@ export function AssistantPanel({
             </span>
             <button
               className="primary"
-              disabled={busy || pending || !message.trim() || turns.length >= 7}
+              disabled={busy || pending || !message.trim() || (turns.at(-1)?.sequence ?? 0) >= history.limit}
             >
               {t('发送', 'Send')}
             </button>
-            {turns.length > 0 && (
+            {(turns.at(-1)?.sequence ?? 0) >= history.limit && (
               <button
                 type="button"
                 disabled={busy || pending}
                 onClick={() => {
-                  setTurns([])
+                  history.fresh(true)
                   setError('')
-                  setContext(null)
                   setDetail(null)
                   setDetailVisible(false)
                 }}
               >
-                {t('新对话', 'New conversation')}
+                {t('新对话继续所选范围', 'Continue scope in new conversation')}
               </button>
             )}
           </div>
-          {turns.length >= 7 && (
+          {(turns.at(-1)?.sequence ?? 0) >= history.limit && (
             <p>{t('本段对话已达上限，请开始新对话。', 'Start a new conversation to continue.')}</p>
           )}
         </form>

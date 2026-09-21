@@ -1,11 +1,14 @@
 /** 账户与本地显示偏好；仅提供当前已接入的操作。 */
 import type { LanguageProps } from '../../shared/ui'
 import { LanguageSwitch, PageHeader } from '../../shared/ui'
+import { PasswordForm } from './PasswordForm'
 import type { User } from '../../types'
 
-export function SettingsPage({ copy, locale, onLocaleChange, user, onLogout }: LanguageProps & {
+export function SettingsPage({ copy, locale, onLocaleChange, user, onLogout, onSwitchAccount, busy }: LanguageProps & {
   user: User
   onLogout: () => void
+  onSwitchAccount: () => void
+  busy: boolean
 }) {
   const en = locale === 'en-US'
   return (
@@ -18,34 +21,18 @@ export function SettingsPage({ copy, locale, onLocaleChange, user, onLogout }: L
             <span className="account-avatar">{user.email.slice(0, 1).toUpperCase()}</span>
             <div>
               <strong>{user.email}</strong>
-              <p>{en ? 'Personal workspace' : '个人工作区'}</p>
             </div>
           </div>
-        </section>
-        <section className="settings-card">
-          <h2>{en ? 'Appearance' : '外观'}</h2>
-          <div className="settings-row">
-            <span>{en ? 'Current theme' : '当前主题'}</span>
-            <span className="theme-badge">{en ? 'Dark · Teal' : '深色 · 青绿'}</span>
-          </div>
+          <details className="inline-note"><summary>{en ? 'Sign-out details' : '退出说明'}</summary><p>{en ? 'Signing out clears local recovery data. Saved conversations remain in your history.' : '退出会清除本地恢复记录，已保存的对话仍可在历史中找回。'}</p></details>
+          <div className="settings-row"><button disabled={busy} onClick={onSwitchAccount}>{en ? 'Switch account' : '切换账号'}</button><button disabled={busy} onClick={onLogout}>{copy.logout}</button></div>
         </section>
         <section className="settings-card">
           <h2>{en ? 'Language' : '语言'}</h2>
           <div className="settings-row">
-            <span>{en ? 'Display language' : '界面语言'}</span>
             <LanguageSwitch copy={copy} locale={locale} onLocaleChange={onLocaleChange} />
           </div>
-          <p>{en ? 'Saved in this browser.' : '偏好保存在当前浏览器。'}</p>
         </section>
-        <section className="settings-card">
-          <h2>{en ? 'Session' : '登录状态'}</h2>
-          <p>{en ? 'Signing out clears this conversation.' : '退出将清空当前助手对话。'}</p>
-          <button onClick={onLogout}>{copy.logout}</button>
-        </section>
-        <section className="settings-card">
-          <h2>{en ? 'Data' : '数据说明'}</h2>
-          <p>{en ? 'Totals cover imported statements, not bank balances.' : '统计仅含导入账单，不代表银行余额。'}</p>
-        </section>
+        <PasswordForm copy={copy} locale={locale} />
       </div>
     </section>
   )

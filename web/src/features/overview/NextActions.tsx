@@ -123,7 +123,7 @@ export function NextActions({ month: initialMonth, english, copy, onPlanning, re
                       'Set categories are below 80% of their limits',
                     )
                 : t(
-                    '尚未设置预算，可先选择一个关心的分类',
+                    '尚未设置预算',
                     'Choose a category to start tracking a budget',
                   )}
             </p>
@@ -159,8 +159,8 @@ export function NextActions({ month: initialMonth, english, copy, onPlanning, re
               {recurring.items.length
                 ? t('本月暂无待核对期次', 'No pending occurrences this month')
                 : t(
-                    '从账本中选择一笔流水，即可建立固定支出',
-                    'Select a ledger transaction to create a fixed expense',
+                    '尚无固定支出',
+                    'No fixed expenses',
                   )}
             </p>
           )}

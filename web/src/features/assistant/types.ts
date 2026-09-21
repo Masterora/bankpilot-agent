@@ -16,6 +16,8 @@ export interface AssistantAction {
   payload: BudgetInput
   before_amount: string | null
   status: 'pending' | 'applied' | 'cancelled'
+  effective_status: 'pending' | 'applied' | 'cancelled' | 'expired' | 'conflict' | 'unavailable'
+  can_confirm: boolean
   expires_at: string
   result: BudgetItem | null
 }
@@ -25,6 +27,7 @@ export type Evidence =
   | { tool: 'recurring'; month: string; data: Omit<RecurringWorkspace, 'candidates'> }
   | { tool: 'overview'; month: string; data: Pick<OverviewSnapshot, 'summaries'> }
 export interface Reply {
+  history_unavailable?: boolean
   text: string
   evidence: Evidence[]
   action: AssistantAction | null
@@ -64,3 +67,39 @@ export function spendingRefs(evidence: Evidence[]): SpendingSummary[] {
   }
   return [...unique.values()]
 }
+
+export interface TurnInput {
+  protocol_version: 2
+  request_id: string
+  conversation_id?: string
+  creation_id?: string
+  question: string
+  month: string
+  locale: string
+  spending_context: SpendingScope | null
+  retry_of?: string
+}
+export interface SavedTurn {
+  id: string
+  conversation_id: string
+  request_id: string
+  sequence: number
+  question: string
+  month: string
+  scope: SpendingScope | null
+  status: 'processing' | 'completed' | 'failed'
+  created_at: string
+  completed_at: string | null
+  reply: Reply | null
+  error_code: string | null
+}
+export interface Conversation {
+  id: string
+  title: string
+  month: string
+  scope: SpendingScope | null
+  created_at: string
+  updated_at: string
+}
+export interface ConversationPage { items: Conversation[]; next_cursor: string | null; recent_id: string | null }
+export interface ConversationDetail { conversation: Conversation; turns: SavedTurn[]; next_before: number | null; turn_limit: number }

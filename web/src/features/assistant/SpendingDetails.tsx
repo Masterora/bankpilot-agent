@@ -15,6 +15,7 @@ export function SpendingCard({ summary, copy, locale }: {
   return <section className="spending-card">
     <h3>{summary.scope.month.slice(0, 7)} · {copy.categoryLabels[summary.scope.category]} · {summary.scope.currency}</h3>
     <strong>{en ? 'Net spending' : '实际支出'} {money(summary.net_spending)}</strong>
+    <details><summary>{en ? 'Calculation details' : '计算详情'}</summary>
     <p>{en ? 'Purchases' : '消费'} {money(summary.gross_spending)} − {en ? 'Confirmed refunds' : '已确认退款'} {money(summary.refund_offset)}</p>
     <p>{summary.contribution_count} {en ? 'contributions' : '条贡献记录'}</p>
     <p>{summary.coverage.transaction_count === 0
@@ -22,6 +23,7 @@ export function SpendingCard({ summary, copy, locale }: {
       : `${en ? 'Imported transactions' : '本币种已导入流水'} ${summary.coverage.transaction_count} · ${en ? 'Through' : '截至'} ${summary.coverage.latest_transaction_date}`}
       {' · '}{en ? 'Completeness unverified' : '账单完整性未确认'}</p>
     {summary.coverage.transaction_count > 0 && summary.contribution_count === 0 && <p>{en ? 'No contributions in this category in imported data.' : '已导入数据中该分类为 0。'}</p>}
+    </details>
   </section>
 }
 

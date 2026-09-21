@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../../api'
 import { formatMoney, formatTimestamp } from '../../format'
 import type { Messages, ProductPage } from '../../i18n'
-import { LoadingIndicator, NavigationIcon, PageHeader } from '../../shared/ui'
+import { EmptyContent, LoadingIndicator, NavigationIcon, PageHeader } from '../../shared/ui'
 import { PeriodFilter } from '../../shared/PeriodFilter'
 import { validPeriod } from '../../shared/period'
 import type { ReviewPeriod } from '../../shared/period'
@@ -124,38 +124,15 @@ function OverviewData({
         </p>
       )}
       {failure}
-      <RelationReadiness
-        key={`relations:${requestKey}`}
-        start={period.start}
-        end={period.end}
-        english={english}
-        onReview={() => onNavigate('relations')}
-      />
       {!data.summaries.length && (
-        <div className="ledger-welcome">
-          <div className="welcome-symbol" aria-hidden="true">
-            <NavigationIcon kind="review" />
-          </div>
-          <div>
-            <h2>
-              {imported.length
-                ? english
-                  ? 'No imported transactions in this period'
-                  : '此期间没有已导入流水'
-                : english
-                  ? 'Your ledger starts here'
-                  : '从第一份账单开始'}
-            </h2>
-            <p>
-              {english
-                ? 'Import a statement to see your income and spending.'
-                : '导入账单，查看这段时间的收入与支出。'}
-            </p>
-            <button className="primary" onClick={() => onNavigate('import')}>
-              {english ? 'Choose statement' : '选择账单'} <span aria-hidden="true">↗</span>
-            </button>
-          </div>
-        </div>
+        <EmptyContent
+          kind="review"
+          title={english ? 'No imported transactions in this period' : '此期间没有已导入流水'}
+        >
+          <button className="primary" onClick={() => onNavigate('import')}>
+            {english ? 'Import statement' : '导入账单'}
+          </button>
+        </EmptyContent>
       )}
       {data.summaries.map((summary) => (
         <section key={summary.currency} className="overview-currency" aria-label={summary.currency}>
@@ -176,6 +153,14 @@ function OverviewData({
           </div>
         </section>
       ))}
+      <RelationReadiness
+        key={`relations:${requestKey}`}
+        start={period.start}
+        end={period.end}
+        english={english}
+        onReview={() => onNavigate('relations')}
+      />
+      <div className="overview-analysis-grid">
       {!!data.summaries.length && <div className="overview-charts">
         {data.summaries.map(summary => <article className="overview-panel" key={summary.currency}>
           <header><h2>{english ? 'Imported cash flow' : '已导入收支'} · {summary.currency}</h2><span>{english ? 'Raw / adjusted' : '原始 / 调整后'}</span></header>
@@ -190,7 +175,34 @@ function OverviewData({
         copy={copy}
         onPlanning={onPlanning}
       />
-      <details className="data-coverage" open>
+      </div>
+      {data.recent_transactions.length > 0 && (
+        <section className="recent-ledger">
+          <header>
+            <h2>{english ? 'Latest entries' : '最近流水'}</h2>
+            <button onClick={() => onNavigate('review')}>
+              {english ? 'View ledger' : '全部流水'} <span aria-hidden="true">↗</span>
+            </button>
+          </header>
+          {data.recent_transactions.map((item) => (
+            <div className="recent-entry" key={item.id}>
+              <div>
+                <strong>{item.merchant}</strong>
+                <small>
+                  {item.account_name} ·{' '}
+                  {item.time_precision === 'date'
+                    ? item.booking_date
+                    : formatTimestamp(item.occurred_at, locale)}
+                </small>
+              </div>
+              <span className="entry-amount">
+                {formatMoney(item.amount, item.currency, locale)}
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
+      <details className="data-coverage">
         <summary>{english ? 'Imported data scope' : '数据来源'}</summary>
         {importsFailed ? (
           <span>{english ? 'Import history unavailable' : '暂时无法读取导入范围'}</span>
@@ -257,32 +269,7 @@ function OverviewData({
           </section>
         ))}
       </details>
-      {data.recent_transactions.length > 0 && (
-        <section className="recent-ledger">
-          <header>
-            <h2>{english ? 'Latest entries' : '最近流水'}</h2>
-            <button onClick={() => onNavigate('review')}>
-              {english ? 'View ledger' : '全部流水'} <span aria-hidden="true">↗</span>
-            </button>
-          </header>
-          {data.recent_transactions.map((item) => (
-            <div className="recent-entry" key={item.id}>
-              <div>
-                <strong>{item.merchant}</strong>
-                <small>
-                  {item.account_name} ·{' '}
-                  {item.time_precision === 'date'
-                    ? item.booking_date
-                    : formatTimestamp(item.occurred_at, locale)}
-                </small>
-              </div>
-              <span className="entry-amount">
-                {formatMoney(item.amount, item.currency, locale)}
-              </span>
-            </div>
-          ))}
-        </section>
-      )}
+
     </div>
   )
 }

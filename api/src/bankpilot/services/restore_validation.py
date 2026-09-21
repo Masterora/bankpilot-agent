@@ -14,6 +14,8 @@ from bankpilot.db.base import SCHEMA_REVISION, Base
 from bankpilot.db.models import (
     AccountRecord,
     AssistantActionRecord,
+    AssistantConversationRecord,
+    AssistantTurnRecord,
     MonthlyReportRecord,
     RunRecord,
     SessionRecord,
@@ -153,6 +155,10 @@ async def prepare_restored_tasks(session: AsyncSession) -> dict[str, int]:
         update(AssistantActionRecord)
         .where(AssistantActionRecord.status == "pending")
         .values(status="cancelled")
+    )
+    await session.execute(delete(AssistantTurnRecord))
+    await session.execute(
+        update(AssistantConversationRecord).values(deleted=True, title=None, month=None, scope=None)
     )
     await session.execute(delete(SessionRecord))
     return result
