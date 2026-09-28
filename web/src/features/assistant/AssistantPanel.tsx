@@ -6,6 +6,7 @@
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
+import { newIdempotencyKey } from '../../shared/operationKey'
 import { apiErrorMessage } from '../../shared/apiErrors'
 import { formatMoney } from '../../format'
 import type { Locale, Messages } from '../../i18n'
@@ -27,7 +28,6 @@ export function AssistantPanel({
   month,
   copy,
   locale,
-  onSaved,
   ledgerRevision,
   onInspect,
   onSearchLedger,
@@ -38,7 +38,6 @@ export function AssistantPanel({
   month: string
   copy: Messages
   locale: Locale
-  onSaved: () => void
   ledgerRevision: number
   onSearchLedger: (filters: SearchFilters) => void
   onInspect: (target: EvidenceTarget) => void
@@ -139,8 +138,8 @@ export function AssistantPanel({
     setBusy(true)
     setError('')
     try {
-      const accepted = await history.send({ protocol_version: 4, expected_context_version: history.contextVersion, request_id: crypto.randomUUID(),
-        ...(history.id ? { conversation_id: history.id } : { creation_id: crypto.randomUUID() }),
+      const accepted = await history.send({ protocol_version: 4, expected_context_version: history.contextVersion, request_id: newIdempotencyKey(),
+        ...(history.id ? { conversation_id: history.id } : { creation_id: newIdempotencyKey() }),
         question: message.trim(), month: history.month, locale, spending_context: context })
       if (accepted) setMessage('')
     } catch (cause) { setError(failure(cause)) }
@@ -158,7 +157,6 @@ export function AssistantPanel({
           turn.reply?.action?.id === id ? { ...turn, reply: { ...turn.reply!, action } } : turn,
         ),
       )
-      if (action.status === 'applied') onSaved()
     } catch (cause) {
       setError(failure(cause))
     } finally {
@@ -176,7 +174,7 @@ export function AssistantPanel({
         protocol_version: 4,
         expected_context_version: history.contextVersion,
         conversation_id: history.id,
-        request_id: crypto.randomUUID(),
+        request_id: newIdempotencyKey(),
         recompare_of: turnId,
         question: t('按当前日期重新比较', 'Recompare as of today'),
         month: history.month,
@@ -264,7 +262,7 @@ export function AssistantPanel({
             {turn.status === 'failed' && <p>{t('处理失败', 'Failed')} · {turn.error_code} <button disabled={busy || pending} onClick={() => {
               if (turn.recompare_of) void recompare(turn.recompare_of)
               else {
-                setBusy(true); void history.send({ protocol_version: 4, expected_context_version: history.contextVersion, conversation_id: turn.conversation_id, request_id: crypto.randomUUID(), retry_of: turn.id,
+                setBusy(true); void history.send({ protocol_version: 4, expected_context_version: history.contextVersion, conversation_id: turn.conversation_id, request_id: newIdempotencyKey(), retry_of: turn.id,
                   question: turn.question, month: turn.month, spending_context: turn.scope, locale }).finally(() => setBusy(false))
               }
             }}>{turn.recompare_of ? t('重新比较', 'Recompare') : t('重新处理', 'Retry')}</button></p>}

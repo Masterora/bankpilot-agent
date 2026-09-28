@@ -32,6 +32,7 @@ import type { Conversation } from './features/assistant/types'
 import type { AssistantAction, TurnInput, SavedTurn, ConversationPage, ConversationDetail, SpendingPage, SpendingScope, SpendingSummary, ComparisonEvidencePage, SpendingCategoryComparison } from './features/assistant/types'
 
 import type { BudgetInput, BudgetWorkspace, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
+import type { AttentionPreference, AttentionResponse, AttentionStateRequest, AttentionType } from './features/overview/attention'
 
 
 export class ApiError extends Error {
@@ -71,6 +72,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (init?.method === 'POST' && /^\/api\/v1\/(?:imports(?:\/[^/]+\/revoke)?|relations|accounts\/[^/]+\/name|transactions\/[^/]+\/category|runs\/[^/]+\/transactions\/[^/]+\/category)$/.test(path)) {
     window.dispatchEvent(new Event('bankpilot:ledger-changed'))
+  } else if (init?.method === 'POST' && /^\/api\/v1\/(?:budgets(?:\/copy|\/delete)?|recurring(?:\/[^/]+\/(?:edit|status|match|skip|cancel-revision))?|assistant\/confirm)$/.test(path)) {
+    window.dispatchEvent(new Event('bankpilot:planning-changed'))
   }
   if (response.status === 204) return undefined as T
   if (response.headers.get('content-type')?.includes('text/csv')) return await response.text() as T
@@ -78,6 +81,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  attention: (month: string, group: 'all' | 'budgets' | 'recurring' = 'all') => request<AttentionResponse>(`/api/v1/attention?month=${month}-01&group=${group}`),
+  attentionPreferences: () => request<AttentionPreference[]>('/api/v1/attention/preferences'),
+  attentionState: (payload: AttentionStateRequest) => request<{ operation_id: string; accepted_version: string; snoozed_until: string | null }>('/api/v1/attention/state', { method: 'POST', body: JSON.stringify(payload) }),
+  attentionPreference: (type: AttentionType, payload: { operation_id: string; enabled: boolean; expected_version: number }) => request<{ operation_id: string; accepted_version: string }>(`/api/v1/attention/preferences/${type}`, { method: 'POST', body: JSON.stringify(payload) }),
   reviewProjection: (payload: ProjectionRequest) => request<ReviewProjection>('/api/v1/reviews/projection', { method: 'POST', body: JSON.stringify(payload) }),
   search: (filters: SearchFilters, offset = 0, version?: { expected_revision: number; expected_search_version: string }) => request<SearchPage>('/api/v1/transactions/search', { method: 'POST', body: JSON.stringify({ filters, offset, ...version }) }),
   searchExport: (page: SearchPage) => request<string>('/api/v1/transactions/search/export', { method: 'POST', body: JSON.stringify({ filters: page.filters, expected_revision: page.ledger_revision, expected_search_version: page.search_version }) }),

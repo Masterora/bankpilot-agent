@@ -31,7 +31,7 @@ export function RecurringPage({
   focusTarget,
   onSeedConsumed,
   onDraftChange,
-  onSaved,
+  externalRevision,
 }: {
   copy: Messages
   locale: Locale
@@ -42,10 +42,10 @@ export function RecurringPage({
   focusTarget: string
   onSeedConsumed: () => void
   onDraftChange: (dirty: boolean) => void
-  onSaved: () => void
+  externalRevision: number
 }) {
   const english = locale === 'en-US'
-  const state = usePlanningMonth(api.recurring, month, english, active, onSaved)
+  const state = usePlanningMonth(api.recurring, month, english, active, externalRevision)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [accountError, setAccountError] = useState('')
   const [accountsLoading, setAccountsLoading] = useState(true)

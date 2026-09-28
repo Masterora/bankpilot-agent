@@ -72,7 +72,7 @@ def summary(record: MonthlyReportRecord, revision: int) -> ReportSummary:
     return ReportSummary(
         id=record.id,
         month=record.month,
-        status=record.status,
+        status=ReportStatus(record.status),
         attempts=record.attempts,
         created_at=record.created_at,
         completed_at=record.completed_at,

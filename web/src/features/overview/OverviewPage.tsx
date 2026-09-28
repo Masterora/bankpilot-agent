@@ -17,6 +17,8 @@ import { NextActions } from './NextActions'
 import type { ImportBatch, OverviewSnapshot, RelationWorkspace } from '../../types'
 
 interface OverviewProps {
+  userId: string
+  ledgerRevision: number
   english: boolean
   copy: Messages
   onNavigate: (page: ProductPage) => void
@@ -46,6 +48,8 @@ export function OverviewPage(props: OverviewProps) {
 }
 
 function OverviewData({
+  userId,
+  ledgerRevision,
   english,
   period,
   onNavigate,
@@ -62,7 +66,7 @@ function OverviewData({
     key: string
   } | null>(null)
   const [failedKey, setFailedKey] = useState<string | null>(null)
-  const requestKey = `${period.start}:${period.end}`
+  const requestKey = `${period.start}:${period.end}:${ledgerRevision}`
   const failed = failedKey === requestKey
   const updating = snapshot?.key !== requestKey && !failed
   const [attempt, setAttempt] = useState(0)
@@ -168,8 +172,9 @@ function OverviewData({
         </article>)}
       </div>}
       <NextActions
+        userId={userId}
         revision={planningRevision}
-        key={`planning:${requestKey}`}
+        key={`planning:${period.start}:${period.end}`}
         month={period.end.slice(0, 7)}
         english={english}
         copy={copy}

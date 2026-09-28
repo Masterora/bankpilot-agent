@@ -3,17 +3,19 @@
 主要内容：计算请求摘要、解析分类、校验操作身份、绑定账户并保存批次和流水。
 关键边界：解析前释放读取连接，用户锁内重查身份；批次、账户、流水及修订号原子提交。
 """
+
 import hashlib
 import json
 from dataclasses import asdict
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from bankpilot.db.attention_repository import AttentionRepository
 from bankpilot.db.import_repository import ImportRepository
-from bankpilot.db.models import AccountRecord, ImportBatchRecord, UserRecord
+from bankpilot.db.models import AccountRecord, ImportBatchRecord, TransactionRecord, UserRecord
 from bankpilot.db.transaction_repository import TransactionRepository
 from bankpilot.db.user_repository import UserRepository
 from bankpilot.domain.payment_sources import source_account
@@ -22,9 +24,10 @@ from bankpilot.domain.statement_import import (
     StatementFieldMapping,
     parse_statement_csv,
 )
-from bankpilot.errors import ImportConflictError
+from bankpilot.errors import ImportConflictError, PlanningError
 from bankpilot.observability import measure
 from bankpilot.services.accounts import resolve_account
+from bankpilot.services.attention import synchronize_existing_states
 from bankpilot.services.import_classification import classify_import
 
 
@@ -179,5 +182,39 @@ class StatementImportService:
                     rows=classified.new,
                 )
                 await UserRepository(self.session).bump_revision(user_id)
+                await self.session.flush()
+                await synchronize_existing_states(
+                    self.session,
+                    user_id,
+                    months={row.booking_date.replace(day=1) for row in classified.new},
+                )
             self.session.expunge(batch)
         return batch, False
+
+
+async def revoke_import(session: AsyncSession, user_id: UUID, batch_id: UUID) -> None:
+    await session.scalar(select(UserRecord).where(UserRecord.id == user_id).with_for_update())
+    batch = await session.scalar(
+        select(ImportBatchRecord)
+        .where(ImportBatchRecord.id == batch_id, ImportBatchRecord.user_id == user_id)
+        .with_for_update()
+    )
+    if batch is None:
+        raise PlanningError("import_not_found", 404)
+    affected_ids = set(
+        await session.scalars(
+            select(TransactionRecord.id).where(TransactionRecord.import_batch_id == batch.id)
+        )
+    )
+    affected_months = await AttentionRepository(session).affected_months(user_id, affected_ids)
+    deleted_id = await session.scalar(
+        delete(TransactionRecord)
+        .where(TransactionRecord.import_batch_id == batch.id)
+        .returning(TransactionRecord.id)
+    )
+    # 外键级联清理分类与关系；只有账本事实改变才使历史报告过期。
+    batch.status = "REVOKED"
+    if deleted_id is not None:
+        await UserRepository(session).bump_revision(user_id)
+        await session.flush()
+        await synchronize_existing_states(session, user_id, months=affected_months)

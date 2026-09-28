@@ -1,106 +1,25 @@
 """
-文件职责：编排月度预算统计和显式预算写入。
-主要内容：基于消费证据构造预算工作区，保存、复制上月设置和删除预算。
+文件职责：编排显式预算写入及其待办状态同步。
+主要内容：保存、复制上月设置和删除预算；工作区读取由 planning_reads 提供。
 关键边界：调用方拥有事务；金额来自确定性消费规则，版本冲突不覆盖已有设置。
 """
+
 from datetime import date, timedelta
-from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bankpilot.db.attention_repository import AttentionRepository
 from bankpilot.db.models import BudgetRecord
 from bankpilot.db.planning_repository import PlanningRepository
 from bankpilot.db.user_repository import UserRepository
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.planning import (
     BudgetCopyResult,
-    BudgetCoverage,
     BudgetInput,
-    BudgetItem,
-    BudgetWorkspace,
-    UnbudgetedCategory,
 )
 from bankpilot.errors import PlanningError
-from bankpilot.services.spending import MonthSpending, read_spending
-
-
-async def budget_workspace(
-    session: AsyncSession,
-    uid: UUID,
-    month: date,
-    *,
-    calculation: MonthSpending | None = None,
-) -> BudgetWorkspace:
-    repo = PlanningRepository(session)
-    budgets = await repo.budgets(uid, month)
-    calculation = calculation or await read_spending(session, uid, month)
-    evidence = calculation.evidence
-    totals, counts = calculation.totals, calculation.counts
-    imported_dates = calculation.imported_dates
-    budgeted = {(b.category, b.currency) for b in budgets}
-    return BudgetWorkspace(
-        month=month,
-        evidence=evidence,
-        spending=[
-            UnbudgetedCategory(
-                category=TransactionCategory(category),
-                currency=currency,
-                spent=spent,
-                transaction_count=counts[(category, currency)],
-            )
-            for (category, currency), spent in sorted(totals.items())
-        ],
-        coverage=[
-            BudgetCoverage(
-                currency=currency,
-                transaction_count=len(imported_dates.get(currency, [])),
-                latest_transaction_date=max(imported_dates.get(currency, []), default=None),
-                limit=sum((b.amount for b in budgets if b.currency == currency), Decimal("0.00")),
-                budgeted_spent=sum(
-                    (
-                        spent
-                        for key, spent in totals.items()
-                        if key[1] == currency and key in budgeted
-                    ),
-                    Decimal("0.00"),
-                ),
-                unbudgeted_spent=sum(
-                    (
-                        spent
-                        for key, spent in totals.items()
-                        if key[1] == currency and key not in budgeted
-                    ),
-                    Decimal("0.00"),
-                ),
-            )
-            for currency in sorted({b.currency for b in budgets} | set(imported_dates))
-        ],
-        unbudgeted=[
-            UnbudgetedCategory(
-                category=TransactionCategory(category),
-                currency=currency,
-                spent=spent,
-                transaction_count=counts[(category, currency)],
-            )
-            for (category, currency), spent in sorted(totals.items())
-            if spent > 0 and category != "income" and (category, currency) not in budgeted
-        ],
-        items=[
-            BudgetItem(
-                id=b.id,
-                category=TransactionCategory(b.category),
-                currency=b.currency,
-                amount=b.amount,
-                spent=totals.get((b.category, b.currency), Decimal("0.00")),
-                remaining=b.amount - totals.get((b.category, b.currency), Decimal("0.00")),
-                overspent=totals.get((b.category, b.currency), Decimal("0.00")) > b.amount,
-                version=b.version,
-                transaction_count=counts.get((b.category, b.currency), 0),
-            )
-            for b in budgets
-        ],
-    )
+from bankpilot.services.attention import synchronize_existing_states
 
 
 async def save_budget(session: AsyncSession, uid: UUID, payload: BudgetInput) -> None:
@@ -119,6 +38,12 @@ async def save_budget(session: AsyncSession, uid: UUID, payload: BudgetInput) ->
             BudgetRecord(
                 user_id=uid, month=key[1], category=key[2], currency=key[3], amount=payload.amount
             )
+        )
+
+    if record is not None:
+        await session.flush()
+        await synchronize_existing_states(
+            session, uid, months={key[1]}, source_type="budget", source_id=record.id
         )
 
 
@@ -160,3 +85,4 @@ async def remove_budget(
     if record.version != version or record.id != budget_id:
         raise PlanningError("planning_stale")
     await PlanningRepository(session).remove(record)
+    await AttentionRepository(session).delete_source(uid, "budget", record.id)

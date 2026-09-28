@@ -3,6 +3,7 @@
 主要内容：期间读取、多条件稳定分页、完整匹配 CSV 导出、带版本的详情读取和分类修正。
 关键边界：按当前用户隔离；跨页、详情和导出校验版本，分类覆盖不修改源流水金额。
 """
+
 from datetime import date
 from uuid import UUID
 
@@ -19,7 +20,6 @@ from bankpilot.api.dependencies import (
 from bankpilot.api.errors import ApiProblem
 from bankpilot.api.schemas import CorrectCategoryRequest
 from bankpilot.db.models import UserRecord
-from bankpilot.db.transaction_repository import TransactionRepository
 from bankpilot.domain.contracts import TransactionResult
 from bankpilot.domain.transaction_search import (
     SearchDetail,
@@ -28,6 +28,7 @@ from bankpilot.domain.transaction_search import (
     SearchRequest,
 )
 from bankpilot.services import transaction_search
+from bankpilot.services.transactions import correct_category as save_category
 
 router = APIRouter(prefix="/api/v1/transactions", tags=["transactions"])
 
@@ -95,7 +96,8 @@ async def correct_category(
     user: UserRecord = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
-    record = await TransactionRepository(session).set_category_override(
+    record = await save_category(
+        session,
         user_id=user.id,
         transaction_id=transaction_id,
         category=payload.category.value,

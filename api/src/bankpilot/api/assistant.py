@@ -3,6 +3,7 @@
 主要内容：提交和恢复轮次、分页读取与删除会话、更新消费范围及搜索上下文、确认或取消提案。
 关键边界：所有操作绑定当前用户；模型不能调用确认端点，上下文更新与提案写入由服务端校验。
 """
+
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -87,9 +88,7 @@ async def legacy_conversation() -> None:
     )
 
 
-@router.get(
-    "/turns/{turn_id}/comparison-evidence", response_model=ComparisonEvidencePage
-)
+@router.get("/turns/{turn_id}/comparison-evidence", response_model=ComparisonEvidencePage)
 async def comparison_evidence(
     turn_id: UUID,
     query: Annotated[ComparisonEvidenceQuery, Query()],

@@ -16,6 +16,7 @@ from bankpilot.adapters.local_review import LocalReviewGateway
 from bankpilot.adapters.openrouter import OpenRouterModelGateway
 from bankpilot.api.accounts import router as accounts_router
 from bankpilot.api.assistant import router as assistant_router
+from bankpilot.api.attention import router as attention_router
 from bankpilot.api.auth import router as auth_router
 from bankpilot.api.cards import router as cards_router
 from bankpilot.api.errors import ErrorResponse, register_error_handlers
@@ -129,6 +130,7 @@ def create_app(
     register_error_handlers(app)
 
     app.include_router(assistant_router)
+    app.include_router(attention_router)
     app.include_router(planning_router)
     app.include_router(system_router)
     app.include_router(auth_router)

@@ -1,11 +1,12 @@
 """
 文件职责：编排手动周期计划与逐期账本核对。
-主要内容：生成期次、查询候选、创建配置、安排未来修订、匹配流水、标记未发生及取消修订。
+主要内容：查询候选、创建配置、安排未来修订、匹配流水、标记未发生及取消修订。
+期次读取复用 planning_reads。
 关键边界：历史生效配置不被覆盖；调用方拥有事务，预计金额不自动写入账本。
 """
-from datetime import date, datetime
+
+from datetime import date
 from uuid import UUID, uuid4
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +15,6 @@ from bankpilot.db.models import (
     RecurringRecord,
     RecurringRevisionRecord,
     RecurringSkipRecord,
-    TransactionRecord,
 )
 from bankpilot.db.planning_repository import PlanningRepository
 from bankpilot.db.user_repository import UserRepository
@@ -22,100 +22,21 @@ from bankpilot.domain.planning import (
     RecurringCancelRevisionInput,
     RecurringEditInput,
     RecurringInput,
-    RecurringItem,
     RecurringMatchInput,
-    RecurringOccurrence,
-    RecurringRevision,
     RecurringSkipInput,
     RecurringStatusInput,
     RecurringTransaction,
-    RecurringWorkspace,
     due_in_month,
 )
 from bankpilot.errors import PlanningError
+from bankpilot.services.attention import synchronize_existing_states
 from bankpilot.services.planning_evidence import check_capacity, excluded_ids
-
-
-def recurring_transaction(row: TransactionRecord, excluded: set[UUID]) -> RecurringTransaction:
-    return RecurringTransaction(
-        id=row.id,
-        account_id=row.account_id,
-        booking_date=row.booking_date,
-        merchant=row.merchant,
-        amount=row.amount,
-        currency=row.currency,
-        eligible=row.amount < 0 and row.id not in excluded,
-    )
-
-
-async def recurring_workspace(
-    session: AsyncSession,
-    uid: UUID,
-    month: date,
-) -> RecurringWorkspace:
-    repo = PlanningRepository(session)
-    plans = await repo.plans(uid)
-    matches = await repo.matches(uid, month)
-    revisions = await repo.revisions(uid)
-    skips = await repo.skips(uid, month)
-    period = await repo.transactions(uid, month=month)
-    check_capacity(len(period))
-    extra_ids = {m.transaction_id for m in matches} - {r.id for r, _, _ in period}
-    extra = await repo.transactions(uid, ids=extra_ids) if extra_ids else []
-    check_capacity(len(extra))
-    rows = {r.id: r for r, _, _ in period + extra}
-    excluded = excluded_ids(await repo.relations(uid, set(rows)))
-    linked = await repo.linked_ids(uid, {r.id for r, _, _ in period})
-    histories: dict[UUID, list[RecurringRevisionRecord]] = {}
-    for revision in revisions:
-        histories.setdefault(revision.plan_id, []).append(revision)
-    items = []
-    for plan in plans:
-        history = histories.get(plan.id, [])
-        config = effective_config(plan, history, month)
-        occurrences = {
-            m.due_date: RecurringOccurrence(
-                due_date=m.due_date,
-                transaction=recurring_transaction(rows[m.transaction_id], excluded),
-            )
-            for m in matches
-            if m.plan_id == plan.id
-        }
-        for skipped in skips:
-            if skipped.plan_id == plan.id:
-                occurrences[skipped.due_date] = RecurringOccurrence(
-                    due_date=skipped.due_date, transaction=None, skipped=True
-                )
-        due = due_in_month(config.start_date, config.cadence, month)
-        if due and plan.status == "active" and due not in occurrences:
-            occurrences[due] = RecurringOccurrence(due_date=due, transaction=None)
-        item = RecurringItem(
-            id=plan.id,
-            name=plan.name,
-            status=plan.status,
-            version=plan.version,
-            next_due_date=next_planned_due(plan, history, month),
-            future_revisions=[
-                RecurringRevision.model_validate(r)
-                for r in history
-                if r.effective_month > planning_today().replace(day=1)
-            ],
-            latest_effective_month=history[-1].effective_month
-            if history
-            else plan.start_date.replace(day=1),
-            **{key: getattr(config, key) for key in CONFIG_FIELDS},
-        )
-        item.occurrences = sorted(occurrences.values(), key=lambda o: o.due_date)
-        items.append(item)
-    return RecurringWorkspace(
-        month=month,
-        items=items,
-        candidates=[
-            recurring_transaction(row, excluded)
-            for row, _, _ in period
-            if row.amount < 0 and row.id not in excluded and row.id not in linked
-        ],
-    )
+from bankpilot.services.planning_reads import (
+    CONFIG_FIELDS,
+    effective_config,
+    planning_today,
+    recurring_transaction,
+)
 
 
 async def recurring_candidates(
@@ -175,6 +96,8 @@ async def set_recurring_status(
         raise PlanningError("planning_ended")
     plan.status = payload.status
     plan.version += 1
+    await session.flush()
+    await synchronize_existing_states(session, uid, source_type="recurring", source_id=identity)
 
 
 async def match_recurring(
@@ -217,44 +140,14 @@ async def match_recurring(
             RecurringMatchRecord(plan_id=identity, due_date=payload.due_date, transaction_id=row.id)
         )
     plan.version += 1
-
-
-CONFIG_FIELDS = ("merchant", "account_id", "currency", "amount", "cadence", "start_date")
-
-
-def next_planned_due(
-    plan: RecurringRecord, history: list[RecurringRevisionRecord], month: date
-) -> date | None:
-    """在各生效区间寻找下一期，不跨过已安排变更或将暂停项目伪装成待扣款。"""
-    if plan.status != "active":
-        return None
-    configurations: list[RecurringRecord | RecurringRevisionRecord] = [plan, *history]
-    for index, config in enumerate(configurations):
-        effective = (
-            config.effective_month if isinstance(config, RecurringRevisionRecord) else date.min
-        )
-        boundary = history[index].effective_month if index < len(history) else date.max
-        cursor = max(month, effective, config.start_date.replace(day=1))
-        if cursor >= boundary:
-            continue
-        if config.cadence == "yearly":
-            year = cursor.year + int(cursor.month > config.start_date.month)
-            if year > 9998:
-                continue
-            cursor = date(year, config.start_date.month, 1)
-        due = due_in_month(config.start_date, config.cadence, cursor)
-        if due and due < boundary:
-            return due
-    return None
-
-
-def effective_config(
-    plan: RecurringRecord, revisions: list[RecurringRevisionRecord], month: date
-) -> RecurringRecord | RecurringRevisionRecord:
-    eligible = [
-        r for r in revisions if r.plan_id == plan.id and r.effective_month <= month.replace(day=1)
-    ]
-    return max(eligible, key=lambda r: r.effective_month) if eligible else plan
+    await session.flush()
+    await synchronize_existing_states(
+        session,
+        uid,
+        source_type="recurring",
+        source_id=identity,
+        months={payload.due_date.replace(day=1)},
+    )
 
 
 async def edit_recurring(
@@ -305,10 +198,8 @@ async def edit_recurring(
             )
     plan.name = payload.name
     plan.version += 1
-
-
-def planning_today() -> date:
-    return datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    await session.flush()
+    await synchronize_existing_states(session, uid, source_type="recurring", source_id=identity)
 
 
 async def ensure_future_revision(session: AsyncSession, identity: UUID, month: date) -> None:
@@ -333,6 +224,8 @@ async def cancel_revision(
         raise PlanningError("planning_not_found", 404)
     await PlanningRepository(session).remove(revision)
     plan.version += 1
+    await session.flush()
+    await synchronize_existing_states(session, uid, source_type="recurring", source_id=identity)
 
 
 async def skip_recurring(
@@ -359,6 +252,14 @@ async def skip_recurring(
     elif existing:
         await PlanningRepository(session).remove(existing)
     plan.version += 1
+    await session.flush()
+    await synchronize_existing_states(
+        session,
+        uid,
+        source_type="recurring",
+        source_id=identity,
+        months={payload.due_date.replace(day=1)},
+    )
 
 
 async def recurring_draft(session: AsyncSession, uid: UUID, transaction_id: UUID) -> RecurringInput:

@@ -27,6 +27,7 @@ from bankpilot.domain.transaction_relations import (
     validate_pair,
 )
 from bankpilot.errors import RelationError
+from bankpilot.services.attention import synchronize_ledger
 
 
 def to_transaction(row: TransactionRecord) -> RelationTransaction:
@@ -138,6 +139,7 @@ async def save_relation(
     record.first_id, record.second_id, record.state = first_id, second_id, state
     record.version += 1
     await UserRepository(session).bump_revision(user_id)
+    await synchronize_ledger(session, user_id, {first_id, second_id})
 
 
 async def relation_workspace(

@@ -92,7 +92,10 @@ async def run_history(
     return RunHistory(
         items=[
             RunHistoryItem(
-                id=row.id, message=row.user_message, status=row.status, created_at=row.created_at
+                id=row.id,
+                message=row.user_message,
+                status=RunStatus(row.status),
+                created_at=row.created_at,
             )
             for row in rows
         ]

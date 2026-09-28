@@ -3,11 +3,11 @@
 主要内容：导入历史、按幂等键恢复结果、原子导入、批次撤销和响应转换。
 关键边界：当前用户范围内操作；撤销清理源交易及关联并递增修订号，保留批次与历史快照。
 """
+
 from typing import Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Response, status
-from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import get_current_user, get_db_session
@@ -21,13 +21,12 @@ from bankpilot.api.schemas import (
 from bankpilot.db.import_repository import ImportRepository
 from bankpilot.db.models import (
     ImportBatchRecord,
-    TransactionRecord,
     UserRecord,
 )
-from bankpilot.db.user_repository import UserRepository
 from bankpilot.domain.statement_import import StatementStructureError
 from bankpilot.errors import ImportConflictError
 from bankpilot.services.statement_import import StatementImportService
+from bankpilot.services.statement_import import revoke_import as revoke_batch
 
 router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
 
@@ -91,23 +90,7 @@ async def revoke_import(
     user: UserRecord = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
-    await session.scalar(select(UserRecord).where(UserRecord.id == user.id).with_for_update())
-    batch = await session.scalar(
-        select(ImportBatchRecord)
-        .where(ImportBatchRecord.id == batch_id, ImportBatchRecord.user_id == user.id)
-        .with_for_update()
-    )
-    if batch is None:
-        raise ApiProblem(404, "import_not_found", "Import not found")
-    deleted_id = await session.scalar(
-        delete(TransactionRecord)
-        .where(TransactionRecord.import_batch_id == batch.id)
-        .returning(TransactionRecord.id)
-    )
-    # 外键级联清理分类与关系；只有账本事实改变才使历史报告过期。
-    batch.status = "REVOKED"
-    if deleted_id is not None:
-        await UserRepository(session).bump_revision(user.id)
+    await revoke_batch(session, user.id, batch_id)
     await session.commit()
 
 

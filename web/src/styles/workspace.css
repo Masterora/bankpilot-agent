@@ -10,22 +10,21 @@
 .mobile-navigation-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 26px; }
 .mobile-navigation .product-nav { display: grid; }
 .mobile-navigation .product-nav button { text-align: left; min-height: 43px; }
-.page-heading-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+.page-heading-actions { display: flex; justify-content: space-between; gap: 16px; }
 .page-heading-actions .page-header { margin: 0; }
 .page-heading-actions > .planning-actions { margin: 0; }
 .product-page label { min-width: 0; }
 .product-page select { max-width: 100%; min-width: 0; }
-.product-page input:not([type="radio"]):not([type="checkbox"]), .product-page select { min-height: var(--control-height); padding: 8px 10px; border-radius: 7px; font-size: 12px; }
-.product-page button { min-height: 36px; font-size: 12px; }
+.product-page input:not([type="radio"]):not([type="checkbox"]), .product-page select { padding: 8px 10px; border-radius: 7px; }
 .page-heading-actions > button { flex-shrink: 0; }
-.period-filter { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 0 0 20px; margin-bottom: 24px; border-bottom: 1px solid var(--line); }
+.period-filter { display: flex; align-items: end; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .period-filter label { display: flex; align-items: center; gap: 8px; color: var(--muted); min-width: 0; font-size: 11px; }
 .period-filter input { width: 150px; min-height: 36px; padding: 7px 9px; border-radius: 8px; font-size: 12px; background: #10161d; }
-.period-presets { display: flex; gap: 4px; margin-right: 6px; padding: 3px; border-radius: 9px; background: #10161d; }
+.period-presets { display: flex; gap: 4px; margin-right: 6px; }
 .period-presets button { padding: 7px 11px; font-size: 12px; background: transparent; border-color: transparent; color: var(--muted); }
-.period-presets button[aria-pressed='true'] { background: var(--surface-raised); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+.period-presets button[aria-pressed='true'] { box-shadow: 0 2px 8px rgba(0,0,0,.18); }
 .period-presets button:hover { color: var(--text); }
-.ledger-filters { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 16px; padding: 16px 0; margin-bottom: 12px; border-block: 1px solid var(--line); background: transparent; }
+.ledger-filters { display: grid; grid-template-columns: 1fr 1fr 2fr; margin-bottom: 12px; border-block: 1px solid var(--line); }
 .ledger-filters label { min-width: 0; }
 .ledger-filters select { width: 100%; }
 .ledger-amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -46,14 +45,12 @@
 .transaction-drawer dd { margin: 0; overflow-wrap: anywhere; }
 .overview-currency { margin-bottom: 16px; }
 /* 分币种紧凑收支行，避免次要币种挤出待办。 */
-.currency-stamp { border: 1px solid rgba(255, 229, 183, .35); padding: 5px 10px; border-radius: 20px; color: var(--accent); background: rgba(255,255,255,.04); font-size: 10px; letter-spacing: .1em; }
-.recent-ledger { margin-top: 32px; padding: 0 0 10px; }
-.recent-ledger > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 18px; }
-.recent-ledger h2 { font-size: 17px; font-weight: 500; margin: 0; }
+.currency-stamp { border: 1px solid rgba(255, 229, 183, .35); letter-spacing: .1em; }
+.recent-ledger { margin-top: 32px; }
+.recent-ledger > header { padding-bottom: 18px; }
 .recent-ledger header button { color: var(--accent); background: transparent; border: 0; font-size: 12px; }
-.recent-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; border-top: 1px solid var(--line); padding: 15px 0; }
-.recent-entry strong { font-size: 13px; font-weight: 500; }
-.recent-entry small { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.recent-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; border-top: 1px solid var(--line); }
+.recent-entry small { display: block; margin-top: 6px; overflow-wrap: anywhere; }
 .entry-amount { font-size: 14px; font-variant-numeric: tabular-nums; }
 @media (max-width: 1100px) {
   .overview-detail-grid { gap: 20px; }
@@ -66,20 +63,14 @@
 .currency-caption { color: var(--accent); font-size: 11px; display: flex; justify-content: space-between; gap: 10px; }
 .currency-caption span { color: var(--muted); }
 .overview-metric small { color: var(--muted); font-size: 11px; }
-.overview-detail-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; }
-.overview-panel { min-width: 0; padding: 26px; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-panel); box-shadow: none; }
-.overview-panel h2 { margin: 0 0 22px; font-size: 16px; font-weight: 600; }
+.overview-panel { box-shadow: none; }
 .flow-breakdown { margin: 0; }
-.flow-breakdown > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 15px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.flow-breakdown > div { align-items: center; }
 .flow-breakdown > div:last-child { border: 0; }
-.flow-breakdown dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.flow-breakdown dd { text-align: right; font-variant-numeric: tabular-nums; }
 .flow-breakdown dt { color: var(--muted); }
-.flow-chart { display: grid; gap: 24px; }
-.flow-chart-row > div:first-child { display: flex; justify-content: space-between; gap: 15px; margin-bottom: 10px; font-size: 12px; }
 .flow-chart-row span { color: var(--muted); }
-.flow-chart-row strong { font-variant-numeric: tabular-nums; font-weight: 500; }
-.flow-track { height: 7px; border-radius: 5px; overflow: hidden; background: #242d38; }
-.flow-track i { display: block; height: 100%; border-radius: inherit; background: #687789; }
+.flow-chart-row strong { font-variant-numeric: tabular-nums; }
 .flow-track .adjusted { background: var(--accent); }
 .review-queue { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 14px; padding: 17px 18px; border: 1px solid var(--line); border-radius: 12px; background: rgba(21,27,35,.72); }
 .review-queue h2 { font-size: 14px; font-weight: 500; margin: 0; }
@@ -166,7 +157,7 @@ html:has(dialog:modal), body:has(dialog:modal) { overflow: hidden; }
 
 .event-time { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .time-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.scope-note { color: var(--muted); font-size: 13px; margin: 12px 0; }
+.scope-note { margin: 12px 0; }
 .scope-note summary { cursor: pointer; width: fit-content; }
 .scope-note p { max-width: 70ch; line-height: 1.6; }
 .product-page > .import-account-grid { padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; margin-bottom: 16px; }
@@ -220,7 +211,7 @@ form.import-report p { margin: 0; }
 .snapshot-evidence small { opacity: .7; }
 .relations-panel { position: relative; display: grid; gap: 18px; }
 .relation-workspace-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: start; gap: 18px; }
-.relation-summary { position: sticky; top: 24px; grid-column: 2; grid-row: 1; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface); min-width: 0; box-shadow: none; }
+.relation-summary { position: sticky; grid-column: 2; grid-row: 1; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--surface); min-width: 0; box-shadow: none; }
 .relation-summary h2 { font-size: 16px; margin: 0; }
 .relation-summary .scope-note { overflow-wrap: anywhere; }
 .relation-main { grid-column: 1; grid-row: 1; display: grid; gap: 16px; min-width: 0; }
@@ -240,8 +231,8 @@ form.import-report p { margin: 0; }
 .relation-card h3 { margin: 0 0 16px; }
 .relation-card time, .relation-reason { font-size: 12px; color: var(--muted); }
 .relation-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.relation-evidence { display: grid; align-content: start; gap: 8px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 11px; background: #10161d; overflow-wrap: anywhere; }
-.relation-evidence strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.relation-evidence { display: grid; align-content: start; gap: 8px; min-width: 0; border: 1px solid var(--line); border-radius: 11px; overflow-wrap: anywhere; }
+.relation-evidence strong { font-variant-numeric: tabular-nums; }
 .relation-evidence small { color: var(--muted); }
 .manual-relation { display: grid; gap: 12px; margin-top: 16px; }
 .manual-relation label { display: grid; gap: 8px; min-width: 0; }
@@ -258,7 +249,7 @@ form.import-report p { margin: 0; }
 .report-list-item { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; text-align: left; padding: 17px; border-radius: 12px; background: var(--surface); }
 .report-list-item small { grid-column: 1 / -1; color: var(--muted); }
 .report-list-item[aria-pressed="true"] { border-color: var(--accent); outline: 3px solid var(--accent-soft); }
-.report-detail { margin-top: 24px; min-width: 0; padding: 0 0 24px; overflow-wrap: anywhere; }
+.report-detail { margin-top: 24px; overflow-wrap: anywhere; }
 .report-detail .snapshot-evidence { margin-block: 12px; }
 
 /* 反馈、表格与通用可点击状态使用同一产品语言。 */
@@ -274,7 +265,6 @@ form.import-report p { margin: 0; }
   font-size: 12px;
 }
 .import-table tbody tr { transition: background 150ms ease; }
-.import-table tbody tr:hover { background: rgba(255,255,255,.025); }
 .ledger-toolbar span { color: #bdc7d1; }
 
 /* 触屏保留足够点击范围；覆盖桌面紧凑控件尺寸。 */

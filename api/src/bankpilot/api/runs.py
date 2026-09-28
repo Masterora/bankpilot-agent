@@ -32,9 +32,9 @@ from bankpilot.db.models import (
     UserRecord,
 )
 from bankpilot.db.run_repository import RunRepository
-from bankpilot.db.transaction_repository import TransactionRepository
 from bankpilot.domain.bill_analysis import classify_transaction
 from bankpilot.domain.contracts import RunResult, RunStatus, TransactionResult
+from bankpilot.services.transactions import correct_category as save_category
 
 router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
 
@@ -171,7 +171,8 @@ async def correct_transaction_category(
             amount=current.amount,
         ).category.value
     )
-    transaction = await TransactionRepository(session).set_category_override(
+    transaction = await save_category(
+        session,
         user_id=user.id,
         transaction_id=transaction_id,
         category=payload.category.value,

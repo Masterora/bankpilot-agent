@@ -7,6 +7,7 @@ import calendar
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -245,7 +246,7 @@ def build_comparison(
         raise PlanningError("assistant_comparison_inconsistent", 500)
     baseline_missing = baseline_period.coverage.transaction_count == 0
     target_missing = target_period.coverage.transaction_count == 0
-    status = (
+    status: Literal["comparable", "baseline_missing", "target_missing", "both_missing"] = (
         "both_missing"
         if baseline_missing and target_missing
         else "baseline_missing"
@@ -331,7 +332,7 @@ async def comparison_evidence_page(
     start = (page - 1) * PAGE_SIZE
     return ComparisonEvidencePage(
         comparison=comparison,
-        side=side,
+        side=cast(Literal["baseline", "target"], side),
         category=category,
         page=page,
         page_size=PAGE_SIZE,

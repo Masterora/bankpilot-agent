@@ -5,6 +5,7 @@
 """
 import hashlib
 from datetime import date
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -123,7 +124,11 @@ async def project_reviews(
                 review=ReviewItem(
                     **anomaly.model_dump(),
                     key=key,
-                    state=decisions[key].state if key in decisions else "pending",
+                    state=(
+                        cast(ReviewState, decisions[key].state)
+                        if key in decisions
+                        else "pending"
+                    ),
                     note=decisions[key].note if key in decisions else "",
                 ),
                 evidence=evidence[request.evidence_offset : request.evidence_offset + 20],

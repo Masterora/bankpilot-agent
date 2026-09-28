@@ -29,7 +29,6 @@ export function BudgetsPage({
   focusTarget,
   onInspect,
   onDraftChange,
-  onSaved,
   externalRevision = 0,
 }: {
   copy: Messages
@@ -40,11 +39,10 @@ export function BudgetsPage({
   focusTarget: string
   onInspect: (entry: LedgerEntry) => void
   onDraftChange: (dirty: boolean) => void
-  onSaved: () => void
   externalRevision?: number
 }) {
   const english = locale === 'en-US'
-  const state = usePlanningMonth(api.budgets, month, english, active, onSaved, externalRevision)
+  const state = usePlanningMonth(api.budgets, month, english, active, externalRevision)
   usePlanningFocus(focusTarget, state.loading, active)
   const [editor, setEditor] = useState<BudgetEditorStart | null>(null)
   const [editorVisible, setEditorVisible] = useState(false)

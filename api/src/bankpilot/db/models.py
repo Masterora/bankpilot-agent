@@ -3,6 +3,7 @@
 主要内容：用户会话、账户卡片、导入流水、分类与关系、核查结论、运行审计、月报任务、预算周期项及助手会话和提案。
 关键边界：金额、归属、幂等与版本约束由数据库结构表达；模型定义不负责事务编排或调用外部服务。
 """
+
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -402,6 +403,78 @@ class RecurringSkipRecord(Base):
         ForeignKey("recurring_plans.id", ondelete="CASCADE"), primary_key=True
     )
     due_date: Mapped[date] = mapped_column(Date, primary_key=True)
+
+
+class AttentionStateRecord(Base):
+    """Persisted user handling state separated from deterministic business facts."""
+
+    __tablename__ = "attention_states"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    source_type: Mapped[str] = mapped_column(String(16))
+    source_id: Mapped[UUID] = mapped_column(Uuid)
+    source_date: Mapped[date] = mapped_column(Date)
+    attention_type: Mapped[str] = mapped_column(String(40))
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    fact_signature: Mapped[str] = mapped_column(String(64))
+    fact_status: Mapped[str] = mapped_column(String(16), default="active")
+    unknown_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    unknown_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_tracking_gap: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    state: Mapped[str] = mapped_column(String(16), default="unread")
+    state_attention_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "source_type", "source_id", "source_date", name="uq_attention_source"
+        ),
+        Index("ix_attention_user_date", "user_id", "source_date"),
+        CheckConstraint("generation > 0 AND revision > 0", name="ck_attention_versions"),
+        CheckConstraint("source_type IN ('budget', 'recurring')", name="ck_attention_source_type"),
+        CheckConstraint(
+            "fact_status IN ('active', 'inactive', 'unknown')", name="ck_attention_fact_status"
+        ),
+        CheckConstraint("state IN ('unread', 'read', 'snoozed')", name="ck_attention_state"),
+        CheckConstraint(
+            "(state = 'snoozed') = (snoozed_until IS NOT NULL)",
+            name="ck_attention_snoozed_until",
+        ),
+        CheckConstraint(
+            "(fact_status = 'unknown') = "
+            "(unknown_reason IS NOT NULL AND unknown_since IS NOT NULL)",
+            name="ck_attention_unknown",
+        ),
+    )
+
+
+class AttentionPreferenceRecord(Base):
+    __tablename__ = "attention_preferences"
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    attention_type: Mapped[str] = mapped_column(String(40), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(default=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    __table_args__ = (CheckConstraint("version > 0", name="ck_attention_preference_version"),)
+
+
+class AttentionOperationRecord(Base):
+    __tablename__ = "attention_operations"
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    operation_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    request_digest: Mapped[str] = mapped_column(String(64))
+    receipt: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AssistantActionRecord(Base):

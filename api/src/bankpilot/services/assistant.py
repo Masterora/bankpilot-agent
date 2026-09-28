@@ -30,7 +30,8 @@ from bankpilot.domain.spending import SpendingScope
 from bankpilot.domain.transaction_search import SearchFilters, SearchRequest, normalize_text
 from bankpilot.errors import PlanningError
 from bankpilot.ports import AssistantGateway
-from bankpilot.services import budgets, recurring
+from bankpilot.services import budgets
+from bankpilot.services.planning_reads import budget_workspace, recurring_workspace
 from bankpilot.services.spending import compare_spending, read_spending
 from bankpilot.services.transaction_search import search
 
@@ -254,7 +255,7 @@ async def chat(
                 }
             if decision.kind == "budgets":
                 calculation = await read_spending(session, uid, month)
-                workspace = await budgets.budget_workspace(
+                workspace = await budget_workspace(
                     session, uid, month, calculation=calculation
                 )
                 data = workspace.model_dump(mode="json", exclude={"evidence"})
@@ -274,7 +275,7 @@ async def chat(
                 calculation = await read_spending(session, uid, month)
                 data = calculation.summary(decision.arguments).model_dump(mode="json")
             elif decision.kind == "recurring":
-                data = (await recurring.recurring_workspace(session, uid, month)).model_dump(
+                data = (await recurring_workspace(session, uid, month)).model_dump(
                     mode="json", exclude={"candidates"}
                 )
             else:
@@ -314,7 +315,7 @@ async def resolve_action(
         await budgets.save_budget(session, uid, payload)
         await session.flush()
         # 回执与写入同事务冻结；网络重试返回同一回执，不再次写预算。
-        workspace = await budgets.budget_workspace(session, uid, payload.month)
+        workspace = await budget_workspace(session, uid, payload.month)
         saved = next(
             item
             for item in workspace.items

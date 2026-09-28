@@ -4,7 +4,7 @@
  * 关键边界：只协调跨页面状态；异步结果按请求身份隔离，账务计算和权限校验属于服务端。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { ApiError, api } from '../api'
@@ -14,6 +14,7 @@ import { AgentPage } from '../features/agent/AgentPage'
 import { useAgentRun } from '../features/agent/useAgentRun'
 import { AuditPage } from '../features/audit/AuditPage'
 import { clearPendingImport } from '../features/imports/importRecovery'
+import { clearPendingAttention } from '../features/overview/attentionRecovery'
 import { ImportPage } from '../features/imports/ImportPage'
 import { OverviewPage } from '../features/overview/OverviewPage'
 import { RelationsPage } from '../features/relations/RelationsPage'
@@ -39,16 +40,19 @@ interface WorkspaceProps extends LanguageProps {
 export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: WorkspaceProps) {
   const [drafts, setDrafts] = useState({ budgets: false, recurring: false })
   const { activePage, setActivePage, overviewPeriod, setOverviewPeriod, reviewPeriod, setReviewPeriod, budgetMonth, recurringMonth, setPlanningMonth, navigateTo } = useWorkspaceRoute(drafts)
-  const [ledgerRevision, setLedgerRevision] = useState(0)
+  const [revisions, setRevisions] = useState({ ledger: 0, planning: 0 })
+  const { ledger: ledgerRevision, planning: planningRevision } = revisions
   useEffect(() => {
-    const changed = () => { setLedgerRevision(value => value + 1); setPlanningRevision(value => value + 1) }
+    const changed = () => setRevisions(value => ({ ledger: value.ledger + 1, planning: value.planning + 1 }))
+    const planningChanged = () => setRevisions(value => ({ ...value, planning: value.planning + 1 }))
     window.addEventListener('bankpilot:ledger-changed', changed)
-    return () => window.removeEventListener('bankpilot:ledger-changed', changed)
+    window.addEventListener('bankpilot:planning-changed', planningChanged)
+    return () => {
+      window.removeEventListener('bankpilot:ledger-changed', changed)
+      window.removeEventListener('bankpilot:planning-changed', planningChanged)
+    }
   }, [])
   const [assistantOpen, setAssistantOpen] = useState(false)
-  const [assistantRevision, setAssistantRevision] = useState(0)
-  const [planningRevision, setPlanningRevision] = useState(0)
-  const planningSaved = useCallback(() => setPlanningRevision((value) => value + 1), [])
   const [visited, setVisited] = useState<ProductPage[]>([activePage, 'import'])
   const [recurringSeed, setRecurringSeed] = useState<RecurringInput | null>(null)
   const [relationSeed, setRelationSeed] = useState<string | undefined>()
@@ -138,6 +142,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     window.history.replaceState(null, '', window.location.pathname)
     try { sessionStorage.removeItem(`assistant:${user.id}`); sessionStorage.removeItem(`assistant-current:${user.id}`) } catch { /* storage unavailable */ }
     clearPendingImport()
+    try { clearPendingAttention() } catch { /* User ownership is checked on the next read. */ }
     window.history.replaceState(null, '', window.location.pathname + window.location.search)
     onLogout(switchAccount)
   }
@@ -168,6 +173,8 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   const pages: Record<ProductPage, ReactNode> = {
     overview: (
       <OverviewPage
+        userId={user.id}
+        ledgerRevision={ledgerRevision}
         copy={copy}
         english={locale === 'en-US'}
         onNavigate={(page) => { if (page === 'review') inspectLedger({ period: overviewPeriod }); else if (page === 'relations') { setRelationSeed(undefined); navigateTo(page, undefined, overviewPeriod) } else navigate(page) }}
@@ -232,8 +239,8 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     settings: <SettingsPage copy={copy} locale={locale} onLocaleChange={onLocaleChange} user={user} onLogout={logout} onSwitchAccount={switchAccount} busy={sessionBusy} />,
     reports: <ReportsPage copy={copy} locale={locale} initialMonth={reviewPeriod.start} active={activePage === 'reports'} />,
     audit: <AuditPage copy={copy} run={agent.run} locale={locale} />,
-    recurring: <RecurringPage onSaved={planningSaved} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} />,
-    budgets: <BudgetsPage externalRevision={assistantRevision} onSaved={planningSaved} copy={copy} locale={locale} month={budgetMonth} onMonthChange={setPlanningMonth} key={budgetMonth} active={activePage === 'budgets'} focusTarget={focusTarget} onInspect={inspectLedger} onDraftChange={(dirty) => setDrafts((current) => current.budgets === dirty ? current : { ...current, budgets: dirty })} />,
+    recurring: <RecurringPage externalRevision={planningRevision} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} />,
+    budgets: <BudgetsPage externalRevision={planningRevision} copy={copy} locale={locale} month={budgetMonth} onMonthChange={setPlanningMonth} key={budgetMonth} active={activePage === 'budgets'} focusTarget={focusTarget} onInspect={inspectLedger} onDraftChange={(dirty) => setDrafts((current) => current.budgets === dirty ? current : { ...current, budgets: dirty })} />,
   }
 
   return (
@@ -280,7 +287,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
       <AssistantPanel onSearchLedger={filters => { setAssistantOpen(false); inspectLedger({ filters, period: { start: filters.start_date, end: filters.end_date } }) }} userId={user.id} key={user.id} ledgerRevision={ledgerRevision} onInspect={target => {
         setAssistantOpen(false)
         inspectLedger({ transactionId: target.id, version: target.version, period: { start: target.booking_date, end: target.booking_date } })
-      }} open={assistantOpen} onClose={() => setAssistantOpen(false)} month={activePage === 'budgets' ? budgetMonth : activePage === 'recurring' ? recurringMonth : activePage === 'overview' ? overviewPeriod.start : reviewPeriod.start} copy={copy} locale={locale} onSaved={() => { planningSaved(); setAssistantRevision(value => value + 1) }} />
+      }} open={assistantOpen} onClose={() => setAssistantOpen(false)} month={activePage === 'budgets' ? budgetMonth : activePage === 'recurring' ? recurringMonth : activePage === 'overview' ? overviewPeriod.start : reviewPeriod.start} copy={copy} locale={locale} />
       <main className="workspace-shell" id="workspace-main" tabIndex={-1}>
         <header className="workspace-topbar"><button className="assistant-trigger" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(value => !value)}><NavigationIcon kind="agent" />{locale === 'en-US' ? 'Ledger assistant' : '账本助手'}</button></header>
         <IconButton icon="menu" ref={menuRef} className="menu-toggle" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} label={locale === 'en-US' ? 'Open navigation' : '打开导航'} />

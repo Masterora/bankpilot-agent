@@ -3,6 +3,7 @@
 主要内容：预算读取、保存、复制、删除，以及周期配置、未来修订、逐期匹配和未发生确认。
 关键边界：读取使用一致快照，写入经过服务端校验后显式提交，不触发真实扣款。
 """
+
 from datetime import date
 from uuid import UUID
 
@@ -36,6 +37,7 @@ from bankpilot.domain.planning import (
 )
 from bankpilot.services import budgets as budget_service
 from bankpilot.services import recurring as recurring_service
+from bankpilot.services.planning_reads import budget_workspace, recurring_workspace
 
 router = APIRouter(prefix="/api/v1", tags=["planning"])
 
@@ -63,7 +65,7 @@ async def budgets(
     user: UserRecord = Depends(get_snapshot_user),
     session: AsyncSession = Depends(get_snapshot_session),
 ) -> BudgetWorkspace:
-    return await budget_service.budget_workspace(session, user.id, checked_month(month))
+    return await budget_workspace(session, user.id, checked_month(month))
 
 
 @router.post("/budgets", status_code=204)
@@ -112,7 +114,7 @@ async def recurring(
     user: UserRecord = Depends(get_snapshot_user),
     session: AsyncSession = Depends(get_snapshot_session),
 ) -> RecurringWorkspace:
-    return await recurring_service.recurring_workspace(session, user.id, checked_month(month))
+    return await recurring_workspace(session, user.id, checked_month(month))
 
 
 @router.get("/recurring/candidates", response_model=list[RecurringTransaction])

@@ -11,7 +11,6 @@ export function usePlanningMonth<T extends { month: string }>(
   selectedMonth: string,
   english: boolean,
   visible = true,
-  onSaved?: () => void,
   externalRevision = 0,
 ) {
   const month = selectedMonth.slice(0, 7)
@@ -54,7 +53,7 @@ export function usePlanningMonth<T extends { month: string }>(
   useEffect(() => {
     active.current = true
     const requestGeneration = generation
-    if (visible) void refresh()
+    if (visible && !writing.current) void refresh()
     return () => {
       active.current = false
       requestGeneration.current++
@@ -73,7 +72,6 @@ export function usePlanningMonth<T extends { month: string }>(
     setNotice('')
     try {
       const result = await action()
-      onSaved?.()
       if (!active.current) return false
       setNotice(
         typeof success === 'function'

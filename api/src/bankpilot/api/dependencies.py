@@ -12,6 +12,7 @@
 
 from collections.abc import AsyncIterator
 from typing import cast
+from uuid import UUID
 
 from fastapi import Cookie, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,3 +68,15 @@ async def get_snapshot_user(
 ) -> UserRecord:
     """复用认证规则与快照连接，避免每个只读请求同时占用两条连接。"""
     return await get_current_user(settings, session, session_token)
+
+
+async def get_detached_user_id(
+    request: Request,
+    settings: Settings = Depends(get_app_settings),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> UUID:
+    """Finish authentication before readers open independent snapshots."""
+    async with request.app.state.session_factory() as session:
+        user = await get_current_user(settings, session, session_token)
+        identity = user.id
+    return identity
