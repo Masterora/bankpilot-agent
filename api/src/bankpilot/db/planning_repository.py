@@ -3,6 +3,7 @@
 主要内容：预算、周期计划、配置修订、逐期匹配与未发生记录，以及账本证据读取。
 关键边界：按用户约束资源，不执行业务校验或隐式提交。
 """
+
 from datetime import date
 from uuid import UUID
 
@@ -136,19 +137,20 @@ class PlanningRepository:
         self,
         user_id: UUID,
         ids: set[UUID],
+        *,
+        limit: int | None = None,
     ) -> list[TransactionRelationRecord]:
-        return list(
-            await self.session.scalars(
-                select(TransactionRelationRecord).where(
-                    TransactionRelationRecord.user_id == user_id,
-                    TransactionRelationRecord.state == "confirmed",
-                    or_(
-                        TransactionRelationRecord.first_id.in_(ids),
-                        TransactionRelationRecord.second_id.in_(ids),
-                    ),
-                )
-            )
+        statement = select(TransactionRelationRecord).where(
+            TransactionRelationRecord.user_id == user_id,
+            TransactionRelationRecord.state == "confirmed",
+            or_(
+                TransactionRelationRecord.first_id.in_(ids),
+                TransactionRelationRecord.second_id.in_(ids),
+            ),
         )
+        if limit is not None:
+            statement = statement.limit(limit)
+        return list(await self.session.scalars(statement))
 
     async def linked_ids(self, user_id: UUID, ids: set[UUID]) -> set[UUID]:
         return set(
@@ -160,6 +162,18 @@ class PlanningRepository:
                 )
                 .where(
                     RecurringRecord.user_id == user_id, RecurringMatchRecord.transaction_id.in_(ids)
+                )
+            )
+        )
+
+    async def discovery_matches(self, user_id: UUID, ids: set[UUID]) -> list[RecurringMatchRecord]:
+        return list(
+            await self.session.scalars(
+                select(RecurringMatchRecord)
+                .join(RecurringRecord, RecurringRecord.id == RecurringMatchRecord.plan_id)
+                .where(
+                    RecurringRecord.user_id == user_id,
+                    RecurringMatchRecord.transaction_id.in_(ids),
                 )
             )
         )

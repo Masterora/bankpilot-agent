@@ -4,20 +4,23 @@
 关键边界：读取使用一致快照，写入经过服务端校验后显式提交，不触发真实扣款。
 """
 
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
-from pydantic import Field
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.api.dependencies import (
+    get_app_settings,
     get_current_user,
     get_db_session,
     get_snapshot_session,
     get_snapshot_user,
 )
 from bankpilot.api.errors import ApiProblem
+from bankpilot.config import Settings
 from bankpilot.db.models import UserRecord
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.planning import (
@@ -35,8 +38,10 @@ from bankpilot.domain.planning import (
     RecurringTransaction,
     RecurringWorkspace,
 )
+from bankpilot.domain.recurring_discovery import DiscoveryPage, month_index, month_start
 from bankpilot.services import budgets as budget_service
 from bankpilot.services import recurring as recurring_service
+from bankpilot.services import recurring_discovery as discovery_service
 from bankpilot.services.planning_reads import budget_workspace, recurring_workspace
 
 router = APIRouter(prefix="/api/v1", tags=["planning"])
@@ -57,6 +62,10 @@ class RemoveBudgetInput(MonthInput):
     category: TransactionCategory
     currency: Currency
     expected_version: int = Field(ge=1)
+
+
+class DiscoveryAvailability(BaseModel):
+    enabled: bool
 
 
 @router.get("/budgets", response_model=BudgetWorkspace)
@@ -124,6 +133,39 @@ async def recurring_candidates(
     session: AsyncSession = Depends(get_snapshot_session),
 ) -> list[RecurringTransaction]:
     return await recurring_service.recurring_candidates(session, user.id, checked_month(month))
+
+
+@router.get("/recurring/discovery", response_model=DiscoveryPage)
+async def recurring_discovery(
+    through: date | None = None,
+    offset: int = 0,
+    discovery_snapshot_token: str | None = None,
+    settings: Settings = Depends(get_app_settings),
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
+) -> DiscoveryPage:
+    if not settings.recurring_discovery_enabled:
+        raise ApiProblem(404, "discovery_unavailable")
+    current = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    latest = month_start(month_index(current) - 1)
+    target = through or latest
+    if target.day != 1 or not 1900 <= target.year <= 9998 or target > latest:
+        raise ApiProblem(422, "invalid_month", "A completed month is required")
+    if offset < 0 or offset % 20:
+        raise ApiProblem(422, "invalid_offset", "Offset must be a nonnegative page boundary")
+    if offset and discovery_snapshot_token is None:
+        raise ApiProblem(422, "discovery_snapshot_required")
+    return await discovery_service.discover(
+        session, user.id, user.ledger_revision, target, offset, discovery_snapshot_token
+    )
+
+
+@router.get("/recurring/discovery/availability", response_model=DiscoveryAvailability)
+async def recurring_discovery_availability(
+    settings: Settings = Depends(get_app_settings),
+    user: UserRecord = Depends(get_current_user),
+) -> DiscoveryAvailability:
+    return DiscoveryAvailability(enabled=settings.recurring_discovery_enabled)
 
 
 @router.post("/recurring", status_code=204)

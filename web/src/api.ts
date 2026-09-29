@@ -31,7 +31,7 @@ import type { Conversation } from './features/assistant/types'
 
 import type { AssistantAction, TurnInput, SavedTurn, ConversationPage, ConversationDetail, SpendingPage, SpendingScope, SpendingSummary, ComparisonEvidencePage, SpendingCategoryComparison } from './features/assistant/types'
 
-import type { BudgetInput, BudgetWorkspace, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
+import type { BudgetInput, BudgetWorkspace, RecurringDiscoveryPage, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
 import type { AttentionPreference, AttentionResponse, AttentionStateRequest, AttentionType } from './features/overview/attention'
 
 
@@ -111,6 +111,12 @@ export const api = {
   copyBudgets: (month: string) => request<{ copied: number; source_count: number }>('/api/v1/budgets/copy', { method: 'POST', body: JSON.stringify({ month: `${month}-01` }) }),
   recurring: (month: string) => request<RecurringWorkspace>(`/api/v1/recurring?month=${month}-01`),
   recurringCandidates: (month: string) => request<RecurringTransaction[]>(`/api/v1/recurring/candidates?month=${month}-01`),
+  recurringDiscoveryAvailability: () => request<{ enabled: boolean }>('/api/v1/recurring/discovery/availability'),
+  recurringDiscovery: (month: string, offset = 0, token?: string) => {
+    const params = new URLSearchParams({ through: `${month}-01`, offset: String(offset) })
+    if (token) params.set('discovery_snapshot_token', token)
+    return request<RecurringDiscoveryPage>(`/api/v1/recurring/discovery?${params}`)
+  },
   createRecurring: (payload: RecurringInput) => request<void>('/api/v1/recurring', { method: 'POST', body: JSON.stringify(payload) }),
   editRecurring: (payload: RecurringEditInput) => request<void>(`/api/v1/recurring/${payload.id}/edit`, { method: 'POST', body: JSON.stringify(payload) }),
   recurringDraft: (id: string) => request<RecurringInput>(`/api/v1/recurring/draft?transaction_id=${id}`),

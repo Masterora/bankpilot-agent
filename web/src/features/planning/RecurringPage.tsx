@@ -6,6 +6,7 @@
 import { RecurringEditor } from './RecurringEditor'
 import type { RecurringEditorStart } from './RecurringEditor'
 import { RecurringDetails } from './RecurringDetails'
+import { RecurringDiscovery } from './RecurringDiscovery'
 
 import { Fragment, useEffect, useState } from 'react'
 import { useUnsavedChanges } from '../../shared/useUnsavedChanges'
@@ -13,6 +14,7 @@ import { api } from '../../api'
 import { formatMoney } from '../../format'
 import type { Locale, Messages } from '../../i18n'
 import type { Account } from '../../types'
+import type { LedgerEntry } from '../ledger/LedgerPage'
 import { newIdempotencyKey } from '../../shared/operationKey'
 import { EmptyContent, IconButton, LoadingIndicator, PageHeader } from '../../shared/ui'
 import { currentPeriod } from '../../shared/period'
@@ -32,6 +34,7 @@ export function RecurringPage({
   onSeedConsumed,
   onDraftChange,
   externalRevision,
+  onInspect,
 }: {
   copy: Messages
   locale: Locale
@@ -43,6 +46,7 @@ export function RecurringPage({
   onSeedConsumed: () => void
   onDraftChange: (dirty: boolean) => void
   externalRevision: number
+  onInspect: (entry: LedgerEntry) => void
 }) {
   const english = locale === 'en-US'
   const state = usePlanningMonth(api.recurring, month, english, active, externalRevision)
@@ -54,8 +58,22 @@ export function RecurringPage({
   const draft = editor?.draft ?? null
   const [editorVisible, setEditorVisible] = useState(true)
   const [selected, setSelected] = useState('')
+  const [discoveryOpen, setDiscoveryOpen] = useState(false)
+  const [discoveryEnabled, setDiscoveryEnabled] = useState(false)
   const [filter, setFilter] = useState('all')
   usePlanningFocus(focusTarget, state.loading, active)
+  useEffect(() => {
+    if (!active) {
+      setDiscoveryOpen(false)
+      return
+    }
+    let current = true
+    setDiscoveryEnabled(false)
+    api.recurringDiscoveryAvailability()
+      .then(({ enabled }) => { if (current) setDiscoveryEnabled(enabled) })
+      .catch(() => { if (current) setDiscoveryEnabled(false) })
+    return () => { current = false }
+  }, [active])
   useEffect(() => {
     if (seed && !draft) {
       setEditorVisible(true)
@@ -221,6 +239,7 @@ export function RecurringPage({
         >
           {t('添加固定支出', 'Add recurring charge')}
         </button>
+        {discoveryEnabled && <button onClick={() => setDiscoveryOpen(true)}>{t('发现可能的月付项目', 'Find possible monthly charges')}</button>}
         {draft && (
           <button onClick={() => setEditorVisible(true)}>
             {t('继续编辑草稿', 'Continue draft')}
@@ -236,6 +255,7 @@ export function RecurringPage({
           }}
         />
       </div>
+      {discoveryEnabled && <RecurringDiscovery open={discoveryOpen} locale={locale} onClose={() => setDiscoveryOpen(false)} onInspect={onInspect} />}
       {accountsLoading && <LoadingIndicator label={t('正在读取账户', 'Loading accounts')} />}
       {accountError && (
         <p className="error" role="alert">

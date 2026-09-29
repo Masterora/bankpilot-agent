@@ -52,6 +52,8 @@ uv run alembic check
 
 `WEB_BIND_IP` 使用远程 Tailscale 地址。私网 HTTP 配置 `BANKPILOT_SESSION_COOKIE_SECURE=false`，HTTPS 配置为 `true`。模型端启用 `require_parameters=true` 与 `data_collection=deny`。
 
+`BANKPILOT_RECURRING_DISCOVERY_ENABLED` 默认 `false`；服务端同时控制发现接口与页面入口。仅在 R6 验收环境明确设为 `true` 做受控检查，真实样本与完整验收达到 [R6 设计](R6_DESIGN.md)门槛前不要在一般用户环境开启。修改后需重启 API；Web 从服务端读取可用状态，无需单独构建开关。
+
 ## 验证与发布
 
 ```bash

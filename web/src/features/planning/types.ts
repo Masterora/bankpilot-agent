@@ -107,3 +107,56 @@ export interface RecurringWorkspace {
   items: RecurringItem[]
   candidates: RecurringTransaction[]
 }
+
+export interface RecurringDiscoveryPage {
+  through: string
+  window_start: string
+  ledger_revision: number
+  rule_version: string
+  discovery_snapshot_token: string
+  total: number
+  offset: number
+  has_more: boolean
+  transaction_count: number
+  excluded_counts: Record<string, number>
+  unidentified_refund_count: number
+  unidentified_refunds: {
+    transaction_id: string
+    booking_date: string
+    merchant: string
+    amount: string
+    account_name: string
+    currency: string
+    reason: 'confirmed_refund'
+  }[]
+  coverage: string
+  items: {
+    key: string
+    account_id: string
+    account_name: string
+    currency: string
+    normalized_merchant: string
+    status: 'candidate' | 'insufficient' | 'ambiguous' | 'existing'
+    reason: string
+    evidence_digest: string
+    observation_count: number
+    existing_plan_ids: string[]
+    observed_months: string[]
+    amount_min: string | null
+    amount_max: string | null
+    observations: {
+      transaction_id: string
+      booking_date: string
+      merchant: string
+      amount: string
+    }[]
+    excluded_refund_count: number
+    excluded_refunds: {
+      transaction_id: string
+      booking_date: string
+      merchant: string
+      amount: string
+      reason: 'confirmed_refund'
+    }[]
+  }[]
+}

@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     cors_origins: str = Field(
         default="http://localhost:5173", validation_alias="BANKPILOT_CORS_ORIGINS"
     )
+    recurring_discovery_enabled: bool = Field(
+        default=False, validation_alias="BANKPILOT_RECURRING_DISCOVERY_ENABLED"
+    )
 
     assistant_max_conversations: int = Field(default=100, ge=1, le=10000)
     assistant_max_turns: int = Field(default=200, ge=1, le=10000)
