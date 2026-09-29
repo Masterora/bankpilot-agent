@@ -239,7 +239,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     settings: <SettingsPage copy={copy} locale={locale} onLocaleChange={onLocaleChange} user={user} onLogout={logout} onSwitchAccount={switchAccount} busy={sessionBusy} />,
     reports: <ReportsPage copy={copy} locale={locale} initialMonth={reviewPeriod.start} active={activePage === 'reports'} />,
     audit: <AuditPage copy={copy} run={agent.run} locale={locale} />,
-    recurring: <RecurringPage externalRevision={planningRevision} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} onInspect={inspectLedger} />,
+    recurring: <RecurringPage userId={user.id} externalRevision={planningRevision} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} onInspect={inspectLedger} />,
     budgets: <BudgetsPage externalRevision={planningRevision} copy={copy} locale={locale} month={budgetMonth} onMonthChange={setPlanningMonth} key={budgetMonth} active={activePage === 'budgets'} focusTarget={focusTarget} onInspect={inspectLedger} onDraftChange={(dirty) => setDrafts((current) => current.budgets === dirty ? current : { ...current, budgets: dirty })} />,
   }
 

@@ -113,6 +113,7 @@ export interface RecurringDiscoveryPage {
   window_start: string
   ledger_revision: number
   rule_version: string
+  merchant_normalization_version: string
   discovery_snapshot_token: string
   total: number
   offset: number
@@ -139,6 +140,9 @@ export interface RecurringDiscoveryPage {
     status: 'candidate' | 'insufficient' | 'ambiguous' | 'existing'
     reason: string
     evidence_digest: string
+    decision_status: 'active' | 'ignored' | 'linked' | 'created'
+    decision_version: number
+    decision_plan_id: string | null
     observation_count: number
     existing_plan_ids: string[]
     observed_months: string[]
@@ -158,5 +162,36 @@ export interface RecurringDiscoveryPage {
       amount: string
       reason: 'confirmed_refund'
     }[]
+  }[]
+}
+
+export interface DiscoveryDecisionRequest {
+  operation_id: string
+  group_key: string
+  action: 'ignore' | 'restore' | 'link' | 'unlink'
+  expected_version: number
+  through?: string
+  evidence_digest?: string
+  discovery_snapshot_token?: string
+  target_plan_id?: string
+}
+
+export interface DiscoveryDecisionPage {
+  status: 'ignored' | 'linked'
+  total: number
+  offset: number
+  has_more: boolean
+  decision_snapshot_token: string
+  items: {
+    group_key: string
+    account_id: string
+    currency: string
+    normalized_merchant: string
+    merchant_normalization_version: string
+    status: 'ignored' | 'linked'
+    version: number
+    target_plan_id: string | null
+    evidence_status: 'not_checked'
+    needs_review: boolean
   }[]
 }

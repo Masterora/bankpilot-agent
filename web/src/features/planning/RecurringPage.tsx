@@ -24,6 +24,7 @@ import { usePlanningMonth } from './usePlanningMonth'
 import { planningError } from './errors'
 
 export function RecurringPage({
+  userId,
   copy,
   locale,
   month,
@@ -36,6 +37,7 @@ export function RecurringPage({
   externalRevision,
   onInspect,
 }: {
+  userId: string
   copy: Messages
   locale: Locale
   month: string
@@ -255,7 +257,7 @@ export function RecurringPage({
           }}
         />
       </div>
-      {discoveryEnabled && <RecurringDiscovery open={discoveryOpen} locale={locale} onClose={() => setDiscoveryOpen(false)} onInspect={onInspect} />}
+      {discoveryEnabled && <RecurringDiscovery userId={userId} plans={state.data?.items ?? []} open={discoveryOpen} locale={locale} onClose={() => setDiscoveryOpen(false)} onInspect={onInspect} />}
       {accountsLoading && <LoadingIndicator label={t('正在读取账户', 'Loading accounts')} />}
       {accountError && (
         <p className="error" role="alert">

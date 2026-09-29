@@ -31,7 +31,7 @@ import type { Conversation } from './features/assistant/types'
 
 import type { AssistantAction, TurnInput, SavedTurn, ConversationPage, ConversationDetail, SpendingPage, SpendingScope, SpendingSummary, ComparisonEvidencePage, SpendingCategoryComparison } from './features/assistant/types'
 
-import type { BudgetInput, BudgetWorkspace, RecurringDiscoveryPage, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
+import type { BudgetInput, BudgetWorkspace, DiscoveryDecisionPage, DiscoveryDecisionRequest, RecurringDiscoveryPage, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
 import type { AttentionPreference, AttentionResponse, AttentionStateRequest, AttentionType } from './features/overview/attention'
 
 
@@ -117,6 +117,13 @@ export const api = {
     if (token) params.set('discovery_snapshot_token', token)
     return request<RecurringDiscoveryPage>(`/api/v1/recurring/discovery?${params}`)
   },
+  recurringDiscoveryDecisions: (status: 'ignored' | 'linked', offset = 0, token?: string) => {
+    const params = new URLSearchParams({ status, offset: String(offset) })
+    if (token) params.set('decision_snapshot_token', token)
+    return request<DiscoveryDecisionPage>(`/api/v1/recurring/discovery/decisions?${params}`)
+  },
+  recurringDiscoveryEvidence: (key: string, month: string) => request<{ evidence_status: 'present' | 'missing' }>(`/api/v1/recurring/discovery/decisions/${key}/evidence?through=${month}-01`),
+  recurringDiscoveryDecision: (payload: DiscoveryDecisionRequest) => request<{ operation_id: string; version: number; status: string }>('/api/v1/recurring/discovery/decisions', { method: 'POST', body: JSON.stringify(payload) }),
   createRecurring: (payload: RecurringInput) => request<void>('/api/v1/recurring', { method: 'POST', body: JSON.stringify(payload) }),
   editRecurring: (payload: RecurringEditInput) => request<void>(`/api/v1/recurring/${payload.id}/edit`, { method: 'POST', body: JSON.stringify(payload) }),
   recurringDraft: (id: string) => request<RecurringInput>(`/api/v1/recurring/draft?transaction_id=${id}`),

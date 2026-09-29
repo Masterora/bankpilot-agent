@@ -38,7 +38,14 @@ from bankpilot.domain.planning import (
     RecurringTransaction,
     RecurringWorkspace,
 )
-from bankpilot.domain.recurring_discovery import DiscoveryPage, month_index, month_start
+from bankpilot.domain.recurring_discovery import (
+    DiscoveryDecisionInput,
+    DiscoveryDecisionPage,
+    DiscoveryDecisionReceipt,
+    DiscoveryPage,
+    month_index,
+    month_start,
+)
 from bankpilot.services import budgets as budget_service
 from bankpilot.services import recurring as recurring_service
 from bankpilot.services import recurring_discovery as discovery_service
@@ -66,6 +73,24 @@ class RemoveBudgetInput(MonthInput):
 
 class DiscoveryAvailability(BaseModel):
     enabled: bool
+
+
+class DiscoveryEvidenceStatus(BaseModel):
+    evidence_status: str
+
+
+def discovery_through(value: date | None) -> date:
+    current = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    latest = month_start(month_index(current) - 1)
+    target = value or latest
+    if target.day != 1 or not 1900 <= target.year <= 9998 or target > latest:
+        raise ApiProblem(422, "invalid_month", "A completed month is required")
+    return target
+
+
+def discovery_enabled(settings: Settings) -> None:
+    if not settings.recurring_discovery_enabled:
+        raise ApiProblem(404, "discovery_unavailable")
 
 
 @router.get("/budgets", response_model=BudgetWorkspace)
@@ -144,13 +169,8 @@ async def recurring_discovery(
     user: UserRecord = Depends(get_snapshot_user),
     session: AsyncSession = Depends(get_snapshot_session),
 ) -> DiscoveryPage:
-    if not settings.recurring_discovery_enabled:
-        raise ApiProblem(404, "discovery_unavailable")
-    current = datetime.now(ZoneInfo("Asia/Shanghai")).date()
-    latest = month_start(month_index(current) - 1)
-    target = through or latest
-    if target.day != 1 or not 1900 <= target.year <= 9998 or target > latest:
-        raise ApiProblem(422, "invalid_month", "A completed month is required")
+    discovery_enabled(settings)
+    target = discovery_through(through)
     if offset < 0 or offset % 20:
         raise ApiProblem(422, "invalid_offset", "Offset must be a nonnegative page boundary")
     if offset and discovery_snapshot_token is None:
@@ -158,6 +178,57 @@ async def recurring_discovery(
     return await discovery_service.discover(
         session, user.id, user.ledger_revision, target, offset, discovery_snapshot_token
     )
+
+
+@router.get("/recurring/discovery/decisions", response_model=DiscoveryDecisionPage)
+async def recurring_discovery_decisions(
+    status: str,
+    offset: int = 0,
+    decision_snapshot_token: str | None = None,
+    settings: Settings = Depends(get_app_settings),
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
+) -> DiscoveryDecisionPage:
+    discovery_enabled(settings)
+    if status not in ("ignored", "linked") or offset < 0 or offset % 20:
+        raise ApiProblem(422, "discovery_decisions_invalid")
+    if offset and decision_snapshot_token is None:
+        raise ApiProblem(422, "discovery_snapshot_required")
+    return await discovery_service.saved_decisions(
+        session, user.id, status, offset, decision_snapshot_token
+    )
+
+
+@router.get(
+    "/recurring/discovery/decisions/{group_key}/evidence", response_model=DiscoveryEvidenceStatus
+)
+async def recurring_discovery_decision_evidence(
+    group_key: str,
+    through: date | None = None,
+    settings: Settings = Depends(get_app_settings),
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
+) -> DiscoveryEvidenceStatus:
+    discovery_enabled(settings)
+    status = await discovery_service.decision_evidence(
+        session, user.id, user.ledger_revision, group_key, discovery_through(through)
+    )
+    return DiscoveryEvidenceStatus(evidence_status=status)
+
+
+@router.post("/recurring/discovery/decisions", response_model=DiscoveryDecisionReceipt)
+async def recurring_discovery_decision(
+    payload: DiscoveryDecisionInput,
+    settings: Settings = Depends(get_app_settings),
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> DiscoveryDecisionReceipt:
+    discovery_enabled(settings)
+    if payload.action in ("ignore", "link"):
+        discovery_through(payload.through)
+    receipt = await discovery_service.change_decision(session, user.id, payload)
+    await session.commit()
+    return receipt
 
 
 @router.get("/recurring/discovery/availability", response_model=DiscoveryAvailability)

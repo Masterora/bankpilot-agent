@@ -13,9 +13,10 @@ from statistics import median
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 RULE_VERSION = "recurring-discovery-v1"
+MERCHANT_NORMALIZATION_VERSION = "merchant-normalization-v1"
 GENERIC_MERCHANTS = frozenset({"微信支付", "支付宝", "wechat pay", "alipay"})
 
 
@@ -76,6 +77,9 @@ class DiscoveryGroup(BaseModel):
     observed_months: list[date]
     amount_min: Decimal | None
     amount_max: Decimal | None
+    decision_status: Literal["active", "ignored", "linked", "created"] = "active"
+    decision_version: int = 0
+    decision_plan_id: UUID | None = None
 
 
 class DiscoveryPage(BaseModel):
@@ -83,6 +87,7 @@ class DiscoveryPage(BaseModel):
     window_start: date
     ledger_revision: int
     rule_version: str
+    merchant_normalization_version: str
     discovery_snapshot_token: str
     total: int
     offset: int
@@ -93,6 +98,52 @@ class DiscoveryPage(BaseModel):
     unidentified_refunds: list[UnidentifiedRefundObservation]
     coverage: str
     items: list[DiscoveryGroup]
+
+
+class DiscoveryDecisionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: UUID
+    group_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    action: Literal["ignore", "restore", "link", "unlink"]
+    expected_version: int = Field(ge=0)
+    through: date | None = None
+    evidence_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    discovery_snapshot_token: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    target_plan_id: UUID | None = None
+
+
+class DiscoveryDecisionReceipt(BaseModel):
+    operation_id: UUID
+    group_key: str
+    status: Literal["active", "ignored", "linked", "created"]
+    version: int
+    target_plan_id: UUID | None
+    account_id: UUID
+    currency: str
+    normalized_merchant: str
+
+
+class SavedDiscoveryDecision(BaseModel):
+    group_key: str
+    account_id: UUID
+    currency: str
+    normalized_merchant: str
+    merchant_normalization_version: str
+    status: Literal["ignored", "linked"]
+    version: int
+    target_plan_id: UUID | None
+    evidence_status: Literal["not_checked"] = "not_checked"
+    needs_review: bool = False
+
+
+class DiscoveryDecisionPage(BaseModel):
+    status: Literal["ignored", "linked"]
+    total: int
+    offset: int
+    has_more: bool
+    decision_snapshot_token: str
+    items: list[SavedDiscoveryDecision]
 
 
 def classify(rows: Sequence[ChargeEvidence], through: date) -> tuple[str, str]:

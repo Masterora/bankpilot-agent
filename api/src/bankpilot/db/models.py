@@ -405,6 +405,49 @@ class RecurringSkipRecord(Base):
     due_date: Mapped[date] = mapped_column(Date, primary_key=True)
 
 
+class RecurringDiscoveryDecisionRecord(Base):
+    __tablename__ = "recurring_discovery_decisions"
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    group_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[UUID] = mapped_column(Uuid)
+    currency: Mapped[str] = mapped_column(String(3))
+    normalized_merchant: Mapped[str] = mapped_column(Text)
+    merchant_normalization_version: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))
+    target_plan_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    version: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'ignored', 'linked', 'created')",
+            name="ck_discovery_decision_status",
+        ),
+        CheckConstraint("version > 0", name="ck_discovery_decision_version"),
+        CheckConstraint(
+            "(status IN ('linked', 'created')) = (target_plan_id IS NOT NULL)",
+            name="ck_discovery_decision_target",
+        ),
+        Index("ix_discovery_decisions_user_status", "user_id", "status", "updated_at"),
+    )
+
+
+class RecurringDiscoveryOperationRecord(Base):
+    __tablename__ = "recurring_discovery_operations"
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    operation_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    request_digest: Mapped[str] = mapped_column(String(64))
+    receipt: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class AttentionStateRecord(Base):
     """Persisted user handling state separated from deterministic business facts."""
 
