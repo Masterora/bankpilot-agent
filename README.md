@@ -34,6 +34,14 @@ React 与 TypeScript 构建界面，FastAPI 承载业务，PostgreSQL 保存账�
 
 [交付与验证](docs/CURRENT_STATE.md) · [架构设计](docs/ARCHITECTURE.md)
 
-[最终交互原型](docs/final-product.html)保留为合成数据演示，不连接后端或模型，刷新后重置。实际能力与验收范围以[交付与验证](docs/CURRENT_STATE.md)为准。
+[模型验证与边界](docs/MODEL_VALIDATION.md)。界面以当前 Web 实现为准。
+
+## 需求与交付材料
+
+当前需求：[待办状态与提醒偏好](docs/ATTENTION_STATE_DESIGN.md)。现行业务契约统一见[架构](docs/ARCHITECTURE.md)。
+
+当前最终记录：[R5 交付与验证](docs/R5_ACCEPTANCE.md)，保留实际结果与未验收边界。
+
+[交互原型](docs/final-product.html)及配套资源保留，使用合成数据、不连接后端或模型；尚未覆盖当前待办状态功能，不作为最新版本验收证明。
 
 尚未确定开源许可。

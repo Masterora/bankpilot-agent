@@ -38,7 +38,7 @@ make web
 
 ## 数据与配置
 
-`make api` 会执行 `alembic upgrade head`。数据库结构变化先在隔离 PostgreSQL 验证升降级，再迁移业务库；当前代码结构版本是 `20260921_0013`（由 `api/src/bankpilot/db/base.py` 的 `SCHEMA_REVISION` 声明，与迁移 head 一致）；共享业务库是否升级需现场核对。
+`make api` 会执行 `alembic upgrade head`。数据库结构变化先在隔离 PostgreSQL 验证升降级，再迁移业务库；当前工作树结构版本是 `20260929_0017`（由 `api/src/bankpilot/db/base.py` 的 `SCHEMA_REVISION` 声明，与迁移 head 一致）；共享业务库仍为 `20260929_0016`，本轮未升级。
 
 ```bash
 cd api
@@ -121,11 +121,11 @@ HTTP 响应提供 X-Request-ID 与 Server-Timing（db、connection、parse，毫
 助手请求的服务端总预算为 90 秒，Web 代理读取超时为 120 秒；调整时须保留代理余量。部署必须同时更新 API 和 Web，不能仅以本地 Vite 请求成功代替代理链路验收。
 
 
-## R2 会话历史与恢复降级
+## 会话历史与恢复降级
 
 必须同批升级前后端。旧 `POST /api/v1/assistant/chat` 返回 `assistant_protocol_upgrade`，
-刷新后使用协议版本 2 的 `/assistant/turns`。迁移取消未关联会话的旧待确认提案，保留已执行回执。
-只在明确授权后对共享业务库执行迁移；本轮仅验证一次性本地库。
+刷新后使用协议版本 5 的 `/assistant/turns`，助手接口携带 `X-Assistant-Protocol: 5`，新结果写版本 4；已有版本 3 的已完成结果仍可读取，其他旧版本结果不可用。
+只在明确授权后对共享业务库执行迁移。
 
 集中配置 `ASSISTANT_MAX_CONVERSATIONS=100`、`ASSISTANT_MAX_TURNS=200`、
 `ASSISTANT_MAX_RESULT_CHARS=400000`、`ASSISTANT_CONTEXT_CHARS=24000`。
@@ -140,10 +140,16 @@ HTTP 响应提供 X-Request-ID 与 Server-Timing（db、connection、parse，毫
 
 仓库内固定验收脚本及对应 Makefile 入口已于 2026-09-21 删除。后续会话与恢复验收仍须使用显式指定的隔离库，不得使用默认业务库配置。
 
-## R3 发布与验证
+## 发布与验证
 
-迁移为 `20260921_0014`，仍为 20 张业务表。会话请求协议升级为 3，旧保存请求缺上下文版本会被拒绝；分类与核查保存必须携带账本修订号。前后端须同批升级，旧页面需刷新。共享业务数据库迁移和部署须另行授权。
+当前工作树迁移为 `20260929_0017`，包含 26 张表；共享业务库仍为 `20260929_0016`，共享环境的 API/Web 尚未发布候选建项代码。会话请求使用协议 5，保存请求缺上下文版本会被拒绝；分类与核查保存必须携带账本修订号。前后端须同批升级，旧页面需刷新。部署须另行授权。
 
 运行 `make verify` 执行静态检查与构建。搜索、会话、业务和交互自动回归入口已删除；发布前仍需在隔离环境另行验证这些行为，包括实际 dump/restore、准备清理幂等和迁移往返。
 
-备份结构校验版本已同步。旧备份由与其迁移配套的应用先验证，再按升级流程处理，不跳过结构校验。删除/恢复清理包括新增 `search_context`，墓碑不残留商户文本。真实模型场景文件已随测试删除；历史 R3 验证未调用外部模型。
+备份结构校验版本已同步。旧备份由与其迁移配套的应用先验证，再按升级流程处理，不跳过结构校验。删除/恢复清理包括 `search_context`，墓碑不残留商户文本。模型验证边界见 [模型记录](MODEL_VALIDATION.md)。
+
+## R5 待办状态运维
+
+R5 增加 `attention_states`、`attention_preferences` 与 `attention_operations`，前后端必须同批升级。升级不预生成历史待办；用户首次操作后才保存单项状态。回执当前不自动清理，容量规划应同时观察三张表的行数。恢复准备保留状态、偏好和回执，已过期稍后项目由读取投影为未读，不运行后台任务。
+
+隔离迁移门禁为 `upgrade head → alembic check → downgrade 20260921_0014 → upgrade head → alembic check`。共享业务库本次仅执行升级；后续迁移、备份、发布和回滚仍需单独授权，不得在共享库执行降级验收。
