@@ -13,7 +13,9 @@ from statistics import median
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from bankpilot.domain.planning import Currency, Money
 
 RULE_VERSION = "recurring-discovery-v1"
 MERCHANT_NORMALIZATION_VERSION = "merchant-normalization-v1"
@@ -144,6 +146,58 @@ class DiscoveryDecisionPage(BaseModel):
     has_more: bool
     decision_snapshot_token: str
     items: list[SavedDiscoveryDecision]
+
+
+class RecurringDiscoveryDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=100)
+    merchant: str = Field(min_length=1, max_length=160)
+    account_id: UUID
+    currency: Currency
+    amount: Money
+    cadence: Literal["monthly"]
+    start_date: date
+
+    @field_validator("start_date")
+    @classmethod
+    def valid_date(cls, value: date) -> date:
+        if not 1900 <= value.year <= 9998:
+            raise ValueError("Date out of range")
+        return value
+
+
+class DiscoveryProposalInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    proposal_request_id: UUID
+    group_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    through: date
+    evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    discovery_snapshot_token: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_version: int = Field(ge=0)
+    draft: RecurringDiscoveryDraft
+
+
+class DiscoveryProposalEvidence(BaseModel):
+    transaction_id: UUID
+    booking_date: date
+    amount: Decimal
+
+
+class DiscoveryProposal(BaseModel):
+    id: UUID
+    proposal_request_id: UUID
+    group_key: str
+    through: date
+    expires_at: str
+    status: Literal["pending", "confirmed", "expired"]
+    plan_id: UUID
+    account_name: str
+    draft: RecurringDiscoveryDraft | None
+    evidence_digest: str
+    evidence: list[DiscoveryProposalEvidence]
+    receipt: DiscoveryDecisionReceipt | None
 
 
 def classify(rows: Sequence[ChargeEvidence], through: date) -> tuple[str, str]:

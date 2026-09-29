@@ -7,7 +7,38 @@ import { currentPeriod } from '../../shared/period'
 import { newIdempotencyKey } from '../../shared/operationKey'
 import type { Locale } from '../../i18n'
 import type { LedgerEntry } from '../ledger/LedgerPage'
-import type { DiscoveryDecisionPage, DiscoveryDecisionRequest, RecurringDiscoveryPage, RecurringItem } from './types'
+import type { DiscoveryDecisionPage, DiscoveryDecisionRequest, DiscoveryProposal, DiscoveryProposalDraft, DiscoveryProposalRequest, RecurringDiscoveryPage, RecurringItem } from './types'
+
+type Group = RecurringDiscoveryPage['items'][number]
+type ProposalRecovery = { phase: 'creating'; request: DiscoveryProposalRequest } | { phase: 'review'; proposalId: string }
+
+function suggestedDate(group: Group) {
+  const today = currentPeriod().end
+  const recent = group.observations.slice(-3)
+  const anchor = Math.max(...recent.map((row) => Number(row.booking_date.slice(-2))))
+  const [year, month] = today.slice(0, 7).split('-').map(Number)
+  for (let offset = 0; offset < 24; offset += 1) {
+    const first = new Date(Date.UTC(year, month - 1 + offset, 1))
+    const y = first.getUTCFullYear()
+    const m = first.getUTCMonth() + 1
+    if (anchor > new Date(Date.UTC(y, m, 0)).getUTCDate()) continue
+    const candidate = `${y}-${String(m).padStart(2, '0')}-${String(anchor).padStart(2, '0')}`
+    if (candidate > today) return candidate
+  }
+  return ''
+}
+
+function draftFor(group: Group): DiscoveryProposalDraft {
+  const recent = group.observations.at(-1)
+  return {
+    name: recent?.merchant ?? group.normalized_merchant,
+    merchant: recent?.merchant ?? group.normalized_merchant,
+    account_id: group.account_id,
+    currency: group.currency,
+    amount: recent ? (recent.amount.startsWith('-') ? recent.amount.slice(1) : recent.amount) : '',
+    cadence: 'monthly', start_date: suggestedDate(group),
+  }
+}
 
 function previousMonth() {
   const [year, month] = currentPeriod().start.slice(0, 7).split('-').map(Number)
@@ -16,18 +47,24 @@ function previousMonth() {
 }
 
 export function RecurringDiscovery({
-  open, locale, onClose, onInspect, userId, plans,
+  open, locale, onClose, onInspect, onCreated, onOpenPlan, userId, plans, initialMonth,
 }: {
   open: boolean
   locale: Locale
   onClose: () => void
   onInspect: (entry: LedgerEntry) => void
+  onCreated: () => void
+  onOpenPlan: (planId: string) => void
   userId: string
   plans: RecurringItem[]
+  initialMonth?: string
 }) {
   const english = locale === 'en-US'
   const t = useCallback((zh: string, en: string) => english ? en : zh, [english])
   const [month, setMonth] = useState(previousMonth)
+  useEffect(() => {
+    if (initialMonth) setMonth(initialMonth)
+  }, [initialMonth])
   const [page, setPage] = useState<RecurringDiscoveryPage | null>(null)
   const [items, setItems] = useState<RecurringDiscoveryPage['items']>([])
   const [loading, setLoading] = useState(false)
@@ -40,8 +77,32 @@ export function RecurringDiscovery({
   const [pending, setPending] = useState<DiscoveryDecisionRequest | null>(null)
   const [storageBlocked, setStorageBlocked] = useState(false)
   const [evidence, setEvidence] = useState<Record<string, string>>({})
+  const [selected, setSelected] = useState<Group | null>(null)
+  const [draft, setDraft] = useState<DiscoveryProposalDraft | null>(null)
+  const [proposal, setProposal] = useState<DiscoveryProposal | null>(null)
+  const [proposalRecovery, setProposalRecovery] = useState<ProposalRecovery | null>(null)
+  const [proposalBlocked, setProposalBlocked] = useState(false)
+  const [proposalBusy, setProposalBusy] = useState(false)
+  const [proposalInvalid, setProposalInvalid] = useState(false)
+  const [duplicatePlanId, setDuplicatePlanId] = useState<string | null>(null)
+  const proposalKey = `recurring-discovery-proposal:${userId}`
   const recoveryKey = `recurring-discovery-operation:${userId}`
   const requestEpoch = useRef(0)
+  const sessionEnded = useRef(false)
+  useEffect(() => {
+    sessionEnded.current = false
+    setSelected(null)
+    setDraft(null)
+    setProposal(null)
+    setProposalRecovery(null)
+    setProposalInvalid(false)
+    setDuplicatePlanId(null)
+  }, [userId])
+  useEffect(() => {
+    const end = () => { sessionEnded.current = true; requestEpoch.current += 1 }
+    window.addEventListener('bankpilot-logout', end)
+    return () => window.removeEventListener('bankpilot-logout', end)
+  }, [])
   useEffect(() => {
     if (!open) return
     try {
@@ -55,8 +116,26 @@ export function RecurringDiscovery({
       setError(t('无法读取待恢复操作，请检查浏览器存储。', 'Cannot read the pending action. Check browser storage.'))
     }
   }, [open, recoveryKey, t])
+  useEffect(() => {
+    if (!open) return
+    try {
+      const saved = sessionStorage.getItem(proposalKey)
+      const record = saved ? JSON.parse(saved) as ProposalRecovery : null
+      if (record && !((record.phase === 'creating' && record.request?.proposal_request_id) || (record.phase === 'review' && record.proposalId))) throw new Error('Invalid proposal recovery')
+      setProposalRecovery(record)
+      setProposalBlocked(false)
+    } catch {
+      setProposalBlocked(true)
+      setError(t('无法读取待恢复提案，请检查浏览器存储。', 'Cannot read the pending proposal. Check browser storage.'))
+    }
+  }, [open, proposalKey, t])
   function close() {
     requestEpoch.current += 1
+    setProposal(null)
+    setSelected(null)
+    setDraft(null)
+    setProposalInvalid(false)
+    setDuplicatePlanId(null)
     onClose()
   }
   function reload() {
@@ -72,6 +151,8 @@ export function RecurringDiscovery({
     setPage(null)
     setItems([])
     setMonth(value)
+    setSelected(null)
+    setDraft(null)
   }
   function selectView(value: 'current' | 'ignored' | 'linked') {
     requestEpoch.current += 1
@@ -80,6 +161,8 @@ export function RecurringDiscovery({
     setHistory(null)
     setItems([])
     setHistoryItems([])
+    setSelected(null)
+    setDraft(null)
   }
   useEffect(() => {
     if (!open) return
@@ -134,10 +217,12 @@ export function RecurringDiscovery({
     setError('')
     try {
       await api.recurringDiscoveryDecision(payload)
+      if (sessionEnded.current) return
       sessionStorage.removeItem(recoveryKey)
       setPending(null)
       reload()
     } catch (cause) {
+      if (sessionEnded.current) return
       if (cause instanceof ApiError && (
         cause.status === 409 || cause.status === 422 || cause.code === 'discovery_not_found'
       )) {
@@ -204,6 +289,113 @@ export function RecurringDiscovery({
     }
   }
 
+  function selectForProposal(group: Group) {
+    setSelected(group)
+    setDraft(draftFor(group))
+    setProposal(null)
+    setProposalInvalid(false)
+  }
+
+  function saveProposalRecovery(record: ProposalRecovery | null) {
+    if (sessionEnded.current) return false
+    try {
+      if (record) sessionStorage.setItem(proposalKey, JSON.stringify(record))
+      else sessionStorage.removeItem(proposalKey)
+      setProposalRecovery(record)
+      setProposalBlocked(false)
+      return true
+    } catch {
+      setProposalBlocked(true)
+      setError(t('浏览器无法保存提案状态，请检查存储后重试。', 'Browser cannot save proposal state. Check storage and retry.'))
+      return false
+    }
+  }
+
+  async function createProposal(request: DiscoveryProposalRequest) {
+    setProposalBusy(true)
+    setError('')
+    setDuplicatePlanId(null)
+    try {
+      const result = await api.recurringDiscoveryProposal(request)
+      if (sessionEnded.current) return
+      if (!saveProposalRecovery({ phase: 'review', proposalId: result.id })) return
+      setProposal(result)
+      setProposalInvalid(result.status === 'expired')
+    } catch (cause) {
+      if (sessionEnded.current) return
+      if (cause instanceof ApiError && cause.code === 'discovery_unavailable') {
+        setError(t('发现功能暂不可用；原请求已保留，稍后按原请求重试。', 'Discovery is temporarily unavailable. The original request is saved for retry.'))
+      } else if (cause instanceof ApiError && cause.code === 'discovery_duplicate_plan') {
+        setDuplicatePlanId(cause.targetPlanId ?? null)
+        setError(t('已有相同商户的固定支出。', 'A recurring plan for this merchant already exists.'))
+      } else if (cause instanceof ApiError && [404, 409, 422].includes(cause.status)) {
+        saveProposalRecovery(null)
+        setProposalInvalid(false)
+        setError(t('候选或草稿已失效，请重读后重新填写。', 'Candidate or draft changed. Reload and review it again.'))
+      } else setError(t('创建提案的结果不明，请用原请求重试。', 'Proposal result unknown. Retry the original request.'))
+    } finally { setProposalBusy(false) }
+  }
+
+  function startProposal() {
+    if (!page || !selected || !draft || proposalRecovery || proposalBlocked || pending) return
+    const request: DiscoveryProposalRequest = {
+      proposal_request_id: newIdempotencyKey(), group_key: selected.key,
+      through: page.through, evidence_digest: selected.evidence_digest,
+      discovery_snapshot_token: page.discovery_snapshot_token,
+      expected_version: selected.decision_version, draft,
+    }
+    if (saveProposalRecovery({ phase: 'creating', request })) void createProposal(request)
+  }
+
+  async function recoverProposal() {
+    if (!proposalRecovery) return
+    if (proposalRecovery.phase === 'creating') {
+      await createProposal(proposalRecovery.request)
+      return
+    }
+    setProposalBusy(true)
+    try {
+      const result = await api.recurringDiscoveryProposalDetail(proposalRecovery.proposalId)
+      if (sessionEnded.current) return
+      setProposal(result)
+      setProposalInvalid((current) => current || result.status === 'expired')
+      if (result.status === 'confirmed') {
+        saveProposalRecovery(null)
+        onCreated()
+        reload()
+      }
+    } catch {
+      if (sessionEnded.current) return
+      setError(t('无法读取提案状态，请保留原提案 ID 后重试。', 'Could not read proposal status. Keep the original proposal ID and retry.'))
+    } finally { setProposalBusy(false) }
+  }
+
+  async function confirmProposal() {
+    if (!proposal || proposal.status !== 'pending' || proposalInvalid) return
+    setProposalBusy(true)
+    setError('')
+    setDuplicatePlanId(null)
+    try {
+      const result = await api.recurringDiscoveryProposalConfirm(proposal.id)
+      if (sessionEnded.current) return
+      setProposal(result)
+      saveProposalRecovery(null)
+      setProposalInvalid(false)
+      onCreated()
+      reload()
+    } catch (cause) {
+      if (sessionEnded.current) return
+      const definitive = cause instanceof ApiError && cause.code !== 'discovery_unavailable' && [404, 409, 422].includes(cause.status)
+      setProposalInvalid(definitive)
+      if (cause instanceof ApiError && cause.code === 'discovery_duplicate_plan') {
+        setDuplicatePlanId(cause.targetPlanId ?? null)
+        setError(t('已有相同商户的固定支出。', 'A recurring plan for this merchant already exists.'))
+      } else setError(definitive
+        ? t('提案已失效，请重读候选。', 'Proposal expired. Reload candidates.')
+        : t('确认结果不明，请先按提案 ID 查询。', 'Confirmation result unknown. Check the proposal ID first.'))
+    } finally { setProposalBusy(false) }
+  }
+
   const reason: Record<string, string> = english ? {
     three_recent_months: 'Three recent consecutive months',
     fewer_than_three_months: 'Fewer than three observed months',
@@ -235,6 +427,31 @@ export function RecurringDiscovery({
       </label>
       {storageBlocked && <p role="alert">{t('浏览器存储不可用，当前不能提交发现决定。', 'Browser storage is unavailable. Discovery actions are disabled.')}</p>}
       {pending && <p role="alert">{t('有结果不明的操作。', 'An action has an unknown result.')} <button disabled={loading || storageBlocked} onClick={() => void retry(pending)}>{t('按原请求重试', 'Retry original request')}</button></p>}
+      {proposalRecovery && <p role="alert">{proposalRecovery.phase === 'creating' ? t('建项提案的结果待核对。', 'Proposal creation needs checking.') : t('有待确认的建项提案。', 'A creation proposal awaits confirmation.')} <button disabled={proposalBusy || proposalBlocked} onClick={() => void recoverProposal()}>{proposalRecovery.phase === 'creating' ? t('按原请求重试', 'Retry original request') : t('查询原提案', 'Check original proposal')}</button></p>}
+      {duplicatePlanId && <p role="status">{t('已有项目', 'Existing plan')}: {plans.find((plan) => plan.id === duplicatePlanId)?.name ?? duplicatePlanId} <button onClick={() => onOpenPlan(duplicatePlanId)}>{t('打开项目', 'Open plan')}</button>{proposalRecovery?.phase === 'creating' && <button onClick={() => { if (saveProposalRecovery(null)) setDuplicatePlanId(null) }}>{t('放弃本次提案', 'Discard this proposal')}</button>}</p>}
+      {proposalBlocked && <p role="alert">{t('浏览器存储不可用，不能提交建项提案。', 'Browser storage is unavailable. Proposal submission is disabled.')}</p>}
+      {(selected || proposal) && <section className="planning-card" aria-label={t('候选建项提案', 'Candidate creation proposal')}>
+        <h2>{proposal ? t('复核冻结提案', 'Review frozen proposal') : t('编辑建项草稿', 'Edit creation draft')}</h2>
+        {proposal ? <>
+          <p>{t('有效期至', 'Expires')}: {new Date(proposal.expires_at).toLocaleString(locale, { timeZone: 'Asia/Shanghai' })}</p>
+          {proposal.draft && <><p>{t('目标账户', 'Target account')}: {proposal.account_name} ({proposal.draft.account_id})</p>
+          <p>{t('周期', 'Cadence')}: {t('月付', 'Monthly')}</p>
+          <p>{proposal.draft.name} · {proposal.draft.merchant} · {proposal.draft.currency} {proposal.draft.amount} · {proposal.draft.start_date}</p></>}
+          <p>{t('来源扣款', 'Source charges')}: {proposal.evidence.map((item) => `${item.booking_date} ${item.amount}`).join('、')}</p>
+          <p>{t('创建后不会自动关联历史期次。', 'Historical charges will not be linked automatically.')}</p>
+          {proposal.status === 'confirmed' ? <><p role="status">{t('已创建固定支出', 'Recurring plan created')}: {proposal.draft?.name}</p><button onClick={close}>{t('完成', 'Done')}</button></> : proposal.status === 'expired' ? <p role="status">{t('提案已过期，请重读候选。', 'Proposal expired. Reload candidates.')}</p> : <button disabled={proposalBusy || proposalBlocked || proposalInvalid} onClick={() => void confirmProposal()}>{t('确认创建固定支出', 'Confirm creation')}</button>}
+          {proposalInvalid && <button onClick={() => { if (saveProposalRecovery(null)) { setProposal(null); setSelected(null); setDraft(null); setProposalInvalid(false); reload() } }}>{t('放弃失效提案并重读', 'Discard expired proposal and reload')}</button>}
+        </> : draft && <>
+          <p>{selected?.account_name} · {draft.currency} · {t('月付', 'Monthly')}</p>
+          <label>{t('名称', 'Name')}<input maxLength={100} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
+          <label>{t('商户', 'Merchant')}<input maxLength={160} value={draft.merchant} onChange={(event) => setDraft({ ...draft, merchant: event.target.value })} /></label>
+          <label>{t('预计金额', 'Expected amount')}<input type="number" min="0.01" step="0.01" value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: event.target.value })} /></label>
+          <label>{t('首次日期', 'First date')}<input type="date" min={currentPeriod().end} value={draft.start_date} onChange={(event) => setDraft({ ...draft, start_date: event.target.value })} /></label>
+          <p>{t('首次日期须晚于今天；31 日锚点遇短月会跳到下一有 31 日的月份。请核对。', 'The first date must be after today. A day 31 anchor may skip short months. Please review it.')}</p>
+          <button disabled={proposalBusy || !!proposalRecovery || proposalBlocked || !draft.name.trim() || !draft.merchant.trim() || !draft.amount || draft.start_date <= currentPeriod().end} onClick={startProposal}>{t('生成待确认提案', 'Create proposal for review')}</button>
+          <button disabled={proposalBusy} onClick={() => { setSelected(null); setDraft(null) }}>{t('取消', 'Cancel')}</button>
+        </>}
+      </section>}
       <p className="planning-hint">{t('仅读取最近 12 个完整月的已导入流水。空月表示未观察到，账单覆盖尚未认证。候选不会自动建项。', 'Reads imported transactions from the last 12 completed months. An empty month means no observation; statement coverage is unverified. Candidates never create plans automatically.')}</p>
       {error && <p className="error" role="alert">{error} <button onClick={reload}>{t('重读', 'Reload')}</button></p>}
       {loading && <p role="status">{t('正在读取完整证据…', 'Reading complete evidence…')}</p>}
@@ -276,6 +493,7 @@ export function RecurringDiscovery({
             <button className="transaction-link" onClick={() => { close(); onInspect({ transactionId: observation.transaction_id, period: { start: observation.booking_date, end: observation.booking_date } }) }}>{observation.booking_date} · {observation.merchant} · {formatMoney(observation.amount, group.currency, locale)} · {t('已确认退款，未参与识别', 'Confirmed refund; excluded')}</button>
           </li>)}</ul>
           {group.observation_count > 0 && <div>
+            {group.status === 'candidate' && <button disabled={loading || proposalBusy || !!pending || !!proposalRecovery || proposalBlocked} onClick={() => selectForProposal(group)}>{t('修改后新建', 'Create after review')}</button>}
             <button disabled={loading || !!pending || storageBlocked} onClick={() => act(group, 'ignore')}>{t('忽略', 'Ignore')}</button>
             <label>{t('关联已有项目', 'Link existing plan')}
               <select value={target[group.key] ?? ''} onChange={(event) => setTarget((before) => ({ ...before, [group.key]: event.target.value }))}>

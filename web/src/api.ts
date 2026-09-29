@@ -31,7 +31,7 @@ import type { Conversation } from './features/assistant/types'
 
 import type { AssistantAction, TurnInput, SavedTurn, ConversationPage, ConversationDetail, SpendingPage, SpendingScope, SpendingSummary, ComparisonEvidencePage, SpendingCategoryComparison } from './features/assistant/types'
 
-import type { BudgetInput, BudgetWorkspace, DiscoveryDecisionPage, DiscoveryDecisionRequest, RecurringDiscoveryPage, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
+import type { BudgetInput, BudgetWorkspace, DiscoveryDecisionPage, DiscoveryDecisionRequest, DiscoveryProposal, DiscoveryProposalRequest, RecurringDiscoveryPage, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
 import type { AttentionPreference, AttentionResponse, AttentionStateRequest, AttentionType } from './features/overview/attention'
 
 
@@ -40,6 +40,7 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly code: string,
+    readonly targetPlanId?: string,
   ) {
     super(message)
   }
@@ -52,7 +53,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(path.startsWith('/api/v1/assistant') ? { 'X-Assistant-Protocol': '4' } : {}),
+      ...(path.startsWith('/api/v1/assistant') ? { 'X-Assistant-Protocol': '5' } : {}),
       ...init?.headers,
     },
   })
@@ -65,14 +66,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         'code' in detail && typeof detail.code === 'string' &&
         'message' in detail && typeof detail.message === 'string'
       ) {
-        throw new ApiError(detail.message, response.status, detail.code)
+        throw new ApiError(detail.message, response.status, detail.code,
+          'target_plan_id' in detail && typeof detail.target_plan_id === 'string' ? detail.target_plan_id : undefined)
       }
     }
     throw new ApiError('服务响应格式无效', response.status, 'invalid_response')
   }
   if (init?.method === 'POST' && /^\/api\/v1\/(?:imports(?:\/[^/]+\/revoke)?|relations|accounts\/[^/]+\/name|transactions\/[^/]+\/category|runs\/[^/]+\/transactions\/[^/]+\/category)$/.test(path)) {
     window.dispatchEvent(new Event('bankpilot:ledger-changed'))
-  } else if (init?.method === 'POST' && /^\/api\/v1\/(?:budgets(?:\/copy|\/delete)?|recurring(?:\/[^/]+\/(?:edit|status|match|skip|cancel-revision))?|assistant\/confirm)$/.test(path)) {
+  } else if (init?.method === 'POST' && (/^\/api\/v1\/(?:budgets(?:\/copy|\/delete)?|recurring(?:\/[^/]+\/(?:edit|status|match|skip|cancel-revision))?|assistant\/confirm)$/.test(path) || /^\/api\/v1\/recurring\/discovery\/proposals\/[^/]+\/confirm$/.test(path))) {
     window.dispatchEvent(new Event('bankpilot:planning-changed'))
   }
   if (response.status === 204) return undefined as T
@@ -124,6 +126,9 @@ export const api = {
   },
   recurringDiscoveryEvidence: (key: string, month: string) => request<{ evidence_status: 'present' | 'missing' }>(`/api/v1/recurring/discovery/decisions/${key}/evidence?through=${month}-01`),
   recurringDiscoveryDecision: (payload: DiscoveryDecisionRequest) => request<{ operation_id: string; version: number; status: string }>('/api/v1/recurring/discovery/decisions', { method: 'POST', body: JSON.stringify(payload) }),
+  recurringDiscoveryProposal: (payload: DiscoveryProposalRequest) => request<DiscoveryProposal>('/api/v1/recurring/discovery/proposals', { method: 'POST', body: JSON.stringify(payload) }),
+  recurringDiscoveryProposalDetail: (id: string) => request<DiscoveryProposal>(`/api/v1/recurring/discovery/proposals/${id}`),
+  recurringDiscoveryProposalConfirm: (id: string) => request<DiscoveryProposal>(`/api/v1/recurring/discovery/proposals/${id}/confirm`, { method: 'POST' }),
   createRecurring: (payload: RecurringInput) => request<void>('/api/v1/recurring', { method: 'POST', body: JSON.stringify(payload) }),
   editRecurring: (payload: RecurringEditInput) => request<void>(`/api/v1/recurring/${payload.id}/edit`, { method: 'POST', body: JSON.stringify(payload) }),
   recurringDraft: (id: string) => request<RecurringInput>(`/api/v1/recurring/draft?transaction_id=${id}`),

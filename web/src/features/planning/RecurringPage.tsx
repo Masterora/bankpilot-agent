@@ -32,6 +32,7 @@ export function RecurringPage({
   active,
   seed,
   focusTarget,
+  onDiscoveryTargetConsumed,
   onSeedConsumed,
   onDraftChange,
   externalRevision,
@@ -45,6 +46,7 @@ export function RecurringPage({
   active: boolean
   seed: RecurringInput | null
   focusTarget: string
+  onDiscoveryTargetConsumed: () => void
   onSeedConsumed: () => void
   onDraftChange: (dirty: boolean) => void
   externalRevision: number
@@ -61,9 +63,17 @@ export function RecurringPage({
   const [editorVisible, setEditorVisible] = useState(true)
   const [selected, setSelected] = useState('')
   const [discoveryOpen, setDiscoveryOpen] = useState(false)
+  const [requestedDiscoveryMonth, setRequestedDiscoveryMonth] = useState<string | undefined>()
   const [discoveryEnabled, setDiscoveryEnabled] = useState(false)
   const [filter, setFilter] = useState('all')
   usePlanningFocus(focusTarget, state.loading, active)
+  const discoveryMonth = focusTarget.startsWith('discovery:') ? focusTarget.split(':')[1]?.slice(0, 7) : undefined
+  useEffect(() => {
+    if (!active || !discoveryEnabled || !discoveryMonth) return
+    setRequestedDiscoveryMonth(discoveryMonth)
+    setDiscoveryOpen(true)
+    onDiscoveryTargetConsumed()
+  }, [active, discoveryEnabled, discoveryMonth, onDiscoveryTargetConsumed])
   useEffect(() => {
     if (!active) {
       setDiscoveryOpen(false)
@@ -257,7 +267,7 @@ export function RecurringPage({
           }}
         />
       </div>
-      {discoveryEnabled && <RecurringDiscovery userId={userId} plans={state.data?.items ?? []} open={discoveryOpen} locale={locale} onClose={() => setDiscoveryOpen(false)} onInspect={onInspect} />}
+      {discoveryEnabled && <RecurringDiscovery userId={userId} plans={state.data?.items ?? []} initialMonth={requestedDiscoveryMonth} open={discoveryOpen} locale={locale} onClose={() => setDiscoveryOpen(false)} onInspect={onInspect} onCreated={() => { void state.refresh() }} onOpenPlan={(planId) => { setDiscoveryOpen(false); setFilter('all'); setSelected(planId); requestAnimationFrame(() => document.getElementById(`recurring-${planId}`)?.scrollIntoView({ block: 'center' })) }} />}
       {accountsLoading && <LoadingIndicator label={t('正在读取账户', 'Loading accounts')} />}
       {accountError && (
         <p className="error" role="alert">

@@ -25,6 +25,7 @@ import { ReportsPage } from '../features/reports/ReportsPage'
 import type { RecurringInput } from '../features/planning/types'
 import type { LedgerEntry } from '../features/ledger/LedgerPage'
 import { useWorkspaceRoute } from './routing'
+import { newIdempotencyKey } from '../shared/operationKey'
 import type { Messages } from '../i18n'
 import { IconButton, Logo, NavigationIcon } from '../shared/ui'
 import type { LanguageProps } from '../shared/ui'
@@ -140,7 +141,12 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     }
     window.dispatchEvent(new Event('bankpilot-logout'))
     window.history.replaceState(null, '', window.location.pathname)
-    try { sessionStorage.removeItem(`assistant:${user.id}`); sessionStorage.removeItem(`assistant-current:${user.id}`) } catch { /* storage unavailable */ }
+    try {
+      sessionStorage.removeItem(`assistant:${user.id}`)
+      sessionStorage.removeItem(`assistant-current:${user.id}`)
+      sessionStorage.removeItem(`recurring-discovery-proposal:${user.id}`)
+      sessionStorage.removeItem(`recurring-discovery-operation:${user.id}`)
+    } catch { /* storage unavailable */ }
     clearPendingImport()
     try { clearPendingAttention() } catch { /* User ownership is checked on the next read. */ }
     window.history.replaceState(null, '', window.location.pathname + window.location.search)
@@ -239,7 +245,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     settings: <SettingsPage copy={copy} locale={locale} onLocaleChange={onLocaleChange} user={user} onLogout={logout} onSwitchAccount={switchAccount} busy={sessionBusy} />,
     reports: <ReportsPage copy={copy} locale={locale} initialMonth={reviewPeriod.start} active={activePage === 'reports'} />,
     audit: <AuditPage copy={copy} run={agent.run} locale={locale} />,
-    recurring: <RecurringPage userId={user.id} externalRevision={planningRevision} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} onInspect={inspectLedger} />,
+    recurring: <RecurringPage userId={user.id} externalRevision={planningRevision} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} onDiscoveryTargetConsumed={() => setFocusTarget('')} onInspect={inspectLedger} />,
     budgets: <BudgetsPage externalRevision={planningRevision} copy={copy} locale={locale} month={budgetMonth} onMonthChange={setPlanningMonth} key={budgetMonth} active={activePage === 'budgets'} focusTarget={focusTarget} onInspect={inspectLedger} onDraftChange={(dirty) => setDrafts((current) => current.budgets === dirty ? current : { ...current, budgets: dirty })} />,
   }
 
@@ -284,7 +290,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         <IconButton icon="logout" label={copy.logout} disabled={sessionBusy} onClick={logout} />
       </dialog>
 
-      <AssistantPanel onSearchLedger={filters => { setAssistantOpen(false); inspectLedger({ filters, period: { start: filters.start_date, end: filters.end_date } }) }} userId={user.id} key={user.id} ledgerRevision={ledgerRevision} onInspect={target => {
+      <AssistantPanel onOpenDiscovery={through => { setAssistantOpen(false); openPlanning('recurring', recurringMonth, `discovery:${through}:${newIdempotencyKey()}`) }} onSearchLedger={filters => { setAssistantOpen(false); inspectLedger({ filters, period: { start: filters.start_date, end: filters.end_date } }) }} userId={user.id} key={user.id} ledgerRevision={ledgerRevision} onInspect={target => {
         setAssistantOpen(false)
         inspectLedger({ transactionId: target.id, version: target.version, period: { start: target.booking_date, end: target.booking_date } })
       }} open={assistantOpen} onClose={() => setAssistantOpen(false)} month={activePage === 'budgets' ? budgetMonth : activePage === 'recurring' ? recurringMonth : activePage === 'overview' ? overviewPeriod.start : reviewPeriod.start} copy={copy} locale={locale} />

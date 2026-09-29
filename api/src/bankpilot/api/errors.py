@@ -5,6 +5,7 @@
 """
 import logging
 from collections.abc import Mapping
+from uuid import UUID
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 class ErrorDetail(BaseModel):
     code: str
     message: str
+    target_plan_id: UUID | None = None
 
 
 class ErrorResponse(BaseModel):
@@ -35,11 +37,14 @@ class ApiProblem(Exception):
 
 
 def error_response(
-    status: int, code: str, message: str, headers: Mapping[str, str] | None = None
+    status: int, code: str, message: str, headers: Mapping[str, str] | None = None,
+    target_plan_id: UUID | None = None,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status,
-        content=ErrorResponse(detail=ErrorDetail(code=code, message=message)).model_dump(),
+        content=ErrorResponse(
+            detail=ErrorDetail(code=code, message=message, target_plan_id=target_plan_id)
+        ).model_dump(mode="json", exclude_none=True),
         headers=headers,
     )
 
@@ -51,7 +56,7 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(PlanningError)
     async def planning(request: Request, exc: PlanningError) -> JSONResponse:
-        return error_response(exc.status, exc.code, exc.code)
+        return error_response(exc.status, exc.code, exc.code, target_plan_id=exc.target_plan_id)
 
     @app.exception_handler(RequestValidationError)
     async def validation(request: Request, exc: RequestValidationError) -> JSONResponse:

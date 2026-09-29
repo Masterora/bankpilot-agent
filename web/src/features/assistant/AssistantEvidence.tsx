@@ -14,16 +14,18 @@ export function AssistantEvidence({
   locale,
   stale,
   onInspect,
+  onOpenDiscovery,
 }: {
   evidence: Evidence[]
   copy: Messages
   locale: Locale
   stale: boolean
   onInspect: (summary: SpendingSummary) => void
+  onOpenDiscovery: (through: string) => void
 }) {
   const en = locale === 'en-US'
   const money = (value: string, currency: string) => formatMoney(value, currency, locale)
-  const otherEvidence = evidence.filter(item => item.tool !== 'spending' && item.tool !== 'find_transactions' && item.tool !== 'compare_spending')
+  const otherEvidence = evidence.filter(item => item.tool !== 'spending' && item.tool !== 'find_transactions' && item.tool !== 'compare_spending' && item.tool !== 'recurring_discovery')
   return (
     evidence.length > 0 && (
       <>
@@ -32,6 +34,12 @@ export function AssistantEvidence({
         {stale && <p role="status">{en ? 'Ledger changed; query again.' : '账本已更新，需要重新查询。'}</p>}
         <button onClick={() => onInspect(summary)}>{en ? 'View breakdown' : '查看构成'}</button>
       </div>)}
+      {evidence.filter(item => item.tool === 'recurring_discovery').map((item, index) => <section className="assistant-evidence" key={`discovery:${index}`}>
+        <h4>{en ? 'Possible monthly charges' : '可能的月付项目'}</h4>
+        <p>{item.data.through.slice(0, 7)} · {item.data.candidate_count} {en ? 'candidates' : '组候选'} · {item.data.insufficient_count} {en ? 'insufficient' : '组证据不足'} · {item.data.ambiguous_count} {en ? 'ambiguous' : '组不明确'}</p>
+        <p>{en ? 'Statement coverage is unverified.' : '账单覆盖尚未认证。'} · {item.data.rule_version}</p>
+        <button onClick={() => onOpenDiscovery(item.data.target.through)}>{en ? 'Review evidence' : '查看发现证据'}</button>
+      </section>)}
       {otherEvidence.length > 0 && <details className="assistant-evidence">
         <summary>
           {en ? 'Data used' : '查询依据'} · {otherEvidence.length}

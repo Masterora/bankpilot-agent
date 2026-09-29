@@ -1,7 +1,8 @@
 """Read a complete user-scoped discovery snapshot before paginating groups."""
 
-from datetime import date
-from uuid import UUID
+from datetime import UTC, date, datetime, timedelta
+from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,11 +11,13 @@ from bankpilot.db.discovery_repository import DiscoveryRepository
 from bankpilot.db.models import (
     RecurringDiscoveryDecisionRecord,
     RecurringDiscoveryOperationRecord,
+    RecurringDiscoveryProposalRecord,
     TransactionRecord,
     UserRecord,
 )
 from bankpilot.db.planning_repository import PlanningRepository
 from bankpilot.db.user_repository import UserRepository
+from bankpilot.domain.planning import RecurringInput
 from bankpilot.domain.recurring_discovery import (
     GENERIC_MERCHANTS,
     MERCHANT_NORMALIZATION_VERSION,
@@ -26,6 +29,9 @@ from bankpilot.domain.recurring_discovery import (
     DiscoveryGroup,
     DiscoveryObservation,
     DiscoveryPage,
+    DiscoveryProposal,
+    DiscoveryProposalEvidence,
+    DiscoveryProposalInput,
     ExcludedRefundObservation,
     SavedDiscoveryDecision,
     UnidentifiedRefundObservation,
@@ -37,6 +43,7 @@ from bankpilot.domain.recurring_discovery import (
 )
 from bankpilot.errors import PlanningError
 from bankpilot.services.planning_reads import effective_config, planning_today
+from bankpilot.services.recurring import create_recurring
 
 
 async def discover(
@@ -531,3 +538,228 @@ async def change_decision(
         )
     )
     return receipt
+
+
+def _proposal_view(row: RecurringDiscoveryProposalRecord) -> DiscoveryProposal:
+    status = (
+        "expired"
+        if row.status == "pending" and row.expires_at <= datetime.now(UTC)
+        else row.status
+    )
+    return DiscoveryProposal(
+        id=row.id,
+        proposal_request_id=row.proposal_request_id,
+        group_key=row.group_key,
+        through=row.through,
+        expires_at=row.expires_at.isoformat(),
+        status=status,
+        plan_id=row.plan_id,
+        account_name=row.account_name,
+        draft=None if status == "expired" else row.draft,
+        evidence=row.evidence,
+        evidence_digest=row.evidence_digest,
+        receipt=row.receipt,
+    )
+
+
+async def get_proposal(
+    session: AsyncSession, user_id: UUID, proposal_id: UUID
+) -> DiscoveryProposal:
+    row = await DiscoveryRepository(session).proposal(user_id, proposal_id)
+    if row is None:
+        raise PlanningError("discovery_not_found", 404)
+    return _proposal_view(row)
+
+
+async def _duplicate_plan(
+    session: AsyncSession, user_id: UUID, account_id: UUID, currency: str, merchant: str
+) -> UUID | None:
+    repo = PlanningRepository(session)
+    plans = await repo.plans(user_id)
+    revisions = await repo.revisions(user_id)
+    for plan in plans:
+        if any(
+            plan_account == account_id
+            and plan_currency == currency
+            and normalize_merchant(plan_merchant) == merchant
+            for plan_account, plan_currency, plan_merchant in [
+                (plan.account_id, plan.currency, plan.merchant),
+                *(
+                    (revision.account_id, revision.currency, revision.merchant)
+                    for revision in revisions
+                    if revision.plan_id == plan.id
+                ),
+            ]
+        ):
+            return plan.id
+    return None
+
+
+async def create_proposal(
+    session: AsyncSession, user_id: UUID, payload: DiscoveryProposalInput
+) -> DiscoveryProposal:
+    await UserRepository(session).lock(user_id)
+    repo = DiscoveryRepository(session)
+    now = datetime.now(UTC)
+    await repo.compact_expired_proposals(user_id, now)
+    request_digest = digest(payload.model_dump(mode="json"))
+    previous = await repo.proposal_by_request(user_id, payload.proposal_request_id)
+    if previous is not None:
+        if previous.request_digest != request_digest:
+            raise PlanningError("discovery_operation_conflict", 409)
+        return _proposal_view(previous)
+    if await repo.pending_proposal_count(user_id) >= 20:
+        raise PlanningError("discovery_proposal_capacity", 422)
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    if payload.draft.start_date <= today:
+        raise PlanningError("discovery_start_date_invalid", 422)
+    revision = await session.scalar(
+        select(UserRecord.ledger_revision).where(UserRecord.id == user_id)
+    )
+    page = await discover(
+        session,
+        user_id,
+        revision or 0,
+        payload.through,
+        0,
+        payload.discovery_snapshot_token,
+        all_groups=True,
+    )
+    group = next((item for item in page.items if item.key == payload.group_key), None)
+    if group is None or group.evidence_digest != payload.evidence_digest:
+        raise PlanningError("discovery_evidence_stale", 409)
+    if group.decision_version != payload.expected_version or group.decision_status != "active":
+        raise PlanningError("discovery_decision_conflict", 409)
+    if group.status != "candidate":
+        raise PlanningError("discovery_evidence_stale", 409)
+    if (
+        payload.draft.account_id != group.account_id
+        or payload.draft.currency != group.currency
+        or normalize_merchant(payload.draft.merchant) != group.normalized_merchant
+    ):
+        raise PlanningError("discovery_draft_invalid", 422)
+    duplicate_plan_id = await _duplicate_plan(
+        session, user_id, group.account_id, group.currency, group.normalized_merchant
+    )
+    if duplicate_plan_id is not None:
+        raise PlanningError("discovery_duplicate_plan", 409, target_plan_id=duplicate_plan_id)
+    # Reuse the established account and currency validation without creating a plan.
+    account = await PlanningRepository(session).account(user_id, group.account_id)
+    if account is None or account.currency != group.currency:
+        raise PlanningError("discovery_draft_invalid", 422)
+    row = RecurringDiscoveryProposalRecord(
+        id=uuid4(),
+        user_id=user_id,
+        proposal_request_id=payload.proposal_request_id,
+        request_digest=request_digest,
+        group_key=group.key,
+        through=payload.through,
+        discovery_snapshot_token=page.discovery_snapshot_token,
+        expected_version=payload.expected_version,
+        rule_version=page.rule_version,
+        merchant_normalization_version=page.merchant_normalization_version,
+        ledger_revision=page.ledger_revision,
+        evidence_digest=group.evidence_digest,
+        account_name=group.account_name,
+        draft=payload.draft.model_dump(mode="json"),
+        evidence=[
+            DiscoveryProposalEvidence(
+                transaction_id=item.transaction_id,
+                booking_date=item.booking_date,
+                amount=item.amount,
+            ).model_dump(mode="json")
+            for item in group.observations
+        ],
+        plan_id=uuid4(),
+        expires_at=now + timedelta(minutes=15),
+        status="pending",
+        receipt=None,
+    )
+    repo.add(row)
+    return _proposal_view(row)
+
+
+async def confirm_proposal(
+    session: AsyncSession, user_id: UUID, proposal_id: UUID
+) -> DiscoveryProposal:
+    await UserRepository(session).lock(user_id)
+    repo = DiscoveryRepository(session)
+    row = await repo.proposal(user_id, proposal_id)
+    if row is None:
+        raise PlanningError("discovery_not_found", 404)
+    if row.status == "confirmed":
+        return _proposal_view(row)
+    if row.status == "expired":
+        raise PlanningError("discovery_proposal_expired", 409)
+    if row.expires_at <= datetime.now(UTC):
+        raise PlanningError("discovery_proposal_expired", 409)
+    draft = RecurringInput.model_validate({"id": row.plan_id, **row.draft})
+    if draft.start_date <= datetime.now(ZoneInfo("Asia/Shanghai")).date():
+        raise PlanningError("discovery_proposal_expired", 409)
+    if (
+        row.rule_version != RULE_VERSION
+        or row.merchant_normalization_version != MERCHANT_NORMALIZATION_VERSION
+    ):
+        raise PlanningError("discovery_evidence_stale", 409)
+    merchant = normalize_merchant(draft.merchant)
+    duplicate_plan_id = await _duplicate_plan(
+        session, user_id, draft.account_id, draft.currency, merchant
+    )
+    if duplicate_plan_id is not None:
+        raise PlanningError("discovery_duplicate_plan", 409, target_plan_id=duplicate_plan_id)
+    revision = await session.scalar(
+        select(UserRecord.ledger_revision).where(UserRecord.id == user_id)
+    )
+    page = await discover(
+        session,
+        user_id,
+        revision or 0,
+        row.through,
+        0,
+        row.discovery_snapshot_token,
+        all_groups=True,
+    )
+    group = next((item for item in page.items if item.key == row.group_key), None)
+    if group is None or group.evidence_digest != row.evidence_digest or group.status != "candidate":
+        raise PlanningError("discovery_evidence_stale", 409)
+    if group.decision_status != "active" or group.decision_version != row.expected_version:
+        raise PlanningError("discovery_decision_conflict", 409)
+    if (
+        group.account_id != draft.account_id
+        or group.currency != draft.currency
+        or group.normalized_merchant != merchant
+    ):
+        raise PlanningError("discovery_evidence_stale", 409)
+    await create_recurring(session, user_id, draft)
+    decision = await repo.decision(user_id, row.group_key)
+    if decision is None:
+        decision = RecurringDiscoveryDecisionRecord(
+            user_id=user_id,
+            group_key=row.group_key,
+            account_id=group.account_id,
+            currency=group.currency,
+            normalized_merchant=group.normalized_merchant,
+            merchant_normalization_version=MERCHANT_NORMALIZATION_VERSION,
+            status="created",
+            target_plan_id=row.plan_id,
+            version=1,
+        )
+        repo.add(decision)
+    else:
+        decision.status = "created"
+        decision.target_plan_id = row.plan_id
+        decision.version += 1
+    receipt = DiscoveryDecisionReceipt(
+        operation_id=row.proposal_request_id,
+        group_key=row.group_key,
+        status="created",
+        version=decision.version,
+        target_plan_id=row.plan_id,
+        account_id=group.account_id,
+        currency=group.currency,
+        normalized_merchant=group.normalized_merchant,
+    )
+    row.status = "confirmed"
+    row.receipt = receipt.model_dump(mode="json")
+    await session.flush()
+    return _proposal_view(row)

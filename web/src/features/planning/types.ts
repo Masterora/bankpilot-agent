@@ -176,6 +176,35 @@ export interface DiscoveryDecisionRequest {
   target_plan_id?: string
 }
 
+export interface DiscoveryProposalDraft extends Omit<RecurringInput, 'id' | 'cadence'> {
+  cadence: 'monthly'
+}
+
+export interface DiscoveryProposalRequest {
+  proposal_request_id: string
+  group_key: string
+  through: string
+  evidence_digest: string
+  discovery_snapshot_token: string
+  expected_version: number
+  draft: DiscoveryProposalDraft
+}
+
+export interface DiscoveryProposal {
+  id: string
+  proposal_request_id: string
+  group_key: string
+  through: string
+  expires_at: string
+  status: 'pending' | 'confirmed' | 'expired'
+  plan_id: string
+  account_name: string
+  draft: DiscoveryProposalDraft | null
+  evidence_digest: string
+  evidence: { transaction_id: string; booking_date: string; amount: string }[]
+  receipt: { status: 'created'; version: number; target_plan_id: string } | null
+}
+
 export interface DiscoveryDecisionPage {
   status: 'ignored' | 'linked'
   total: number

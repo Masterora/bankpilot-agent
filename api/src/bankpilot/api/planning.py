@@ -43,6 +43,8 @@ from bankpilot.domain.recurring_discovery import (
     DiscoveryDecisionPage,
     DiscoveryDecisionReceipt,
     DiscoveryPage,
+    DiscoveryProposal,
+    DiscoveryProposalInput,
     month_index,
     month_start,
 )
@@ -237,6 +239,46 @@ async def recurring_discovery_availability(
     user: UserRecord = Depends(get_current_user),
 ) -> DiscoveryAvailability:
     return DiscoveryAvailability(enabled=settings.recurring_discovery_enabled)
+
+
+@router.post("/recurring/discovery/proposals", response_model=DiscoveryProposal)
+async def recurring_discovery_proposal(
+    payload: DiscoveryProposalInput,
+    settings: Settings = Depends(get_app_settings),
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> DiscoveryProposal:
+    discovery_enabled(settings)
+    discovery_through(payload.through)
+    result = await discovery_service.create_proposal(session, user.id, payload)
+    await session.commit()
+    return result
+
+
+@router.get("/recurring/discovery/proposals/{proposal_id}", response_model=DiscoveryProposal)
+async def recurring_discovery_proposal_detail(
+    proposal_id: UUID,
+    settings: Settings = Depends(get_app_settings),
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> DiscoveryProposal:
+    discovery_enabled(settings)
+    return await discovery_service.get_proposal(session, user.id, proposal_id)
+
+
+@router.post(
+    "/recurring/discovery/proposals/{proposal_id}/confirm", response_model=DiscoveryProposal
+)
+async def recurring_discovery_proposal_confirm(
+    proposal_id: UUID,
+    settings: Settings = Depends(get_app_settings),
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> DiscoveryProposal:
+    discovery_enabled(settings)
+    result = await discovery_service.confirm_proposal(session, user.id, proposal_id)
+    await session.commit()
+    return result
 
 
 @router.post("/recurring", status_code=204)

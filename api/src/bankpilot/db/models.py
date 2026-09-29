@@ -448,6 +448,39 @@ class RecurringDiscoveryOperationRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class RecurringDiscoveryProposalRecord(Base):
+    __tablename__ = "recurring_discovery_proposals"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    proposal_request_id: Mapped[UUID] = mapped_column(Uuid)
+    request_digest: Mapped[str] = mapped_column(String(64))
+    group_key: Mapped[str] = mapped_column(String(64))
+    through: Mapped[date] = mapped_column(Date)
+    discovery_snapshot_token: Mapped[str] = mapped_column(String(64))
+    expected_version: Mapped[int] = mapped_column(Integer)
+    rule_version: Mapped[str] = mapped_column(String(64))
+    merchant_normalization_version: Mapped[str] = mapped_column(String(64))
+    ledger_revision: Mapped[int] = mapped_column(BigInteger)
+    evidence_digest: Mapped[str] = mapped_column(String(64))
+    account_name: Mapped[str] = mapped_column(String(100))
+    draft: Mapped[dict[str, Any]] = mapped_column(JSON)
+    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    plan_id: Mapped[UUID] = mapped_column(Uuid, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    receipt: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    __table_args__ = (
+        UniqueConstraint("user_id", "proposal_request_id", name="uq_discovery_proposal_request"),
+        Index("ix_discovery_proposals_user_group", "user_id", "group_key"),
+        Index("ix_discovery_proposals_user_status_expiry", "user_id", "status", "expires_at"),
+        CheckConstraint(
+            "status IN ('pending', 'confirmed', 'expired')",
+            name="ck_discovery_proposal_status",
+        ),
+    )
+
+
 class AttentionStateRecord(Base):
     """Persisted user handling state separated from deterministic business facts."""
 
@@ -584,7 +617,7 @@ class AssistantTurnRecord(Base):
     deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    result_version: Mapped[int] = mapped_column(Integer, default=3)
+    result_version: Mapped[int] = mapped_column(Integer, default=4)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(80))
     action_id: Mapped[UUID | None] = mapped_column(ForeignKey("assistant_actions.id"))

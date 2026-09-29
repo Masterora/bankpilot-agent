@@ -31,6 +31,7 @@ export function AssistantPanel({
   ledgerRevision,
   onInspect,
   onSearchLedger,
+  onOpenDiscovery,
 }: {
   userId: string
   open: boolean
@@ -40,6 +41,7 @@ export function AssistantPanel({
   locale: Locale
   ledgerRevision: number
   onSearchLedger: (filters: SearchFilters) => void
+  onOpenDiscovery: (through: string) => void
   onInspect: (target: EvidenceTarget) => void
 }) {
   const history = useConversations(userId, open, month)
@@ -138,7 +140,7 @@ export function AssistantPanel({
     setBusy(true)
     setError('')
     try {
-      const accepted = await history.send({ protocol_version: 4, expected_context_version: history.contextVersion, request_id: newIdempotencyKey(),
+      const accepted = await history.send({ protocol_version: 5, expected_context_version: history.contextVersion, request_id: newIdempotencyKey(),
         ...(history.id ? { conversation_id: history.id } : { creation_id: newIdempotencyKey() }),
         question: message.trim(), month: history.month, locale, spending_context: context })
       if (accepted) setMessage('')
@@ -171,7 +173,7 @@ export function AssistantPanel({
     setError('')
     try {
       await history.send({
-        protocol_version: 4,
+        protocol_version: 5,
         expected_context_version: history.contextVersion,
         conversation_id: history.id,
         request_id: newIdempotencyKey(),
@@ -262,7 +264,7 @@ export function AssistantPanel({
             {turn.status === 'failed' && <p>{t('处理失败', 'Failed')} · {turn.error_code} <button disabled={busy || pending} onClick={() => {
               if (turn.recompare_of) void recompare(turn.recompare_of)
               else {
-                setBusy(true); void history.send({ protocol_version: 4, expected_context_version: history.contextVersion, conversation_id: turn.conversation_id, request_id: newIdempotencyKey(), retry_of: turn.id,
+                setBusy(true); void history.send({ protocol_version: 5, expected_context_version: history.contextVersion, conversation_id: turn.conversation_id, request_id: newIdempotencyKey(), retry_of: turn.id,
                   question: turn.question, month: turn.month, spending_context: turn.scope, locale }).finally(() => setBusy(false))
               }
             }}>{turn.recompare_of ? t('重新比较', 'Recompare') : t('重新处理', 'Retry')}</button></p>}
@@ -271,7 +273,7 @@ export function AssistantPanel({
             {turn.reply.assistant_result_unavailable && <p>{t("旧版本结果不可用，请重新查询。", "This older result is unavailable. Query again.")}</p>}
             {!turn.reply.evidence.some(item => item.tool === 'compare_spending') && <button disabled={busy || pending} onClick={() => { setContext(turn.scope); setMessage(`${turn.month.slice(0, 7)} ${turn.scope ? copy.categoryLabels[turn.scope.category] + ' ' + turn.scope.currency : ''} ${t('重新查询当前账本', 'Query current ledger')}`) }}>{t('重新查询', 'Query again')}</button>}
             {turn.reply.evidence.filter(item => item.tool === 'find_transactions').map((item, index) => <SearchResultCard key={`${history.id}:${turn.id}:${index}`} initial={item.data} english={english} copy={copy} onInspect={onInspect} onLedger={onSearchLedger} onSave={history.selectSearch} onUnsaved={() => history.setSearchUnsaved(true)} />)}
-            <AssistantEvidence evidence={turn.reply.evidence} copy={copy} locale={locale} stale={loadedRevision.current !== ledgerRevision} onInspect={summary => showDetail(summary, ledgerRevision)} />
+            <AssistantEvidence evidence={turn.reply.evidence} copy={copy} locale={locale} stale={loadedRevision.current !== ledgerRevision} onInspect={summary => showDetail(summary, ledgerRevision)} onOpenDiscovery={onOpenDiscovery} />
             {turn.reply.evidence.filter(item => item.tool === 'compare_spending').map(item => <SpendingComparison
               key={`${turn.id}:${item.data.calculated_at}`} comparison={item.data} turnId={turn.id} copy={copy} locale={locale}
               ledgerRevision={ledgerRevision} onEvidence={showComparisonDetail} onRecompare={() => void recompare(turn.id)} />)}

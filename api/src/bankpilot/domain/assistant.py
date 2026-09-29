@@ -67,6 +67,11 @@ class ReadRecurring(PlanningInput):
     arguments: MonthArguments
 
 
+class ReadRecurringDiscovery(PlanningInput):
+    kind: Literal["recurring_discovery"]
+    arguments: MonthArguments
+
+
 class ReadOverview(PlanningInput):
     kind: Literal["overview"]
     arguments: MonthArguments
@@ -110,6 +115,7 @@ class Answer(PlanningInput):
 Decision = Annotated[
     ReadBudgets
     | ReadRecurring
+    | ReadRecurringDiscovery
     | ReadOverview
     | ReadSpending
     | CompareSpending
@@ -126,7 +132,7 @@ class ActionInput(PlanningInput):
 
 
 class TurnInput(MonthArguments):
-    protocol_version: Literal[4]
+    protocol_version: Literal[5]
     expected_context_version: int = Field(ge=0)
     request_id: UUID
     creation_id: UUID | None = None

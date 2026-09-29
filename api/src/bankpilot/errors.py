@@ -5,6 +5,8 @@
 关键边界：每类异常对应稳定错误码，供运行状态和审计事件持久化。
 """
 
+from uuid import UUID
+
 
 class BankPilotError(Exception):
     code = "INTERNAL_ERROR"
@@ -52,6 +54,7 @@ class StatementSizeError(ValueError):
 class PlanningError(Exception):
     """规划业务冲突和容量错误；API 边界负责转换状态及稳定错误码。"""
 
-    def __init__(self, code: str, status: int = 409) -> None:
+    def __init__(self, code: str, status: int = 409, *, target_plan_id: UUID | None = None) -> None:
         self.code, self.status = code, status
+        self.target_plan_id = target_plan_id
         super().__init__(code)

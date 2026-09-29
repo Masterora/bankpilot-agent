@@ -27,6 +27,7 @@ export interface AssistantAction {
   result: BudgetItem | null
 }
 export type Evidence =
+  | { tool: 'recurring_discovery'; data: RecurringDiscoverySummary }
   | { tool: 'find_transactions'; data: SearchPage }
   | { tool: 'spending'; month: string; data: SpendingSummary }
   | { tool: 'budgets'; month: string; data: Omit<BudgetWorkspace, 'evidence'> & { spending_refs: SpendingSummary[] } }
@@ -38,6 +39,18 @@ export interface Reply {
   text: string
   evidence: Evidence[]
   action: AssistantAction | null
+}
+
+export interface RecurringDiscoverySummary {
+  through: string
+  window_start: string
+  rule_version: string
+  coverage: string
+  candidate_count: number
+  insufficient_count: number
+  ambiguous_count: number
+  existing_count: number
+  target: { page: 'recurring'; view: 'discovery'; through: string }
 }
 
 export interface SpendingScope {
@@ -121,7 +134,7 @@ export function spendingRefs(evidence: Evidence[]): SpendingSummary[] {
 }
 
 export interface TurnInput {
-  protocol_version: 4
+  protocol_version: 5
   expected_context_version: number
   request_id: string
   conversation_id?: string

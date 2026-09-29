@@ -91,7 +91,7 @@ async def turn_view(session: AsyncSession, row: AssistantTurnRecord) -> TurnView
         request_summary.get("recompare_of") if isinstance(request_summary, dict) else None
     )
     reply = stored if stored and row.status == "completed" else None
-    if reply and row.result_version != 3:
+    if reply and row.result_version not in (3, 4):
         reply = {
             "text": "",
             "evidence": [],
@@ -235,7 +235,7 @@ class ConversationService:
                     not original
                     or original.conversation_id != row.id
                     or original.status != "completed"
-                    or original.result_version != 3
+                    or original.result_version not in (3, 4)
                 ):
                     raise PlanningError("assistant_recompare_invalid", 409)
                 comparison_items = [
@@ -263,7 +263,7 @@ class ConversationService:
             turn: AssistantTurnRecord | None = AssistantTurnRecord(
                 conversation_id=row.id,
                 search_context=row.search_context,
-                result_version=3,
+                result_version=4,
                 request_id=payload.request_id,
                 digest=digest,
                 sequence=count + 1,
@@ -290,7 +290,7 @@ class ConversationService:
                         .where(
                             AssistantTurnRecord.conversation_id == row.id,
                             AssistantTurnRecord.status == "completed",
-                            AssistantTurnRecord.result_version == 3,
+                            AssistantTurnRecord.result_version.in_((3, 4)),
                         )
                         .order_by(AssistantTurnRecord.sequence.desc())
                         .limit(7)
@@ -351,6 +351,7 @@ class ConversationService:
                             search_context=search_context,
                         ),
                         today,
+                        discovery_enabled=self.settings.recurring_discovery_enabled,
                     )
                 if payload.recompare_of:
                     reply["request_summary"] = {"recompare_of": str(payload.recompare_of)}

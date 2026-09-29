@@ -50,7 +50,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   const saveRecovery = useCallback((payload: TurnInput | null) => {
     try {
       const raw = sessionStorage.getItem(key)
-      if (raw && JSON.parse(raw).protocol_version !== 4) preserveUnsupported(raw)
+      if (raw && JSON.parse(raw).protocol_version !== 5) preserveUnsupported(raw)
       if (payload) sessionStorage.setItem(key, JSON.stringify(payload))
       else sessionStorage.removeItem(key)
       recovery.current = payload
@@ -107,7 +107,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
         const raw = sessionStorage.getItem(key)
         if (raw) {
           const payload = JSON.parse(raw) as TurnInput
-          if (payload.protocol_version === 4 && payload.request_id && typeof payload.question === 'string') {
+          if (payload.protocol_version === 5 && payload.request_id && typeof payload.question === 'string') {
             recovery.current = payload
             setUnknown(payload)
             const turn = await api.assistantLookup(payload).catch(() => null)

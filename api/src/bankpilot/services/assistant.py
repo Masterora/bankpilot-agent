@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bankpilot.db.assistant_repository import AssistantRepository, conversation_record, lock_owner
-from bankpilot.db.models import AccountRecord, AssistantActionRecord
+from bankpilot.db.models import AccountRecord, AssistantActionRecord, UserRecord
 from bankpilot.db.overview_repository import read_overview
 from bankpilot.db.planning_repository import PlanningRepository
 from bankpilot.domain.assistant import (
@@ -22,16 +22,19 @@ from bankpilot.domain.assistant import (
     CompareSpending,
     FindTransactions,
     ProposeBudget,
+    ReadRecurringDiscovery,
     ReadSpending,
 )
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.planning import BudgetInput
+from bankpilot.domain.recurring_discovery import month_index, month_start
 from bankpilot.domain.spending import SpendingScope
 from bankpilot.domain.transaction_search import SearchFilters, SearchRequest, normalize_text
 from bankpilot.errors import PlanningError
 from bankpilot.ports import AssistantGateway
 from bankpilot.services import budgets
 from bankpilot.services.planning_reads import budget_workspace, recurring_workspace
+from bankpilot.services.recurring_discovery import discover
 from bankpilot.services.spending import compare_spending, read_spending
 from bankpilot.services.transaction_search import search
 
@@ -42,6 +45,9 @@ spending 查询单月、单支出分类、单币种的消费构成；budgets 和
 compare_spending 比较两个不同月份的同币种实际支出；比较问题必须使用它，
 禁止分别查两个月后自行做减法。
 recurring 返回固定支出状态；propose_budget 仅提出单个月份、分类、币种、额度的修改。
+recurring_discovery 只读最近 12 个完整月中的可能月付项目汇总；月份参数须为已结束月份月首。
+该工具只返回候选数量、规则版本、覆盖状态与页面入口，不返回逐笔证据。
+可能月付不是已确认订阅，空结果不表示不存在固定支出；引导用户到固定支出发现页核对。
 日期参数必须为月份第一天。金额不可跨币种相加。未导入不代表没有支出，净额不是余额。
 提案前必须查询目标月份预算；category 使用工具返回的枚举，收入不可设置支出预算。
 用户的“改成1000”等追问可以继承明确的上文对象；若对象、月份或币种不明确先问清。
@@ -86,6 +92,8 @@ async def chat(
     uid: UUID,
     request: ChatInput,
     today: date,
+    *,
+    discovery_enabled: bool,
 ) -> dict[str, Any]:
     messages = [
         {
@@ -118,6 +126,66 @@ async def chat(
         decision = await gateway.decide(messages)
         if isinstance(decision, Answer):
             return {"text": decision.text, "evidence": observations, "action": None}
+        if isinstance(decision, ReadRecurringDiscovery):
+            if not discovery_enabled:
+                return {
+                    "text": (
+                        "发现入口暂未开放。" if request.locale == "zh-CN"
+                        else "Discovery is unavailable."
+                    ),
+                    "evidence": observations,
+                    "action": None,
+                }
+            through = decision.arguments.month
+            latest = month_start(month_index(today) - 1)
+            if through > latest:
+                return {
+                    "text": (
+                        "请选择已结束的完整月份。" if request.locale == "zh-CN"
+                        else "Choose a completed month."
+                    ),
+                    "evidence": observations,
+                    "action": None,
+                }
+            async with factory() as session:
+                await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+                revision = await session.scalar(
+                    select(UserRecord.ledger_revision).where(UserRecord.id == uid)
+                )
+                page = await discover(
+                    session, uid, revision or 0, through, 0, None, all_groups=True
+                )
+            active = [group for group in page.items if group.decision_status == "active"]
+            counts = {
+                "candidate_count": sum(group.status == "candidate" for group in active),
+                "insufficient_count": sum(group.status == "insufficient" for group in active),
+                "ambiguous_count": sum(group.status == "ambiguous" for group in active),
+                "existing_count": sum(group.status == "existing" for group in active),
+            }
+            summary = {
+                "through": page.through.isoformat(),
+                "window_start": page.window_start.isoformat(),
+                "rule_version": page.rule_version,
+                "coverage": page.coverage,
+                **counts,
+                "target": {
+                    "page": "recurring",
+                    "view": "discovery",
+                    "through": page.through.isoformat(),
+                },
+            }
+            count = counts["candidate_count"]
+            return {
+                "text": (
+                    f"当前规则发现 {count} 组可能月付项目。"
+                    "账单覆盖未认证，请到固定支出发现页核对证据。"
+                    if request.locale == "zh-CN"
+                    else f"The current rule found {count} possible monthly groups. "
+                    "Statement coverage is unverified; review evidence in recurring discovery."
+                ),
+                "evidence": [{"tool": "recurring_discovery", "data": summary}],
+                "action": None,
+            }
         if isinstance(decision, FindTransactions):
             async with factory() as session:
                 await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})

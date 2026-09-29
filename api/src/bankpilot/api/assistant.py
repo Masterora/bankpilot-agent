@@ -53,7 +53,7 @@ from bankpilot.services.transaction_search import validate_ownership
 def require_protocol(
     version: Annotated[str | None, Header(alias="X-Assistant-Protocol")] = None,
 ) -> None:
-    if version != "4":
+    if version != "5":
         raise ApiProblem(409, "assistant_protocol_upgrade", "Refresh the page to upgrade")
 
 
@@ -104,7 +104,7 @@ async def comparison_evidence(
         .where(
             AssistantTurnRecord.id == turn_id,
             AssistantTurnRecord.status == "completed",
-            AssistantTurnRecord.result_version == 3,
+            AssistantTurnRecord.result_version.in_((3, 4)),
             AssistantConversationRecord.user_id == user.id,
             AssistantConversationRecord.deleted.is_(False),
         )
