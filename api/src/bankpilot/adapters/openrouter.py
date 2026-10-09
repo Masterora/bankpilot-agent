@@ -3,6 +3,7 @@
 主要内容：处理结构化 Schema、规划和工具决策提示词、响应验证、用量记录及有限重试。
 关键边界：模型输出只作为受校验的计划或提案，不授予数据权限或金融写入权。
 """
+
 import asyncio
 import json
 from datetime import date
@@ -12,11 +13,13 @@ from uuid import UUID
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from bankpilot.config import Settings
 from bankpilot.domain.assistant import Decision, decision_adapter
 from bankpilot.domain.contracts import ModelPlan, ModelUsage, PlanningDecision
 from bankpilot.errors import ModelOutputInvalidError, ModelUnavailableError
+from bankpilot.services.security_admission import SecurityAdmission, model_user
 
 _decision_adapter: TypeAdapter[PlanningDecision] = TypeAdapter(PlanningDecision)
 _retryable_statuses = {408, 429, 500, 502, 503, 524, 529}
@@ -92,9 +95,15 @@ _decision_schema = _inline_local_refs(_decision_adapter.json_schema())
 class OpenRouterModelGateway:
     """调用指定的 OpenRouter 模型，不向上层泄漏供应商实现细节。"""
 
-    def __init__(self, settings: Settings, client: httpx.AsyncClient) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        client: httpx.AsyncClient,
+        factory: async_sessionmaker[AsyncSession],
+    ) -> None:
         self.settings = settings
         self.client = client
+        self.admission = SecurityAdmission(factory, settings)
 
     async def plan(self, user_message: str, *, today: date, run_id: UUID) -> ModelPlan:
         """将自然语言转换为经严格校验的规划决策。"""
@@ -204,14 +213,28 @@ class OpenRouterModelGateway:
     async def _post_with_retry(self, payload: dict[str, Any], api_key: str) -> httpx.Response:
         """重试短暂的网络或供应商故障，并对上输出稳定的领域异常。"""
         attempts = self.settings.model_max_retries + 1
+        uid = model_user.get()
+        if uid is None:
+            raise ModelUnavailableError("Model request has no authenticated work owner")
+        # Conservative UTF-8 upper bound plus output reservation, charged for every attempt.
+        units = (
+            len(json.dumps(payload, ensure_ascii=False).encode()) + self.settings.model_max_tokens
+        )
         last_error: Exception | None = None
         for attempt in range(attempts):
             try:
-                response = await self.client.post(
-                    "/chat/completions",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json=payload,
-                )
+                async with self.admission.lease(
+                    "model",
+                    str(uid),
+                    self.settings.model_user_active,
+                    self.settings.model_global_active,
+                    tokens=units,
+                ):
+                    response = await self.client.post(
+                        "/chat/completions",
+                        headers={"Authorization": f"Bearer {api_key}"},
+                        json=payload,
+                    )
                 if response.status_code in _retryable_statuses and attempt + 1 < attempts:
                     await asyncio.sleep(0.25 * (2**attempt))
                     continue

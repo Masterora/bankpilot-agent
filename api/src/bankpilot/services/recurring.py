@@ -71,6 +71,8 @@ async def create_recurring(session: AsyncSession, uid: UUID, payload: RecurringI
     if account.currency != payload.currency:
         raise PlanningError("planning_currency", 422)
     PlanningRepository(session).add(RecurringRecord(user_id=uid, **payload.model_dump()))
+    await session.flush()
+    await synchronize_existing_states(session, uid, source_type="recurring", source_id=payload.id)
 
 
 async def owned_plan(

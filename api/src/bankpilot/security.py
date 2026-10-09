@@ -10,10 +10,12 @@
 关键边界：数据库只保存会话令牌的 HMAC-SHA256 结果，不保存原始令牌。
 """
 
+import asyncio
 import hashlib
 import hmac
 import re
 import secrets
+from collections.abc import Callable
 
 from pwdlib import PasswordHash
 
@@ -21,6 +23,31 @@ _password_hash = PasswordHash.recommended()
 DUMMY_PASSWORD_HASH = _password_hash.hash("not-a-real-bankpilot-password")
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
+
+
+async def _password_work[T](function: Callable[..., T], *args: str) -> T:
+    """Cancellation cannot release CPU admission while its thread is still hashing."""
+    task = asyncio.create_task(asyncio.to_thread(function, *args))
+    cancelled = False
+    while True:
+        try:
+            result = await asyncio.shield(task)
+            break
+        except asyncio.CancelledError:
+            if task.cancelled():
+                raise
+            cancelled = True
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
+async def hash_password_async(password: str) -> str:
+    return await _password_work(hash_password, password)
+
+
+async def verify_password_async(password: str, password_hash: str) -> bool:
+    return await _password_work(verify_password, password, password_hash)
 
 
 def validate_new_password(password: str) -> str:

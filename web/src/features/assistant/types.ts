@@ -163,6 +163,10 @@ export interface SavedTurn {
   error_code: string | null
 }
 export interface Conversation {
+  search_subscribed: boolean
+  search_checked_at: string | null
+  search_changed_at: string | null
+  search_check_error: string | null
   search_context: SearchFilters | null
   context_version: number
   id: string

@@ -24,6 +24,8 @@ from bankpilot.config import Settings
 from bankpilot.db.models import UserRecord
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.planning import (
+    BudgetCarryInput,
+    BudgetCarryPreview,
     BudgetCopyResult,
     BudgetInput,
     BudgetWorkspace,
@@ -48,6 +50,7 @@ from bankpilot.domain.recurring_discovery import (
     month_index,
     month_start,
 )
+from bankpilot.services import budget_carry as carry_service
 from bankpilot.services import budgets as budget_service
 from bankpilot.services import recurring as recurring_service
 from bankpilot.services import recurring_discovery as discovery_service
@@ -142,6 +145,26 @@ async def remove_budget(
         payload.budget_id,
     )
     await session.commit()
+
+
+@router.get("/budgets/carry", response_model=BudgetCarryPreview)
+async def budget_carry_preview(
+    month: date,
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
+) -> BudgetCarryPreview:
+    return await carry_service.preview_carry(session, user.id, checked_month(month))
+
+
+@router.post("/budgets/carry", response_model=BudgetCarryPreview)
+async def budget_carry_confirm(
+    payload: BudgetCarryInput,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> BudgetCarryPreview:
+    result = await carry_service.confirm_carry(session, user.id, payload)
+    await session.commit()
+    return result
 
 
 @router.get("/recurring", response_model=RecurringWorkspace)

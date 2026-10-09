@@ -1,10 +1,10 @@
 """Persistence helpers for user-isolated attention state and operation receipts."""
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import delete, extract, or_, select, tuple_
+from sqlalchemy import delete, extract, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.db.models import (
@@ -56,6 +56,26 @@ class AttentionRepository:
                     AttentionStateRecord.source_date,
                     AttentionStateRecord.source_id,
                 )
+            )
+        )
+
+    async def next_notification_snooze(
+        self, user_id: UUID, *, now: datetime, today: date
+    ) -> datetime | None:
+        month = today.replace(day=1)
+        return await self.session.scalar(
+            select(func.min(AttentionStateRecord.snoozed_until)).where(
+                AttentionStateRecord.user_id == user_id,
+                AttentionStateRecord.state == "snoozed",
+                AttentionStateRecord.fact_status == "active",
+                AttentionStateRecord.snoozed_until > now,
+                AttentionStateRecord.source_date >= month,
+                or_(
+                    (AttentionStateRecord.source_type == "budget")
+                    & (AttentionStateRecord.source_date == month),
+                    (AttentionStateRecord.source_type == "recurring")
+                    & (AttentionStateRecord.source_date <= today + timedelta(days=7)),
+                ),
             )
         )
 

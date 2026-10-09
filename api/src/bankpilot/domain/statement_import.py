@@ -17,7 +17,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -206,6 +206,8 @@ def _parse_statement_csv(
 
     reader = csv.DictReader(io.StringIO(normalized_content, newline=""), dialect=dialect)
     headers = reader.fieldnames or []
+    if len(headers) > 128:
+        raise StatementStructureError("CSV exceeds the 128 column limit")
     if any(h.strip() in {"收/支", "收支方向", "交易状态", "当前状态", "退款金额"} for h in headers):
         raise ValueError("来源结构未适配，禁止按通用金额列推断收支")
     if len(headers) != len(set(headers)):
@@ -227,31 +229,30 @@ def _parse_statement_csv(
         raise StatementStructureError("Missing mapped columns")
 
     try:
-        raw_rows = [
-            (reader.line_num, row)
-            for row in reader
+        raw_rows: list[tuple[int, dict[str | None, str | list[str] | None]]] = []
+        for row in reader:
             if any(
                 value is not None and (not isinstance(value, str) or value.strip())
                 for value in row.values()
-            )
-        ]
+            ):
+                if len(raw_rows) >= MAX_STATEMENT_ROWS:
+                    raise StatementStructureError("CSV exceeds the 5000 row limit")
+                raw_rows.append((reader.line_num, row))
     except csv.Error as exc:
         raise StatementStructureError("CSV structure or field size is invalid") from exc
     if not raw_rows:
         raise StatementStructureError("CSV has no transaction rows")
 
-    if len(raw_rows) > MAX_STATEMENT_ROWS:
-        raise StatementStructureError("CSV exceeds the 5000 row limit")
-
     parsed_rows: list[ParsedStatementRow] = []
     errors: list[StatementRowError] = []
     occurrence_counts: defaultdict[str, int] = defaultdict(int)
     account_names: set[str] = set()
-    for ordinal, (physical_line, raw) in enumerate(raw_rows):
+    for ordinal, (physical_line, source_row) in enumerate(raw_rows):
         row_number = source_numbers[ordinal] if source_numbers is not None else physical_line
         try:
-            if None in raw or any(value is None for value in raw.values()):
+            if None in source_row or any(value is None for value in source_row.values()):
                 raise ValueError("row column count does not match the CSV header")
+            raw = cast(dict[str, str], source_row)
             booking_date, occurred_at = _parse_datetime(raw.get(mapping.occurred_at, ""))
             merchant = _required_text(raw.get(mapping.merchant, ""), "merchant", 160)
             description = _optional_text(

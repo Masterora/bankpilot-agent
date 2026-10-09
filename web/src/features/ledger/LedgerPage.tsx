@@ -38,6 +38,8 @@ export function LedgerPage({ copy, english, period, onPeriodChange, active, entr
   const search = useTransactionSearch(active)
   const { page, busy: loading, query } = search
   const items = page?.items ?? []
+  const resultChips = page ? searchChips(page.filters, copy.categoryLabels, english) : []
+  const filtered = resultChips.length > 0
   const stale = search.stale || loading
   const [selected, setSelected] = useState<Transaction | null>(null)
   const [detailRevision, setDetailRevision] = useState<number | null>(null)
@@ -148,7 +150,7 @@ export function LedgerPage({ copy, english, period, onPeriodChange, active, entr
     </dialog>
     <SearchForm key={JSON.stringify(filters)} initial={filters} copy={copy} english={english} busy={loading} onSearch={next => void execute(next)} />
     <div className="filter-chips" aria-label={english ? 'Executed filters' : '已执行条件'}>
-      {page && searchChips(page.filters, copy.categoryLabels, english).map(({ key, label }) => <button key={key} onClick={() => void execute({ ...page.filters, ...(key === 'currency' ? { min_amount: null, max_amount: null } : {}), [key]: key === 'text' ? '' : key === 'direction' ? 'all' : key === 'text_scope' ? 'merchant_or_note' : null })}>{label} ×</button>)}
+      {page && resultChips.map(({ key, label }) => <button key={key} onClick={() => void execute({ ...page.filters, ...(key === 'currency' ? { min_amount: null, max_amount: null } : {}), [key]: key === 'text' ? '' : key === 'direction' ? 'all' : key === 'text_scope' ? 'merchant_or_note' : null })}>{label} ×</button>)}
       <button onClick={clearFilters}>{english ? 'Clear filters' : '清除筛选'}</button><button onClick={() => void execute(periodFilters(currentPeriod()))}>{english ? 'Current month' : '本月'}</button>
     </div>
     {loading && <LoadingIndicator label={english ? 'Searching' : '查询中'} />}
@@ -156,10 +158,9 @@ export function LedgerPage({ copy, english, period, onPeriodChange, active, entr
     {notice && <p role="status">{notice}</p>}
     {search.stale && !search.error && <p role="status">{english ? 'Ledger updated.' : '账本已更新。'} <button onClick={() => void query(filters)}>{english ? 'Query again' : '重新查询'}</button></p>}
     {page && <>
-      <p>{page.filters.start_date} — {page.filters.end_date}</p>
-      <div className="ledger-toolbar"><span>{english ? `${page.total_count} transactions` : `共 ${page.total_count} 笔`}</span><button disabled={!page.total_count || stale || preparing} onClick={() => void download()}>{english ? 'Export CSV' : '导出 CSV'}</button></div>
-      <div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant / Source', 'Amount', 'Category'] : ['时间', '账户', '商户／来源', '金额', '分类']).map((text) => <th scope="col" key={text}>{text}</th>)}</tr></thead><tbody>{!items.length && <tr><td colSpan={5}><EmptyContent kind="review" title={english ? 'No transactions to display' : '暂无可显示的流水'} detail={items.length ? (english ? 'Try clearing the filters.' : '请调整筛选条件。') : (english ? 'Import a statement or select another period.' : '导入账单，或选择其他期间。')}>
-        {items.length ? <button onClick={clearFilters}>{english ? 'Clear filters' : '清除筛选'}</button> : <button className="primary" onClick={onImport}>{english ? 'Import statement' : '导入账单'}</button>}
+      <div className="ledger-toolbar"><div className="ledger-result-summary"><span>{page.filters.start_date} — {page.filters.end_date}</span><strong>{english ? `${page.total_count} transactions` : `共 ${page.total_count} 笔`}</strong></div><button disabled={!page.total_count || stale || preparing} onClick={() => void download()}>{english ? 'Export CSV' : '导出 CSV'}</button></div>
+      <div className="import-table-wrap"><table className="import-table"><thead><tr>{(english ? ['Time', 'Account', 'Merchant / Source', 'Amount', 'Category'] : ['时间', '账户', '商户／来源', '金额', '分类']).map((text) => <th scope="col" key={text}>{text}</th>)}</tr></thead><tbody>{!items.length && <tr><td colSpan={5}><EmptyContent kind="review" title={filtered ? (english ? 'No matching transactions' : '无匹配流水') : (english ? 'No transactions in this period' : '本期暂无流水')} detail={filtered ? (english ? 'Change or clear the filters.' : '请修改或清除筛选条件。') : (english ? 'Import a statement or select another period.' : '导入账单，或选择其他期间。')}>
+        {filtered ? <button onClick={clearFilters}>{english ? 'Clear filters' : '清除筛选'}</button> : <button className="primary" onClick={onImport}>{english ? 'Import statement' : '导入账单'}</button>}
       </EmptyContent></td></tr>}{items.map((item) => <tr key={item.id}>
         <td className="time-cell">{formatTransactionTime(item, english ? 'en-US' : 'zh-CN')}</td><td>{item.account_name}</td><td><button className="transaction-link" onClick={() => void inspect(item.id, versions(page))}>{item.merchant}</button>{'relation_kinds' in item && (item.relation_kinds as string[]).map(kind => <small key={kind}>{english ? kind : ({ refund: '已确认退款', transfer: '已确认转账', duplicate: '已确认重复' }[kind])}</small>)}{item.description && <small className="ledger-note">{item.description}</small>}</td>
         <td className={`ledger-amount${Number(item.amount) >= 0 ? ' income' : ''}`}>{formatMoney(item.amount, item.currency, english ? 'en-US' : 'zh-CN')}</td><td><select aria-label={`${copy.categoryLabel}: ${item.merchant}`} value={item.category} disabled={saving || stale} onChange={(e) => void correct(item.id, e.target.value as TransactionCategory)}>{Object.entries(copy.categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><span className="mobile-category">{copy.categoryLabels[item.category]}</span></td>

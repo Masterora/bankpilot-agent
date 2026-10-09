@@ -38,9 +38,9 @@ React 与 TypeScript 构建界面，FastAPI 承载业务，PostgreSQL 保存账�
 
 ## 需求与交付材料
 
-当前需求：[待办状态与提醒偏好](docs/ATTENTION_STATE_DESIGN.md)。现行业务契约统一见[架构](docs/ARCHITECTURE.md)。
+需求与契约：[待办状态与提醒偏好](docs/ARCHITECTURE.md#待办状态与提醒偏好) · [固定支出候选发现](docs/ARCHITECTURE.md#固定支出候选发现) · [事务事件与站内通知](docs/ARCHITECTURE.md#r7-事务通知)。现行业务契约统一见[架构](docs/ARCHITECTURE.md)。
 
-当前最终记录：[R5 交付与验证](docs/R5_ACCEPTANCE.md)，保留实际结果与未验收边界。
+当前能力与验证边界见[当前状态](docs/CURRENT_STATE.md)。分阶段证据：[R5 待办](docs/R5_ACCEPTANCE.md) · [R6 候选建项](docs/R6_PROPOSALS_ACCEPTANCE.md) · [R7 站内通知](docs/R7_ACCEPTANCE.md)。发现与通知默认关闭，发布门槛尚未全部通过。
 
 [交互原型](docs/final-product.html)及配套资源保留，使用合成数据、不连接后端或模型；尚未覆盖当前待办状态功能，不作为最新版本验收证明。
 

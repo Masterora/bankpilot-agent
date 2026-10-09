@@ -42,7 +42,6 @@ export function ImportPage(props: ImportPageProps) {
     <section className="product-page imports-page">
       <PageHeader copy={copy} page="import" />
 
-      {active && <Accounts key={imports.map((batch) => `${batch.id}:${batch.status}`).join('|')} english={english} onChanged={() => workflow.setAccountsAttempt((value) => value + 1)} />}
       <details className="import-guide"><summary>{english ? 'How do I get a statement?' : '如何获取账单？'}</summary>
         <ul><li>{english ? 'WeChat / Alipay: export from the bill menu.' : '微信／支付宝：在账单菜单中导出。'}</li>
         <li>{english ? 'Bank: export CSV or XLSX. PDF is not supported.' : '银行卡：导出 CSV 或 XLSX，暂不支持 PDF。'}</li></ul>
@@ -109,6 +108,7 @@ export function ImportPage(props: ImportPageProps) {
         {result.imported_rows > 0 && result.start_date && result.end_date && <div className="import-next"><button type="button" className="primary" onClick={() => onAnalyze(result)}>{copy.openReview}<span aria-hidden="true"> →</span></button><button type="button" onClick={() => onReviewRelations(result)}>{english ? 'Check duplicates, transfers & refunds' : '核对重复、转账与退款'}</button></div>}
       </>}
       </div><aside className="import-history-column">
+      {active && <Accounts key={imports.map((batch) => `${batch.id}:${batch.status}`).join('|')} english={english} onChanged={() => workflow.setAccountsAttempt((value) => value + 1)} />}
       {failed && <button type="button" onClick={onRetryHistory}>{english ? 'Retry history' : '重新读取历史'}</button>}
       {(loading || failed || imports.length > 0) && <ImportHistory copy={copy} english={english} failed={failed} imports={imports} loading={loading} onRevoked={onImported} onAnalyze={onAnalyze} />}
 

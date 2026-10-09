@@ -1,6 +1,6 @@
 # 文件职责：构建 BankPilot API 生产镜像。
 # 主要内容：安装锁定的 uv/Python 依赖，复制迁移与源码，创建非 root 运行用户。
-# 关键边界：启动时先执行 Alembic 迁移，随后由同一进程接管 Uvicorn。
+# 关键边界：迁移由显式发布步骤执行；普通启动不修改数据库结构。
 FROM python:3.13-slim-trixie
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /uvx /bin/
@@ -27,5 +27,5 @@ USER bankpilot
 
 EXPOSE 8000
 
-# 容器启动时先完成幂等迁移，再接管 API 主进程。
-CMD ["sh", "-c", "uv run --no-sync alembic upgrade head && exec uv run --no-sync uvicorn bankpilot.api.app:create_app --factory --host 0.0.0.0 --port 8000"]
+# 发布脚本在启动之前单独执行迁移。
+CMD ["uv", "run", "--no-sync", "uvicorn", "bankpilot.api.app:create_app", "--factory", "--no-proxy-headers", "--host", "0.0.0.0", "--port", "8000"]

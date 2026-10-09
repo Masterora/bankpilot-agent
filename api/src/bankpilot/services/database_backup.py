@@ -3,6 +3,7 @@
 主要内容：运行 PostgreSQL 工具，生成摘要清单、校验目标并核对恢复结果。
 关键边界：口令仅经子进程环境传递；写入新目录，完整校验后发布清单，不清理旧备份。
 """
+
 import asyncio
 import hashlib
 import json
@@ -282,6 +283,28 @@ async def check_restored(
                         "runs": runs,
                         "conversations_to_clear": history,
                         "turns_to_clear": turns,
+                        "security_leases_to_clear": int(
+                            await session.scalar(text("SELECT count(*) FROM security_leases")) or 0
+                        ),
+                        "notification_events_to_suppress": int(
+                            await session.scalar(
+                                text(
+                                    "SELECT count(*) FROM notification_outbox "
+                                    "WHERE status IN ('pending','running','failed')"
+                                )
+                            )
+                            or 0
+                        ),
+                        "notification_schedules_to_reset": int(
+                            await session.scalar(
+                                text(
+                                    "SELECT count(*) FROM notification_schedules "
+                                    "WHERE baseline_epoch IS NOT NULL OR claim_token IS NOT NULL "
+                                    "OR lease_until IS NOT NULL"
+                                )
+                            )
+                            or 0
+                        ),
                         "preserved": "ledger, budgets, recurring plans, reports, applied receipts",
                     }
                 result: dict[str, int | str] = dict(await prepare_restored_tasks(session))

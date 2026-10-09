@@ -37,6 +37,7 @@ export function RecurringPage({
   onDraftChange,
   externalRevision,
   onInspect,
+  onImport,
 }: {
   userId: string
   copy: Messages
@@ -51,6 +52,7 @@ export function RecurringPage({
   onDraftChange: (dirty: boolean) => void
   externalRevision: number
   onInspect: (entry: LedgerEntry) => void
+  onImport: () => void
 }) {
   const english = locale === 'en-US'
   const state = usePlanningMonth(api.recurring, month, english, active, externalRevision)
@@ -65,6 +67,8 @@ export function RecurringPage({
   const [discoveryOpen, setDiscoveryOpen] = useState(false)
   const [requestedDiscoveryMonth, setRequestedDiscoveryMonth] = useState<string | undefined>()
   const [discoveryEnabled, setDiscoveryEnabled] = useState(false)
+  const [discoveryState, setDiscoveryState] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const [discoveryAttempt, setDiscoveryAttempt] = useState(0)
   const [filter, setFilter] = useState('all')
   usePlanningFocus(focusTarget, state.loading, active)
   const discoveryMonth = focusTarget.startsWith('discovery:') ? focusTarget.split(':')[1]?.slice(0, 7) : undefined
@@ -81,11 +85,14 @@ export function RecurringPage({
     }
     let current = true
     setDiscoveryEnabled(false)
+    setDiscoveryState('loading')
     api.recurringDiscoveryAvailability()
-      .then(({ enabled }) => { if (current) setDiscoveryEnabled(enabled) })
-      .catch(() => { if (current) setDiscoveryEnabled(false) })
+      .then(({ enabled }) => {
+        if (current) { setDiscoveryEnabled(enabled); setDiscoveryState('ready') }
+      })
+      .catch(() => { if (current) setDiscoveryState('failed') })
     return () => { current = false }
-  }, [active])
+  }, [active, discoveryAttempt])
   useEffect(() => {
     if (seed && !draft) {
       setEditorVisible(true)
@@ -264,9 +271,15 @@ export function RecurringPage({
           onClick={() => {
             void state.refresh()
             setAccountAttempt((value) => value + 1)
+            setDiscoveryAttempt((value) => value + 1)
           }}
         />
       </div>
+      {discoveryState === 'loading' && <p role="status">{t('正在读取发现功能状态', 'Loading discovery availability')}</p>}
+      {discoveryState === 'failed' && <p className="error" role="alert">
+        {t('无法读取月付发现功能状态。', 'Could not load monthly charge discovery availability.')} {' '}
+        <button onClick={() => setDiscoveryAttempt(value => value + 1)}>{t('重试', 'Retry')}</button>
+      </p>}
       {discoveryEnabled && <RecurringDiscovery userId={userId} plans={state.data?.items ?? []} initialMonth={requestedDiscoveryMonth} open={discoveryOpen} locale={locale} onClose={() => setDiscoveryOpen(false)} onInspect={onInspect} onCreated={() => { void state.refresh() }} onOpenPlan={(planId) => { setDiscoveryOpen(false); setFilter('all'); setSelected(planId); requestAnimationFrame(() => document.getElementById(`recurring-${planId}`)?.scrollIntoView({ block: 'center' })) }} />}
       {accountsLoading && <LoadingIndicator label={t('正在读取账户', 'Loading accounts')} />}
       {accountError && (
@@ -281,6 +294,7 @@ export function RecurringPage({
             '请先导入账单建立账户，再添加固定支出。',
             'Import a statement to create an account before adding a recurring charge.',
           )}
+          {' '}<button onClick={onImport}>{t('导入账单', 'Import statement')}</button>
         </p>
       )}
       {state.error && (
@@ -318,7 +332,7 @@ export function RecurringPage({
           title={t('还没有周期项', 'No recurring charges')}
         />
       )}
-      <div className="relation-tabs" aria-label={t('核对状态', 'Review status')}>
+      {!!state.data?.items.length && <div className="relation-tabs" aria-label={t('核对状态', 'Review status')}>
         {filters.map(([value, label]) => (
           <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
             {label} ·{' '}
@@ -326,7 +340,7 @@ export function RecurringPage({
               .length ?? 0}
           </button>
         ))}
-      </div>
+      </div>}
       <div className="recurring-list">
         {ordered.map((item) => (
           <Fragment key={item.id}>

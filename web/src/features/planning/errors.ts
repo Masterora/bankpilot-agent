@@ -6,6 +6,10 @@
 import { apiErrorMessage } from '../../shared/apiErrors'
 
 const errors: Record<string, [string, string]> = {
+  budget_carry_month: ['只能结转已结束的上月预算，请选择 1900 年 2 月至本月。', 'Choose February 1900 through this month; the source month must be complete.'],
+  budget_carry_applied: ['本月已结转，请重新读取回执；不能重复增加额度。', 'This month was already carried over. Reload the receipt.'],
+  budget_carry_empty: ['上月没有可结转的剩余额度。', 'No remaining budget to carry over.'],
+  budget_carry_amount_limit: ['结转后的预算超出金额上限。', 'The resulting budget exceeds the amount limit.'],
   planning_revision_locked: [
     '该计划已生效或已有核对结果，不能改写；请安排后续变更。',
     'This configuration is effective or reviewed. Schedule a later change.',

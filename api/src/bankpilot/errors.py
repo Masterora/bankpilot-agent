@@ -12,10 +12,6 @@ class BankPilotError(Exception):
     code = "INTERNAL_ERROR"
 
 
-class AuthenticationError(BankPilotError):
-    code = "AUTHENTICATION_FAILED"
-
-
 class ModelUnavailableError(BankPilotError):
     code = "MODEL_UNAVAILABLE"
 

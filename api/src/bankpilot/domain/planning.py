@@ -81,6 +81,32 @@ class BudgetCopyResult(BaseModel):
     source_count: int
 
 
+class BudgetCarryInput(PlanningInput):
+    month: date
+    operation_id: UUID
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class BudgetCarryItem(BaseModel):
+    category: TransactionCategory
+    currency: str
+    source_amount: Decimal
+    source_spent: Decimal
+    source_transaction_count: int
+    base_amount: Decimal
+    carry_amount: Decimal
+    target_amount: Decimal
+
+
+class BudgetCarryPreview(BaseModel):
+    month: date
+    source_month: date
+    fingerprint: str
+    items: list[BudgetCarryItem]
+    applied: bool = False
+    operation_id: UUID | None = None
+
+
 class BudgetCoverage(BaseModel):
     currency: str
     transaction_count: int

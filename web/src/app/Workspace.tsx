@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
+import { NotificationInbox } from '../features/notifications/NotificationInbox'
 import { ApiError, api } from '../api'
 import { AssistantPanel } from '../features/assistant/AssistantPanel'
 import { LedgerPage } from '../features/ledger/LedgerPage'
@@ -122,15 +123,15 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
   const endingSession = useRef(false)
   const [sessionBusy, setSessionBusy] = useState(false)
 
-  async function endSession(switchAccount: boolean) {
+  async function endSession(switchAccount: boolean, deleted = false) {
     if (endingSession.current) return
-    if ((drafts.budgets || drafts.recurring) && !window.confirm(locale === 'en-US'
+    if (!deleted && (drafts.budgets || drafts.recurring) && !window.confirm(locale === 'en-US'
       ? 'Discard unsaved planning changes and sign out?'
       : '未保存的预算或固定支出修改将丢失，仍要退出当前账号？')) return
     endingSession.current = true
     setSessionBusy(true)
     try {
-      await api.logout()
+      if (!deleted) await api.logout()
     } catch (cause) {
       if (!(cause instanceof ApiError && cause.status === 401)) {
         setNavigationNotice(locale === 'en-US' ? 'Could not sign out. Check your connection and try again.' : '退出失败，请检查网络后重试。')
@@ -143,6 +144,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
     window.history.replaceState(null, '', window.location.pathname)
     try {
       sessionStorage.removeItem(`assistant:${user.id}`)
+      sessionStorage.removeItem(`assistant-unverified:${user.id}`)
       sessionStorage.removeItem(`assistant-current:${user.id}`)
       sessionStorage.removeItem(`recurring-discovery-proposal:${user.id}`)
       sessionStorage.removeItem(`recurring-discovery-operation:${user.id}`)
@@ -242,10 +244,10 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
       onPeriodChange={setReviewPeriod}
     />,
     relations: <RelationsPage onImport={() => navigate('import')} seedId={relationSeed} copy={copy} english={locale === 'en-US'} period={reviewPeriod} onPeriodChange={setReviewPeriod} />,
-    settings: <SettingsPage copy={copy} locale={locale} onLocaleChange={onLocaleChange} user={user} onLogout={logout} onSwitchAccount={switchAccount} busy={sessionBusy} />,
+    settings: <SettingsPage onAccountDeleted={() => { void endSession(false, true) }} copy={copy} locale={locale} onLocaleChange={onLocaleChange} user={user} onLogout={logout} onSwitchAccount={switchAccount} busy={sessionBusy} />,
     reports: <ReportsPage copy={copy} locale={locale} initialMonth={reviewPeriod.start} active={activePage === 'reports'} />,
     audit: <AuditPage copy={copy} run={agent.run} locale={locale} />,
-    recurring: <RecurringPage userId={user.id} externalRevision={planningRevision} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} onDiscoveryTargetConsumed={() => setFocusTarget('')} onInspect={inspectLedger} />,
+    recurring: <RecurringPage userId={user.id} externalRevision={planningRevision} copy={copy} locale={locale} month={recurringMonth} onMonthChange={setPlanningMonth} key={recurringMonth} active={activePage === 'recurring'} seed={recurringSeed} onSeedConsumed={() => setRecurringSeed(null)} onDraftChange={(dirty) => setDrafts((current) => current.recurring === dirty ? current : { ...current, recurring: dirty })} focusTarget={focusTarget} onDiscoveryTargetConsumed={() => setFocusTarget('')} onInspect={inspectLedger} onImport={() => navigate('import')} />,
     budgets: <BudgetsPage externalRevision={planningRevision} copy={copy} locale={locale} month={budgetMonth} onMonthChange={setPlanningMonth} key={budgetMonth} active={activePage === 'budgets'} focusTarget={focusTarget} onInspect={inspectLedger} onDraftChange={(dirty) => setDrafts((current) => current.budgets === dirty ? current : { ...current, budgets: dirty })} />,
   }
 
@@ -295,7 +297,7 @@ export function Workspace({ copy, locale, onLocaleChange, user, onLogout }: Work
         inspectLedger({ transactionId: target.id, version: target.version, period: { start: target.booking_date, end: target.booking_date } })
       }} open={assistantOpen} onClose={() => setAssistantOpen(false)} month={activePage === 'budgets' ? budgetMonth : activePage === 'recurring' ? recurringMonth : activePage === 'overview' ? overviewPeriod.start : reviewPeriod.start} copy={copy} locale={locale} />
       <main className="workspace-shell" id="workspace-main" tabIndex={-1}>
-        <header className="workspace-topbar"><button className="assistant-trigger" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(value => !value)}><NavigationIcon kind="agent" />{locale === 'en-US' ? 'Ledger assistant' : '账本助手'}</button></header>
+        <header className="workspace-topbar"><NotificationInbox onQueryNavigate={filters => inspectLedger({ filters, period: { start: filters.start_date, end: filters.end_date } })} key={user.id} userId={user.id} english={locale === 'en-US'} onNavigate={item => openPlanning(item.source_type === 'budget' ? 'budgets' : 'recurring', item.source_date.slice(0, 7), item.source_id)} /><button className="assistant-trigger" aria-expanded={assistantOpen} onClick={() => setAssistantOpen(value => !value)}><NavigationIcon kind="agent" />{locale === 'en-US' ? 'Ledger assistant' : '账本助手'}</button></header>
         <IconButton icon="menu" ref={menuRef} className="menu-toggle" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} label={locale === 'en-US' ? 'Open navigation' : '打开导航'} />
 
         <div className="workspace-content" ref={contentRef}>

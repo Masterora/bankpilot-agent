@@ -32,6 +32,34 @@ from bankpilot.domain.contracts import CardStatus, RunStatus
 from bankpilot.domain.reports import ReportStatus
 
 
+class SecurityBudgetRecord(Base):
+    """Shared admission counters; keys contain HMACs rather than emails or addresses."""
+
+    __tablename__ = "security_budgets"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    used: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        CheckConstraint("used >= 0", name="ck_security_budget_used"),
+        Index("ix_security_budgets_expiry", "expires_at"),
+    )
+
+
+class SecurityLeaseRecord(Base):
+    """Expiring cross-instance CPU/HTTP/stream and configuration reservations."""
+
+    __tablename__ = "security_leases"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False)
+    subject: Mapped[str] = mapped_column(String(64), nullable=False)
+    configuration: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    __table_args__ = (
+        Index("ix_security_leases_purpose", "purpose", "subject", "expires_at"),
+        Index("ix_security_leases_expiry", "expires_at"),
+    )
+
+
 class UserRecord(Base):
     __tablename__ = "users"
 
@@ -336,6 +364,26 @@ class BudgetRecord(Base):
     )
 
 
+class BudgetCarryRecord(Base):
+    """One explicit, frozen carryover receipt per user and target month."""
+
+    __tablename__ = "budget_carries"
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    operation_id: Mapped[UUID] = mapped_column(Uuid)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    receipt: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint("user_id", "operation_id", name="uq_budget_carry_operation"),
+        CheckConstraint("EXTRACT(DAY FROM month) = 1", name="ck_budget_carry_month"),
+    )
+
+
 class RecurringRecord(Base):
     """周期锚点与预期金额；暂停停止显示待核对期次，结束后不可恢复。"""
 
@@ -485,6 +533,7 @@ class AttentionStateRecord(Base):
     """Persisted user handling state separated from deterministic business facts."""
 
     __tablename__ = "attention_states"
+    notification_window: Mapped[bool] = mapped_column(default=False, server_default="false")
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     source_type: Mapped[str] = mapped_column(String(16))
@@ -586,6 +635,12 @@ class AssistantConversationRecord(Base):
     title: Mapped[str | None] = mapped_column(String(80))
     scope: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     search_context: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    search_subscribed: Mapped[bool] = mapped_column(default=False, server_default="false")
+    search_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    search_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    search_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    search_check_error: Mapped[str | None] = mapped_column(String(80))
+    search_subscription_epoch: Mapped[str | None] = mapped_column(String(64))
     month: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -593,7 +648,10 @@ class AssistantConversationRecord(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     deleted: Mapped[bool] = mapped_column(default=False)
-    __table_args__ = (UniqueConstraint("user_id", "creation_id", name="uq_assistant_creation"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "creation_id", name="uq_assistant_creation"),
+        Index("ix_assistant_search_subscription", "search_subscribed", "search_checked_at"),
+    )
 
 
 class AssistantTurnRecord(Base):
@@ -634,3 +692,79 @@ class AssistantTurnRecord(Base):
             postgresql_where=(status == "processing"),
         ),
     )
+
+
+class NotificationOutboxRecord(Base):
+    """Minimal transactional identity; never stores financial or model payloads."""
+
+    __tablename__ = "notification_outbox"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    source_type: Mapped[str] = mapped_column(String(16))
+    source_id: Mapped[UUID] = mapped_column(Uuid)
+    source_date: Mapped[date] = mapped_column(Date)
+    generation: Mapped[int] = mapped_column(Integer)
+    state_revision: Mapped[int] = mapped_column(Integer)
+    attention_type: Mapped[str] = mapped_column(String(40))
+    event_type: Mapped[str] = mapped_column(String(40))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    claim_token: Mapped[UUID | None] = mapped_column(Uuid)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "source_type",
+            "source_id",
+            "source_date",
+            "generation",
+            "state_revision",
+            "event_type",
+            name="uq_notification_transition",
+        ),
+        CheckConstraint(
+            "status IN ('pending','running','processed','suppressed','failed')",
+            name="ck_notification_outbox_status",
+        ),
+        CheckConstraint(
+            "event_type IN ('attention.opened','attention.snooze_due')",
+            name="ck_notification_event_type",
+        ),
+        CheckConstraint(
+            "generation > 0 AND state_revision > 0 AND attempts >= 0",
+            name="ck_notification_event_versions",
+        ),
+        Index("ix_notification_outbox_due", "status", "available_at", "lease_until"),
+        Index("ix_notification_outbox_user", "user_id"),
+    )
+
+
+class NotificationRecord(Base):
+    __tablename__ = "notifications"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    event_id: Mapped[UUID] = mapped_column(
+        ForeignKey("notification_outbox.id", ondelete="CASCADE"), unique=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    suppressed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (Index("ix_notifications_user_created", "user_id", "created_at", "id"),)
+
+
+class NotificationScheduleRecord(Base):
+    __tablename__ = "notification_schedules"
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    baseline_epoch: Mapped[str | None] = mapped_column(String(64))
+    initialized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[UUID | None] = mapped_column(Uuid)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    __table_args__ = (Index("ix_notification_schedule_due", "next_check_at", "lease_until"),)

@@ -90,6 +90,9 @@ export function AssistantPanel({
   }
   function failure(cause: unknown) {
     return apiErrorMessage(cause, english, {
+      notifications_disabled: ['站内通知尚未启用，暂不能订阅。', 'Notifications are disabled; subscriptions are unavailable.'],
+      search_subscription_limit: ['最多订阅 20 个查询，请先取消其他订阅。', 'Up to 20 queries can be watched. Stop another subscription first.'],
+      search_subscription_stale: ['查询再次变化，请刷新后核对。', 'The query changed again. Refresh and review.'],
       assistant_conversation_limit: ['历史对话已达上限，请先删除不再需要的对话。', 'History limit reached. Delete a conversation to continue.'],
       assistant_turn_limit: ['本段对话已达上限，请新建对话继续。', 'Conversation limit reached. Start a new conversation.'],
       assistant_conversation_busy: ['正在处理，请稍后查看。', 'Processing. Check back shortly.'],
@@ -206,9 +209,16 @@ export function AssistantPanel({
       {historyVisible && <nav id="assistant-history" className="assistant-history" aria-label={t('历史对话', 'Conversation history')}>
         {history.items.map(item => <button key={item.id} aria-current={history.id === item.id ? "page" : undefined} disabled={busy || !!history.unknown} onClick={() => {
           setDetail(null); setComparisonDetail(null); setDetailVisible(false); setMessage(''); void history.load(item.id).catch(cause => history.setError(cause))
-        }}><strong>{item.title}</strong><time dateTime={item.updated_at}>{new Date(item.updated_at).toLocaleString(locale)}</time></button>)}
+        }}><strong>{item.title}{item.search_changed_at ? t(' · 查询已变化', ' · Query changed') : item.search_subscribed ? t(' · 已订阅', ' · Watching') : ''}</strong><time dateTime={item.updated_at}>{new Date(item.updated_at).toLocaleString(locale)}</time></button>)}
         {history.cursor && <button onClick={() => void history.list(history.cursor!).catch(cause => history.setError(cause))}>{t('更多', 'More')}</button>}
       </nav>}
+      {history.id && history.searchContext && (history.subscriptionAvailable || history.subscription?.search_subscribed) && <section className="inline-note" aria-label={t('查询订阅', 'Query subscription')}>
+        <button disabled={busy || pending} onClick={() => void history.subscribe(!history.subscription?.search_subscribed)}>{history.subscription?.search_subscribed ? t('取消查询变化订阅', 'Stop watching query') : t('订阅查询变化', 'Watch query changes')}</button>
+        {history.subscription?.search_changed_at && <p role="status">{t('已保存查询的匹配流水或内容有变化。请打开查询核对。', 'Matching transactions or their contents have changed. Open the query to review.')} <button disabled={busy} onClick={() => onSearchLedger(history.searchContext!)}>{t('打开查询', 'Open query')}</button> <button disabled={busy} onClick={() => void history.acknowledgeSearch()}>{t('已查看', 'Mark seen')}</button></p>}
+        {history.subscription?.search_check_error && <p role="status">{t('查询暂无法完整同步；已有变化记录保留。请检查查询范围或重试。', 'The query could not be fully checked. Existing changes are retained. Review the filters or try again.')}</p>}
+        {history.subscription?.search_subscribed && !history.subscriptionAvailable && <p role="status">{t('站内通知未启用，订阅扫描已暂停。', 'Notifications are disabled; subscription checks are paused.')}</p>}
+        {history.subscription?.search_subscribed && <small>{t('固定查找范围；修改已保存条件会取消订阅，需要重新开启。', 'Watches the saved fixed period. Changing filters stops the subscription; enable it again.')}</small>}
+      </section>}
       {history.storageFailed && <p role="alert">{t('浏览器存储不可用，刷新可能丢失待处理请求。', 'Browser storage unavailable: unacknowledged requests may not survive refresh.')}</p>}
       {history.recoveryUpgradeRequired && <p role="status">{t('升级前有一条请求尚未确认接收，已保留其标识。', 'A request from before the upgrade is still unconfirmed. Its identity is retained.')} <button disabled={busy || pending} onClick={() => void history.lookupUnsupported()}>{t('核对原请求', 'Check original request')}</button></p>}
       {history.unknown && <section role="status">

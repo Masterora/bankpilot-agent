@@ -31,9 +31,12 @@ import type { Conversation } from './features/assistant/types'
 
 import type { AssistantAction, TurnInput, SavedTurn, ConversationPage, ConversationDetail, SpendingPage, SpendingScope, SpendingSummary, ComparisonEvidencePage, SpendingCategoryComparison } from './features/assistant/types'
 
-import type { BudgetInput, BudgetWorkspace, DiscoveryDecisionPage, DiscoveryDecisionRequest, DiscoveryProposal, DiscoveryProposalRequest, RecurringDiscoveryPage, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
+import type { BudgetCarryPreview, BudgetInput, BudgetWorkspace, DiscoveryDecisionPage, DiscoveryDecisionRequest, DiscoveryProposal, DiscoveryProposalRequest, RecurringDiscoveryPage, RecurringEditInput, RecurringInput, RecurringItem, RecurringTransaction, RecurringWorkspace } from './features/planning/types'
 import type { AttentionPreference, AttentionResponse, AttentionStateRequest, AttentionType } from './features/overview/attention'
 
+
+import type { NotificationPage } from './features/notifications/types'
+import { announceSessionChange, invalidateSession, sessionIdentity } from './shared/sessionIdentity'
 
 export class ApiError extends Error {
   constructor(
@@ -47,6 +50,9 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const expected = sessionIdentity()
+  const bound = !/^\/api\/v1\/auth\/(?:me|login|register)$/.test(path)
+  if (bound && !expected) throw new ApiError('Refresh the account before retrying', 409, 'session_identity_required')
   // 凭证由浏览器管理，避免应用 JavaScript 读取会话令牌。
   const response = await fetch(path, {
     ...init,
@@ -55,10 +61,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       'Content-Type': 'application/json',
       ...(path.startsWith('/api/v1/assistant') ? { 'X-Assistant-Protocol': '5' } : {}),
       ...init?.headers,
+      ...(bound ? { 'X-BankPilot-User': expected! } : {}),
     },
   })
+  if (bound && expected !== sessionIdentity()) throw new ApiError('Account changed', 409, 'session_identity_changed')
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null)
+    if (bound && expected !== sessionIdentity()) throw new ApiError('Account changed', 409, 'session_identity_changed')
     if (typeof body === 'object' && body !== null && 'detail' in body) {
       const detail = body.detail
       if (
@@ -66,23 +75,36 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         'code' in detail && typeof detail.code === 'string' &&
         'message' in detail && typeof detail.message === 'string'
       ) {
+        if ((response.status === 401 && bound) || detail.code === 'session_identity_changed' || detail.code === 'session_identity_required') invalidateSession()
         throw new ApiError(detail.message, response.status, detail.code,
           'target_plan_id' in detail && typeof detail.target_plan_id === 'string' ? detail.target_plan_id : undefined)
       }
     }
     throw new ApiError('服务响应格式无效', response.status, 'invalid_response')
   }
+  if (init?.method && /\/search-(?:context|subscription)(?:\/seen)?$/.test(path)) window.dispatchEvent(new Event('bankpilot:query-subscription-changed'))
+  if (init?.method === 'POST' && path.startsWith('/api/v1/attention/')) {
+    window.dispatchEvent(new Event('bankpilot:attention-changed'))
+  }
   if (init?.method === 'POST' && /^\/api\/v1\/(?:imports(?:\/[^/]+\/revoke)?|relations|accounts\/[^/]+\/name|transactions\/[^/]+\/category|runs\/[^/]+\/transactions\/[^/]+\/category)$/.test(path)) {
     window.dispatchEvent(new Event('bankpilot:ledger-changed'))
-  } else if (init?.method === 'POST' && (/^\/api\/v1\/(?:budgets(?:\/copy|\/delete)?|recurring(?:\/[^/]+\/(?:edit|status|match|skip|cancel-revision))?|assistant\/confirm)$/.test(path) || /^\/api\/v1\/recurring\/discovery\/proposals\/[^/]+\/confirm$/.test(path))) {
+  } else if (init?.method === 'POST' && (/^\/api\/v1\/(?:budgets(?:\/copy|\/delete|\/carry)?|recurring(?:\/[^/]+\/(?:edit|status|match|skip|cancel-revision))?|assistant\/confirm)$/.test(path) || /^\/api\/v1\/recurring\/discovery\/proposals\/[^/]+\/confirm$/.test(path))) {
     window.dispatchEvent(new Event('bankpilot:planning-changed'))
   }
   if (response.status === 204) return undefined as T
-  if (response.headers.get('content-type')?.includes('text/csv')) return await response.text() as T
-  return (await response.json()) as T
+  const result = response.headers.get('content-type')?.includes('text/csv') ? await response.text() : await response.json()
+  if (bound && expected !== sessionIdentity()) throw new ApiError('Account changed', 409, 'session_identity_changed')
+  return result as T
 }
 
 export const api = {
+  accountExport: () => request<Record<string, unknown>>('/api/v1/auth/data-export', { method: 'POST' }),
+  deleteAccount: (current_password: string, confirmation: string) => request<void>('/api/v1/auth/delete', { method: 'POST', body: JSON.stringify({ current_password, confirmation }) }),
+  assistantSubscription: (id: string, enabled: boolean, expected_context_version: number) => request<Conversation>(`/api/v1/assistant/conversations/${id}/search-subscription`, { method: 'PUT', body: JSON.stringify({ enabled, expected_context_version }) }),
+  assistantSubscriptionSeen: (id: string, changed_at: string) => request<void>(`/api/v1/assistant/conversations/${id}/search-subscription/seen`, { method: 'POST', body: JSON.stringify({ changed_at }) }),
+  notificationAvailability: () => request<{ enabled: boolean }>('/api/v1/notifications/availability'),
+  notifications: (cursor?: string) => request<NotificationPage>(`/api/v1/notifications${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+  notificationSeen: (id: string) => request<{ id: string; seen_at: string }>(`/api/v1/notifications/${id}/seen`, { method: 'POST' }),
   attention: (month: string, group: 'all' | 'budgets' | 'recurring' = 'all') => request<AttentionResponse>(`/api/v1/attention?month=${month}-01&group=${group}`),
   attentionPreferences: () => request<AttentionPreference[]>('/api/v1/attention/preferences'),
   attentionState: (payload: AttentionStateRequest) => request<{ operation_id: string; accepted_version: string; snoozed_until: string | null }>('/api/v1/attention/state', { method: 'POST', body: JSON.stringify(payload) }),
@@ -111,6 +133,8 @@ export const api = {
   saveBudget: (payload: BudgetInput) => request<void>('/api/v1/budgets', { method: 'POST', body: JSON.stringify(payload) }),
   deleteBudget: (payload: Omit<BudgetInput, 'amount'>) => request<void>('/api/v1/budgets/delete', { method: 'POST', body: JSON.stringify(payload) }),
   copyBudgets: (month: string) => request<{ copied: number; source_count: number }>('/api/v1/budgets/copy', { method: 'POST', body: JSON.stringify({ month: `${month}-01` }) }),
+  budgetCarryPreview: (month: string) => request<BudgetCarryPreview>(`/api/v1/budgets/carry?month=${month}-01`),
+  confirmBudgetCarry: (payload: {month: string; operation_id: string; fingerprint: string}) => request<BudgetCarryPreview>('/api/v1/budgets/carry', {method: 'POST', body: JSON.stringify(payload)}),
   recurring: (month: string) => request<RecurringWorkspace>(`/api/v1/recurring?month=${month}-01`),
   recurringCandidates: (month: string) => request<RecurringTransaction[]>(`/api/v1/recurring/candidates?month=${month}-01`),
   recurringDiscoveryAvailability: () => request<{ enabled: boolean }>('/api/v1/recurring/discovery/availability'),
@@ -161,7 +185,7 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<User>('/api/v1/auth/me'),
-  changePassword: (new_password: string) => request<void>('/api/v1/auth/password', { method: 'POST', body: JSON.stringify({ new_password }) }),
+  changePassword: (current_password: string, new_password: string) => request<void>('/api/v1/auth/password', { method: 'POST', body: JSON.stringify({ current_password, new_password }) }).then(() => announceSessionChange()),
   logout: () => request<void>('/api/v1/auth/logout', { method: 'POST' }),
   listAccounts: () => request<{ items: Account[] }>('/api/v1/accounts'),
   ledger: (start: string, end: string) => request<RunResult['transactions']>(`/api/v1/transactions?start_date=${start}&end_date=${end}`),
@@ -193,8 +217,13 @@ export const api = {
     onError: () => void,
   ) => {
     // EventSource 自动携带同源 Cookie，并使用 Last-Event-ID 恢复断开的事件流。
-    const source = new EventSource(`/api/v1/runs/${runId}/events`)
-    source.onmessage = (message) => onEvent(JSON.parse(message.data) as RunEvent)
+    const expected = sessionIdentity()
+    if (!expected) throw new ApiError('Account changed', 409, 'session_identity_required')
+    const source = new EventSource(`/api/v1/runs/${runId}/events?expected_user_id=${encodeURIComponent(expected)}`)
+    source.onmessage = (message) => {
+      if (expected !== sessionIdentity()) { source.close(); return }
+      onEvent(JSON.parse(message.data) as RunEvent)
+    }
     source.onerror = onError
     return source
   },

@@ -46,10 +46,35 @@ class Settings(BaseSettings):
         default=False, validation_alias="BANKPILOT_RECURRING_DISCOVERY_ENABLED"
     )
 
+    notifications_enabled: bool = Field(
+        default=False, validation_alias="BANKPILOT_NOTIFICATIONS_ENABLED"
+    )
+    notification_epoch: str = Field(
+        default="r7-v1",
+        min_length=1,
+        max_length=64,
+        validation_alias="BANKPILOT_NOTIFICATION_EPOCH",
+    )
+
     assistant_max_conversations: int = Field(default=100, ge=1, le=10000)
     assistant_max_turns: int = Field(default=200, ge=1, le=10000)
     assistant_max_result_chars: int = Field(default=400000, ge=1000, le=1000000)
     assistant_context_chars: int = Field(default=24000, ge=6000, le=100000)
+
+    auth_global_per_minute: int = Field(default=60, ge=1, le=1000)
+    auth_source_per_minute: int = Field(default=20, ge=1, le=1000)
+    auth_account_per_minute: int = Field(default=8, ge=1, le=100)
+    password_concurrency: int = Field(default=4, ge=1, le=32)
+    model_user_active: int = Field(default=2, ge=1, le=32)
+    model_global_active: int = Field(default=8, ge=1, le=128)
+    model_user_jobs_daily: int = Field(default=40, ge=1, le=10000)
+    model_global_jobs_daily: int = Field(default=400, ge=1, le=100000)
+    model_user_attempts_daily: int = Field(default=240, ge=1, le=100000)
+    model_global_attempts_daily: int = Field(default=2400, ge=1, le=1000000)
+    model_user_tokens_daily: int = Field(default=2000000, ge=1000, le=1000000000)
+    model_global_tokens_daily: int = Field(default=20000000, ge=1000, le=10000000000)
+    stream_user_active: int = Field(default=2, ge=1, le=32)
+    stream_global_active: int = Field(default=16, ge=1, le=256)
 
     model_provider: str = Field(default="openrouter", validation_alias="MODEL_PROVIDER")
     model_id: str = Field(default="", validation_alias="MODEL_ID")

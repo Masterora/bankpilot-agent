@@ -17,7 +17,22 @@ export function SearchForm({ initial, copy, english: en, busy, onSearch }: {
   const [draft, setDraft] = useState(initial)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [error, setError] = useState('')
-  useEffect(() => { let alive = true; api.listAccounts().then(data => { if (alive) setAccounts(data.items) }).catch(() => { if (alive) setError(en ? 'Accounts unavailable. Retry by reopening filters.' : '账户加载失败，请重新打开筛选。') }); return () => { alive = false } }, [en])
+  const [accountError, setAccountError] = useState(false)
+  const [accountsLoading, setAccountsLoading] = useState(true)
+  const [accountAttempt, setAccountAttempt] = useState(0)
+  useEffect(() => {
+    let alive = true
+    setAccountsLoading(true)
+    setAccountError(false)
+    api.listAccounts().then(data => {
+      if (alive) setAccounts(data.items)
+    }).catch(() => {
+      if (alive) setAccountError(true)
+    }).finally(() => {
+      if (alive) setAccountsLoading(false)
+    })
+    return () => { alive = false }
+  }, [accountAttempt])
   const update = (patch: Partial<SearchFilters>) => setDraft(old => ({ ...old, ...patch }))
   return <form className="search-form" onSubmit={event => {
     event.preventDefault(); setError('')
@@ -33,7 +48,7 @@ export function SearchForm({ initial, copy, english: en, busy, onSearch }: {
       <label>{en ? 'Merchant or note' : '商户或备注'}<input maxLength={100} value={draft.text ?? ''} onChange={e => update({ text: e.target.value })} /></label>
     </div>
     <details><summary>{en ? 'Filters' : '筛选'}</summary><div className="ledger-filters">
-      <label>{en ? 'Account' : '账户'}<select value={draft.account_id ?? ''} onChange={e => update({ account_id: e.target.value || null })}><option value="">{en ? 'All accounts' : '全部账户'}</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.currency}</option>)}</select></label>
+      <label>{en ? 'Account' : '账户'}<select disabled={accountsLoading || accountError} value={draft.account_id ?? ''} onChange={e => update({ account_id: e.target.value || null })}><option value="">{en ? 'All accounts' : '全部账户'}</option>{draft.account_id && !accounts.some(a => a.id === draft.account_id) && <option value={draft.account_id}>{en ? 'Selected account unavailable' : '已选账户暂不可用'}</option>}{accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.currency}</option>)}</select></label>
       <label>{en ? 'Currency' : '币种'}<input pattern="[A-Z]{3}" maxLength={3} value={draft.currency ?? ''} onChange={e => update({ currency: e.target.value.toUpperCase() || null })} /></label>
       <label>{en ? 'Direction' : '方向'}<select value={draft.direction ?? 'all'} onChange={e => update({ direction: e.target.value as SearchFilters['direction'] })}><option value="all">{en ? 'All' : '全部'}</option><option value="debit">{en ? 'Debit' : '支出'}</option><option value="credit">{en ? 'Credit' : '收入'}</option></select></label>
       <label>{en ? 'Minimum amount' : '最低金额'}<input inputMode="decimal" pattern="[0-9]{1,16}(\.[0-9]{1,2})?" value={draft.min_amount ?? ''} onChange={e => update({ min_amount: e.target.value || null })} /></label>
@@ -42,6 +57,8 @@ export function SearchForm({ initial, copy, english: en, busy, onSearch }: {
       <label>{en ? 'Category' : '分类'}<select value={draft.category ?? ''} onChange={e => update({ category: (e.target.value || null) as SearchFilters['category'] })}><option value="">{en ? 'All categories' : '全部分类'}</option>{Object.entries(copy.categoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label>{en ? 'Import batch' : '来源批次'}<input value={draft.import_batch_id ?? ''} onChange={e => update({ import_batch_id: e.target.value || null })} /></label>
     </div></details>
+    {accountsLoading && <p role="status">{en ? 'Loading accounts…' : '正在读取账户…'}</p>}
+    {accountError && <p role="alert">{en ? 'Accounts could not be loaded.' : '账户加载失败。'} <button type="button" onClick={() => setAccountAttempt(value => value + 1)}>{en ? 'Retry accounts' : '重试读取账户'}</button></p>}
     {error && <p role="alert">{error}</p>}
     <button className="primary" disabled={busy}>{busy ? (en ? 'Searching…' : '查询中…') : (en ? 'Search' : '查询')}</button>
   </form>

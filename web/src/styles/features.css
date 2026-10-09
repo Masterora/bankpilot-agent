@@ -133,6 +133,17 @@
 .import-table td { border-top: 1px solid var(--line); white-space: nowrap; }
 .ledger-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 10px; color: var(--muted); font-size: 13px; }
 .ledger-toolbar button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--surface); }
+.ledger-toolbar { flex-wrap: wrap; }
+.ledger-result-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.ledger-result-summary strong { color: var(--text); }
+.notification-availability { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.settings-card.settings-danger { border-color: var(--danger); }
+.budget-carry-amounts { display: grid; gap: 12px; }
+.budget-carry-amounts > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.budget-carry-amounts dt { color: var(--muted); }
+.budget-carry-amounts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.settings-danger h2 { color: var(--danger); }
+.settings-danger .danger-button { min-height: 44px; border-color: var(--danger); color: var(--danger); background: var(--danger-bg); }
 .import-status { display: inline-flex; padding: 5px 8px; border-radius: 6px; color: var(--accent); background: var(--accent-soft); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .import-status-rejected { color: var(--danger); background: var(--danger-bg); }
 .import-status-completed_with_duplicates { color: #dfc08f; background: #261e13; }
@@ -594,3 +605,12 @@
 .report-readable .currency-summary { border-bottom: 1px solid var(--line); }
 .report-readable .currency-summary h3 { font-size: 12px; font-weight: 500; color: var(--accent); }
 @media (max-width: 760px) { .coverage-source { grid-column: 1; } }
+
+.notification-inbox { display: grid; gap: 16px; }
+.notification-card { padding: 16px; border: 1px solid var(--line); border-radius: 12px; overflow-wrap: anywhere; }
+.notification-card h3 { margin: 0; font-size: 16px; }
+.notification-inbox button { min-height: 44px; }
+.workspace-topbar { gap: 12px; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .notification-card button { width: 100%; }
+}

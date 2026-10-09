@@ -5,9 +5,10 @@
  * 关键边界：业务页面、跨页面状态和 API 细节分别由 feature、Workspace 与 api 模块负责。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import { api } from './api'
+import { api, ApiError } from './api'
+import { announceSessionChange, bindSessionIdentity, sessionChangeKey } from './shared/sessionIdentity'
 import { Workspace } from './app/Workspace'
 import { AuthPage } from './features/auth/AuthPage'
 import { messages, storedLocale } from './i18n'
@@ -22,6 +23,7 @@ export default function App() {
   const [switchingAccount, setSwitchingAccount] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
   const copy = messages[locale]
+  const sessionSequence = useRef(0)
 
   useEffect(() => {
     document.documentElement.lang = locale
@@ -30,11 +32,35 @@ export default function App() {
   }, [locale])
 
   useEffect(() => {
-    api
-      .me()
-      .then(setUser)
-      .catch(() => setUser(null))
-      .finally(() => setCheckingSession(false))
+    let active = true
+    async function refresh(clear = false) {
+      const sequence = ++sessionSequence.current
+      if (clear) { bindSessionIdentity(null); setUser(null); setCheckingSession(true); window.dispatchEvent(new Event('bankpilot-logout')) }
+      try {
+        const next = await api.me()
+        if (!active || sequence !== sessionSequence.current) return
+        bindSessionIdentity(next.id); setUser(next)
+      } catch (cause) {
+        if (active && sequence === sessionSequence.current && (clear || cause instanceof ApiError && cause.status === 401)) {
+          bindSessionIdentity(null); setUser(null)
+        }
+      } finally {
+        if (active && sequence === sessionSequence.current) setCheckingSession(false)
+      }
+    }
+    const invalidated = () => { void refresh(true) }
+    const storage = (event: StorageEvent) => { if (event.key === sessionChangeKey) invalidated() }
+    const focus = () => { void refresh() }
+    void refresh()
+    window.addEventListener('bankpilot:session-invalidated', invalidated)
+    window.addEventListener('storage', storage)
+    window.addEventListener('focus', focus)
+    return () => {
+      active = false; sessionSequence.current += 1
+      window.removeEventListener('bankpilot:session-invalidated', invalidated)
+      window.removeEventListener('storage', storage)
+      window.removeEventListener('focus', focus)
+    }
   }, [])
 
   if (checkingSession) return <LoadingScreen label={copy.checkingSession} />
@@ -45,7 +71,7 @@ export default function App() {
         locale={locale}
         onLocaleChange={setLocale}
         switchingAccount={switchingAccount}
-        onAuthenticated={(nextUser) => { setSwitchingAccount(false); setUser(nextUser) }}
+        onAuthenticated={(nextUser) => { sessionSequence.current += 1; bindSessionIdentity(nextUser.id); announceSessionChange(); setSwitchingAccount(false); setUser(nextUser) }}
       />
     )
   }
@@ -56,7 +82,7 @@ export default function App() {
       locale={locale}
       onLocaleChange={setLocale}
       user={user}
-      onLogout={(switchAccount = false) => { setSwitchingAccount(switchAccount); setUser(null) }}
+      onLogout={(switchAccount = false) => { sessionSequence.current += 1; bindSessionIdentity(null); announceSessionChange(); setSwitchingAccount(switchAccount); setUser(null) }}
     />
   )
 }

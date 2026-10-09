@@ -13,8 +13,8 @@ migrate:
 seed:
 	cd api && uv run bankpilot seed
 
-api: migrate
-	cd api && uv run uvicorn bankpilot.api.app:create_app --factory --reload --port 8000
+api:
+	cd api && uv run uvicorn bankpilot.api.app:create_app --factory --no-proxy-headers --reload --port 8000
 
 web:
 	cd web && npm run dev

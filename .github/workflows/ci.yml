@@ -59,6 +59,7 @@ jobs:
       - run: uv run alembic check
       - run: uv run alembic downgrade 20260906_0006
       - run: uv run alembic upgrade head
+      - run: uv run alembic check
       - run: docker build -t bankpilot-api:ci .
 
   web:

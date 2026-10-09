@@ -3,9 +3,12 @@
 主要内容：注册路由、错误与耗时中间件；管理模型客户端、运行恢复、月报处理和助手过期轮次恢复。
 关键边界：只关闭自身创建的资源；注入资源由调用方管理，启动失败也必须释放已取得的资源。
 """
+
 import asyncio
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI
@@ -22,6 +25,7 @@ from bankpilot.api.cards import router as cards_router
 from bankpilot.api.errors import ErrorResponse, register_error_handlers
 from bankpilot.api.import_tools import router as import_tools_router
 from bankpilot.api.imports import router as imports_router
+from bankpilot.api.notifications import router as notifications_router
 from bankpilot.api.overview import router as overview_router
 from bankpilot.api.planning import router as planning_router
 from bankpilot.api.relations import router as relations_router
@@ -35,8 +39,11 @@ from bankpilot.db.session import create_engine, create_session_factory
 from bankpilot.observability import RequestTimingMiddleware
 from bankpilot.ports import AssistantGateway, ModelGateway, ReviewGateway
 from bankpilot.services.conversations import ConversationService
+from bankpilot.services.notification_processor import NotificationProcessor
 from bankpilot.services.report_processor import ReportProcessor
 from bankpilot.services.run_processor import RunProcessor
+from bankpilot.services.search_subscriptions import SearchSubscriptionProcessor
+from bankpilot.services.security_admission import SecurityAdmission
 
 
 async def _stop_task(task: asyncio.Task[None]) -> None:
@@ -59,36 +66,35 @@ def create_app(
         managed_engine = create_engine(resolved_settings.database_url)
         session_factory = create_session_factory(managed_engine)
 
+    session_factory.configure(info={"notification_settings": resolved_settings})
+    admission = SecurityAdmission(session_factory, resolved_settings)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         """初始化共享客户端、修复运行状态，并关闭自身持有的资源。"""
         async with AsyncExitStack() as resources:
+            app.state.security_ready = False
             if managed_engine is not None:
                 resources.push_async_callback(managed_engine.dispose)
-            model_client: httpx.AsyncClient | None = None
-            resolved_gateway = model_gateway
-            if resolved_gateway is None:
+            instance_id = uuid4()
+            async with asyncio.timeout(3):
+                await admission.register_instance(instance_id)
+            resources.push_async_callback(admission.release, instance_id)
+            default_gateway = None
+            if model_gateway is None or assistant_gateway is None:
                 model_client = httpx.AsyncClient(
                     base_url=str(resolved_settings.model_base_url).rstrip("/"),
                     timeout=resolved_settings.model_timeout_seconds,
                 )
                 resources.push_async_callback(model_client.aclose)
-                resolved_gateway = OpenRouterModelGateway(resolved_settings, model_client)
-
-            if assistant_gateway is None:
-                if model_client is None:
-                    model_client = httpx.AsyncClient(
-                        base_url=str(resolved_settings.model_base_url).rstrip("/"),
-                        timeout=resolved_settings.model_timeout_seconds,
-                    )
-                    resources.push_async_callback(model_client.aclose)
-                app.state.assistant_gateway = OpenRouterModelGateway(
-                    resolved_settings, model_client
+                default_gateway = OpenRouterModelGateway(
+                    resolved_settings, model_client, session_factory
                 )
-            else:
-                app.state.assistant_gateway = assistant_gateway
-            app.state.settings = resolved_settings
-            app.state.session_factory = session_factory
+            resolved_gateway = model_gateway if model_gateway is not None else default_gateway
+            assert resolved_gateway is not None
+            app.state.assistant_gateway = (
+                assistant_gateway if assistant_gateway is not None else default_gateway
+            )
             resolved_review_gateway = review_gateway or LocalReviewGateway(session_factory)
             app.state.run_processor = RunProcessor(
                 session_factory,
@@ -98,16 +104,62 @@ def create_app(
             )
             # 启动与周期恢复均只处理心跳过期任务，不触碰其他实例的活跃运行。
             await app.state.run_processor.reconcile_interrupted()
-            recovery = asyncio.create_task(app.state.run_processor.recover_expired())
-            resources.push_async_callback(_stop_task, recovery)
             app.state.report_processor = ReportProcessor(session_factory, resolved_review_gateway)
-            reports = asyncio.create_task(app.state.report_processor.run())
-            resources.push_async_callback(_stop_task, reports)
             conversations = ConversationService(session_factory, resolved_settings)
             await conversations.reconcile()
-            assistant_recovery = asyncio.create_task(conversations.recover_expired())
-            resources.push_async_callback(_stop_task, assistant_recovery)
-            yield
+            notifications = NotificationProcessor(session_factory)
+            await notifications.bootstrap()
+            worker_functions: list[Callable[[], Coroutine[None, None, None]]] = [
+                app.state.run_processor.recover_expired,
+                app.state.report_processor.run,
+                conversations.recover_expired,
+            ]
+            if resolved_settings.notifications_enabled:
+                worker_functions.append(notifications.run)
+                worker_functions.append(
+                    SearchSubscriptionProcessor(session_factory, resolved_settings).run
+                )
+            workers: list[asyncio.Task[None]] = []
+
+            def start_workers() -> None:
+                workers.extend(asyncio.create_task(function()) for function in worker_functions)
+
+            async def stop_workers() -> None:
+                current = workers.copy()
+                for worker in current:
+                    worker.cancel()
+                await asyncio.gather(*current, return_exceptions=True)
+                workers.clear()
+
+            async def guard_configuration() -> None:
+                while True:
+                    await asyncio.sleep(15)
+                    try:
+                        async with asyncio.timeout(3):
+                            await admission.register_instance(instance_id)
+                    except Exception:
+                        app.state.security_ready = False
+                        await stop_workers()
+                        logging.getLogger("uvicorn.error").warning(
+                            "Shared API security lease unavailable; retrying"
+                        )
+                    else:
+                        if not workers:
+                            start_workers()
+                        app.state.security_ready = True
+
+            # Revalidate after startup work, before accepting requests or starting workers.
+            async with asyncio.timeout(3):
+                await admission.register_instance(instance_id)
+            resources.push_async_callback(stop_workers)
+            start_workers()
+            guard = asyncio.create_task(guard_configuration())
+            resources.push_async_callback(_stop_task, guard)
+            app.state.security_ready = True
+            try:
+                yield
+            finally:
+                app.state.security_ready = False
 
     app = FastAPI(
         title="BankPilot Agent API",
@@ -122,15 +174,18 @@ def create_app(
         CORSMiddleware,
         allow_origins=resolved_settings.cors_origin_list,
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type", "Last-Event-ID"],
+        allow_methods=["GET", "POST", "PUT"],
+        allow_headers=["Content-Type", "Last-Event-ID", "X-Assistant-Protocol", "X-BankPilot-User"],
     )
     app.add_middleware(RequestTimingMiddleware)
+    app.state.settings = resolved_settings
+    app.state.session_factory = session_factory
 
     register_error_handlers(app)
 
     app.include_router(assistant_router)
     app.include_router(attention_router)
+    app.include_router(notifications_router)
     app.include_router(planning_router)
     app.include_router(system_router)
     app.include_router(auth_router)

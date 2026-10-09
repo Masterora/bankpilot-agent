@@ -34,11 +34,10 @@ async def save_budget(session: AsyncSession, uid: UUID, payload: BudgetInput) ->
         record.amount = payload.amount
         record.version += 1
     else:
-        PlanningRepository(session).add(
-            BudgetRecord(
-                user_id=uid, month=key[1], category=key[2], currency=key[3], amount=payload.amount
-            )
+        record = BudgetRecord(
+            user_id=uid, month=key[1], category=key[2], currency=key[3], amount=payload.amount
         )
+        PlanningRepository(session).add(record)
 
     if record is not None:
         await session.flush()
@@ -66,6 +65,8 @@ async def copy_budgets(session: AsyncSession, uid: UUID, month: date) -> BudgetC
                 )
             )
             count += 1
+    await session.flush()
+    await synchronize_existing_states(session, uid, months={month}, source_type="budget")
     return BudgetCopyResult(copied=count, source_count=len(source))
 
 
@@ -86,3 +87,6 @@ async def remove_budget(
         raise PlanningError("planning_stale")
     await PlanningRepository(session).remove(record)
     await AttentionRepository(session).delete_source(uid, "budget", record.id)
+    await synchronize_existing_states(
+        session, uid, months={month}, source_type="budget", source_id=budget_id
+    )

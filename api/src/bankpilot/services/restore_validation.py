@@ -3,12 +3,13 @@
 主要内容：生成结构与数据证据、校验数据库身份、收敛恢复库中的运行和助手任务状态。
 关键边界：不启动 API、模型或消费者；连接显式提供，核对只读，准备仅修改指定恢复库。
 """
+
 import hashlib
 import json
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.db.base import SCHEMA_REVISION, Base
@@ -18,7 +19,10 @@ from bankpilot.db.models import (
     AssistantConversationRecord,
     AssistantTurnRecord,
     MonthlyReportRecord,
+    NotificationOutboxRecord,
+    NotificationScheduleRecord,
     RunRecord,
+    SecurityLeaseRecord,
     SessionRecord,
     TransactionRecord,
 )
@@ -111,6 +115,8 @@ async def database_identity(session: AsyncSession) -> dict[str, str]:
 
 async def prepare_restored_tasks(session: AsyncSession) -> dict[str, int]:
     """调用方必须隔离执行者并持有恢复事务；保留历史事实和尝试次数。"""
+    # A restored database has no surviving process owners; keep cumulative budgets intact.
+    await session.execute(delete(SecurityLeaseRecord))
     reports = list(
         await session.scalars(
             select(MonthlyReportRecord)
@@ -151,6 +157,33 @@ async def prepare_restored_tasks(session: AsyncSession) -> dict[str, int]:
                 "status": RunStatus.UNKNOWN,
             },
         )
+    await session.execute(
+        update(NotificationOutboxRecord)
+        .where(NotificationOutboxRecord.status.in_(["pending", "running", "failed"]))
+        .values(
+            status="suppressed",
+            claim_token=None,
+            lease_until=None,
+            error_code="restore_interrupted",
+        )
+    )
+    await session.execute(
+        update(NotificationScheduleRecord)
+        .where(
+            or_(
+                NotificationScheduleRecord.baseline_epoch.is_not(None),
+                NotificationScheduleRecord.claim_token.is_not(None),
+                NotificationScheduleRecord.lease_until.is_not(None),
+            )
+        )
+        .values(
+            claim_token=None,
+            lease_until=None,
+            baseline_epoch=None,
+            next_check_at=datetime.now(UTC),
+            attempts=0,
+        )
+    )
     # 备份之后已退出的会话不能在恢复库重新有效。
     await session.execute(
         update(AssistantActionRecord)
@@ -165,6 +198,12 @@ async def prepare_restored_tasks(session: AsyncSession) -> dict[str, int]:
             month=None,
             scope=None,
             search_context=None,
+            search_subscribed=False,
+            search_fingerprint=None,
+            search_checked_at=None,
+            search_changed_at=None,
+            search_check_error=None,
+            search_subscription_epoch=None,
             context_version=0,
         )
     )

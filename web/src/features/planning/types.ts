@@ -66,6 +66,23 @@ export interface BudgetInput {
   amount: string
   expected_version: number
 }
+export interface BudgetCarryPreview {
+  month: string
+  source_month: string
+  fingerprint: string
+  applied: boolean
+  operation_id: string | null
+  items: {
+    category: TransactionCategory
+    currency: string
+    source_amount: string
+    source_spent: string
+    source_transaction_count: number
+    base_amount: string
+    carry_amount: string
+    target_amount: string
+  }[]
+}
 export interface RecurringInput {
   id: string
   name: string

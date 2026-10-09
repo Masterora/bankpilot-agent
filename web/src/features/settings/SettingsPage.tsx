@@ -6,11 +6,13 @@
 import type { LanguageProps } from '../../shared/ui'
 import { LanguageSwitch, PageHeader } from '../../shared/ui'
 import { PasswordForm } from './PasswordForm'
+import { AccountData } from './AccountData'
 import type { User } from '../../types'
 
-export function SettingsPage({ copy, locale, onLocaleChange, user, onLogout, onSwitchAccount, busy }: LanguageProps & {
+export function SettingsPage({ copy, locale, onLocaleChange, user, onLogout, onSwitchAccount, onAccountDeleted, busy }: LanguageProps & {
   user: User
   onLogout: () => void
+  onAccountDeleted: () => void
   onSwitchAccount: () => void
   busy: boolean
 }) {
@@ -37,6 +39,7 @@ export function SettingsPage({ copy, locale, onLocaleChange, user, onLogout, onS
           </div>
         </section>
         <PasswordForm copy={copy} locale={locale} />
+        <AccountData english={en} onDeleted={onAccountDeleted} />
       </div>
     </section>
   )

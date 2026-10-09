@@ -31,13 +31,30 @@ def get_app_settings(request: Request) -> Settings:
     return cast(Settings, request.app.state.settings)
 
 
+def check_ui_identity(request: Request, identity: UUID) -> None:
+    """Missing bindings fail closed for old browser clients and authenticated API writes."""
+    expected = request.headers.get("X-BankPilot-User")
+    if request.url.path.endswith("/events"):
+        expected = request.query_params.get("expected_user_id")
+    if request.url.path == "/api/v1/auth/me":
+        return
+    if not expected:
+        raise ApiProblem(409, "session_identity_required", "Refresh the page to bind this account")
+    if expected != str(identity):
+        raise ApiProblem(409, "session_identity_changed", "Account changed; reload before retrying")
+
+
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
+    if not getattr(request.app.state, "security_ready", True):
+        raise ApiProblem(503, "security_configuration_unavailable")
     async with request.app.state.session_factory() as session:
         yield session
 
 
 async def get_snapshot_session(request: Request) -> AsyncIterator[AsyncSession]:
     """在认证读取前固定快照；多次查询共用一个连接，关闭会话结束事务。"""
+    if not getattr(request.app.state, "security_ready", True):
+        raise ApiProblem(503, "security_configuration_unavailable")
     async with request.app.state.session_factory() as session:
         with measure("connection_ms"):
             await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
@@ -45,6 +62,7 @@ async def get_snapshot_session(request: Request) -> AsyncIterator[AsyncSession]:
 
 
 async def get_current_user(
+    request: Request,
     settings: Settings = Depends(get_app_settings),
     session: AsyncSession = Depends(get_db_session),
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -58,16 +76,18 @@ async def get_current_user(
     user = await SessionRepository(session).resolve_user(token_hash)
     if user is None:
         raise ApiProblem(status.HTTP_401_UNAUTHORIZED, "session_expired", "Session expired")
+    check_ui_identity(request, user.id)
     return user
 
 
 async def get_snapshot_user(
+    request: Request,
     settings: Settings = Depends(get_app_settings),
     session: AsyncSession = Depends(get_snapshot_session),
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> UserRecord:
     """复用认证规则与快照连接，避免每个只读请求同时占用两条连接。"""
-    return await get_current_user(settings, session, session_token)
+    return await get_current_user(request, settings, session, session_token)
 
 
 async def get_detached_user_id(
@@ -76,7 +96,9 @@ async def get_detached_user_id(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> UUID:
     """Finish authentication before readers open independent snapshots."""
+    if not getattr(request.app.state, "security_ready", True):
+        raise ApiProblem(503, "security_configuration_unavailable")
     async with request.app.state.session_factory() as session:
-        user = await get_current_user(settings, session, session_token)
+        user = await get_current_user(request, settings, session, session_token)
         identity = user.id
     return identity

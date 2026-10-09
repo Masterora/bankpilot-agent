@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import { api } from '../../api'
-import { EmptyContent, LoadingIndicator } from '../../shared/ui'
+import { LoadingIndicator } from '../../shared/ui'
 import type { Account } from '../../types'
 
 export function Accounts({ english, onChanged }: { english: boolean; onChanged?: () => void }) {
@@ -21,7 +21,7 @@ export function Accounts({ english, onChanged }: { english: boolean; onChanged?:
   return <section className="accounts-section"><h2>{english ? 'Accounts' : '资金账户'}</h2>
     {state === 'loading' ? <LoadingIndicator label={english ? 'Loading accounts' : '正在读取账户'} />
       : state === 'failed' ? <button onClick={() => setAttempt(attempt + 1)}>{english ? 'Retry' : '重新读取账户'}</button>
-        : items.length === 0 ? <EmptyContent kind="import" title={english ? 'No accounts yet' : '尚未添加账户'} detail={english ? 'Import a statement to add an account.' : '导入账单以添加账户。'} />
+        : items.length === 0 ? <p>{english ? 'No accounts yet. Import a statement to add one.' : '尚未添加账户，导入账单即可建立账户。'}</p>
           : <div className="account-list">{items.map((item) => <AccountTile key={item.id} item={item} english={english} onSaved={() => { setAttempt((a) => a + 1); onChanged?.() }} />)}</div>}
   </section>
 }

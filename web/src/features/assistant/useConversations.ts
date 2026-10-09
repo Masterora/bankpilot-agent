@@ -14,8 +14,19 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   const [id, setId] = useState<string | null>(null)
   const [searchContext, setSearchContext] = useState<SearchFilters | null>(null)
   const [contextVersion, setContextVersion] = useState(0)
+  const [subscription, setSubscription] = useState<Conversation | null>(null)
+  const [subscriptionAvailable, setSubscriptionAvailable] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    let disposed = false
+    void api.notificationAvailability().then(value => {
+      if (!disposed) setSubscriptionAvailable(value.enabled)
+    }).catch(() => { if (!disposed) setSubscriptionAvailable(false) })
+    return () => { disposed = true }
+  }, [open, userId])
   const [searchUnsaved, setSearchUnsaved] = useState(false)
   const contextEpoch = useRef(0)
+  const subscriptionEpoch = useRef(0)
   const [scope, setScope] = useState<SpendingScope | null>(null)
   const [month, setMonth] = useState(`${initialMonth.slice(0, 7)}-01`)
   const [cursor, setCursor] = useState<string | null>(null)
@@ -82,6 +93,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     if (!alive.current || epoch.current !== version) return
     setLoading(false)
     setTurns(old => earlier ? [...result.turns, ...old] : result.turns)
+    setSubscription(result.conversation)
     setScope(result.conversation.scope)
     setSearchContext(result.conversation.search_context)
     setContextVersion(result.conversation.context_version)
@@ -140,9 +152,11 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     let cancelled = false
     const refresh = async () => {
       const version = epoch.current
+      const watchVersion = subscriptionEpoch.current
       try {
         const result = await api.assistantConversation(id)
         if (cancelled || version !== epoch.current) return
+        if (watchVersion === subscriptionEpoch.current) setSubscription(result.conversation)
         setTurns(old => {
           const replacements = new Map(result.turns.map(turn => [turn.id, turn]))
           return [...old.filter(turn => !replacements.has(turn.id)), ...result.turns]
@@ -213,7 +227,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   function fresh(inherit = false) {
     epoch.current++
     contextEpoch.current++
-    setContextVersion(0); setSearchContext(null); setSearchUnsaved(false)
+    setContextVersion(0); setSearchContext(null); setSearchUnsaved(false); setSubscription(null)
     active.current = null
     setId(null); setTurns([]); setBefore(null); setError(null); setLoading(false)
     if (!inherit) { setScope(null); setMonth(`${initialMonth.slice(0, 7)}-01`) }
@@ -231,6 +245,7 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     if (value) setMonth(value.month)
   }
   async function selectSearch(filters: SearchFilters | null) {
+    subscriptionEpoch.current++
     const target = active.current
     if (!target) throw new Error('Select a conversation first')
     const version = ++contextEpoch.current
@@ -246,8 +261,48 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
         saved = current.conversation
       }
       if (!alive.current || active.current !== target || contextEpoch.current !== version) return
-      setSearchContext(saved.search_context); setContextVersion(saved.context_version); setSearchUnsaved(false)
+      setSearchContext(saved.search_context); setContextVersion(saved.context_version); setSearchUnsaved(false); setSubscription(saved)
     } catch (cause) { if (alive.current && active.current === target) setError(cause); throw cause }
+  }
+  async function subscribe(enabled: boolean) {
+    subscriptionEpoch.current++
+    const target = active.current
+    if (!target) return
+    const version = epoch.current
+    setLoading(true)
+    try {
+      const saved = await api.assistantSubscription(target, enabled, contextVersion)
+      if (!alive.current || active.current !== target || epoch.current !== version) return
+      setSubscription(saved); setContextVersion(saved.context_version)
+      await list()
+    } catch (cause) {
+      if (alive.current && active.current === target && epoch.current === version) {
+        setError(cause)
+        // Reconcile a lost response and a stale context before another explicit write.
+        const current = await api.assistantConversation(target).catch(() => null)
+        if (current && alive.current && active.current === target && epoch.current === version) {
+          setSubscription(current.conversation); setContextVersion(current.conversation.context_version)
+          setSearchContext(current.conversation.search_context)
+        }
+      }
+    } finally { if (alive.current && active.current === target) setLoading(false) }
+  }
+  async function acknowledgeSearch() {
+    subscriptionEpoch.current++
+    const target = active.current
+    const changed = subscription?.search_changed_at
+    if (!target || !changed) return
+    const version = epoch.current
+    setLoading(true)
+    try {
+      await api.assistantSubscriptionSeen(target, changed)
+      if (!alive.current || active.current !== target || epoch.current !== version) return
+      const current = await api.assistantConversation(target)
+      if (!alive.current || active.current !== target || epoch.current !== version) return
+      setSubscription(current.conversation)
+      await list()
+    } catch (cause) { if (alive.current && active.current === target) setError(cause) }
+    finally { if (alive.current && active.current === target) setLoading(false) }
   }
   async function remove() {
     if (!id) return
@@ -256,6 +311,6 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     fresh()
     await list()
   }
-  return { searchContext, contextVersion, searchUnsaved, selectSearch, setSearchUnsaved, items, turns, setTurns, id, scope, month, cursor, before, limit, unknown, storageFailed, recoveryUpgradeRequired,
+  return { subscriptionAvailable, subscription, subscribe, acknowledgeSearch, searchContext, contextVersion, searchUnsaved, selectSearch, setSearchUnsaved, items, turns, setTurns, id, scope, month, cursor, before, limit, unknown, storageFailed, recoveryUpgradeRequired,
     error, setError, loading, processing, load, list, send, lookup, lookupUnsupported, fresh, selectScope, remove }
 }

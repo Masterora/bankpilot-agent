@@ -24,9 +24,10 @@ from bankpilot.agent.workflow import ReadOnlyBillWorkflow
 from bankpilot.db.models import RunRecord
 from bankpilot.db.run_repository import RunRepository
 from bankpilot.domain.contracts import ModelPlan, RunStatus, SupportedAction
-from bankpilot.errors import BankPilotError
+from bankpilot.errors import BankPilotError, PlanningError
 from bankpilot.observability import job_timing
 from bankpilot.ports import ModelGateway, ReviewGateway
+from bankpilot.services.security_admission import model_identity
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +72,11 @@ class RunProcessor:
                 self.review_gateway,
                 after_plan=lambda plan: self._record_plan(run_id, plan),
             )
-            state = await workflow.run(
-                run_id=run_id,
-                user_id=user_id,
-                user_message=user_message,
-                today=datetime.now(self.business_timezone).date(),
-            )
+            with model_identity(user_id):
+                state = await workflow.run(
+                    run_id=run_id, user_id=user_id, user_message=user_message,
+                    today=datetime.now(self.business_timezone).date(),
+                )
             result = state["result"]
             async with self.session_factory() as session, session.begin():
                 repository = RunRepository(session)
@@ -99,7 +99,7 @@ class RunProcessor:
                     },
                 )
                 await repository.succeed(run_id, result.model_dump(mode="json"))
-        except BankPilotError as exc:
+        except (BankPilotError, PlanningError) as exc:
             await self._fail(run_id, exc.code, str(exc))
         except Exception:
             # 完整诊断信息仅写入服务端日志，对外返回稳定且不含敏感信息的错误。

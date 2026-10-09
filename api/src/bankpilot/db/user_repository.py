@@ -20,7 +20,7 @@ class UserRepository:
     async def by_email(self, email: str, *, lock: bool = False) -> UserRecord | None:
         statement = select(UserRecord).where(UserRecord.email == email.lower())
         if lock:
-            statement = statement.with_for_update()
+            statement = statement.with_for_update().execution_options(populate_existing=True)
         return cast(UserRecord | None, await self.session.scalar(statement))
 
     async def by_id(self, user_id: UUID) -> UserRecord | None:

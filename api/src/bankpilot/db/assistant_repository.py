@@ -86,4 +86,10 @@ async def delete_history(session: AsyncSession, row: AssistantConversationRecord
     row.month = None
     row.scope = None
     row.search_context = None
+    row.search_subscribed = False
+    row.search_fingerprint = None
+    row.search_checked_at = None
+    row.search_changed_at = None
+    row.search_check_error = None
+    row.search_subscription_epoch = None
     row.context_version += 1

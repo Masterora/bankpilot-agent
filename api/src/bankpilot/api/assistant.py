@@ -4,6 +4,7 @@
 关键边界：所有操作绑定当前用户；模型不能调用确认端点，上下文更新与提案写入由服务端校验。
 """
 
+import asyncio
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -32,6 +33,8 @@ from bankpilot.domain.assistant import (
     ConversationView,
     ScopeInput,
     SearchContextInput,
+    SearchSubscriptionInput,
+    SearchSubscriptionSeen,
     TurnInput,
     TurnView,
 )
@@ -46,6 +49,11 @@ from bankpilot.domain.spending import (
 from bankpilot.errors import BankPilotError, PlanningError, RelationError
 from bankpilot.services.assistant import resolve_action
 from bankpilot.services.conversations import ConversationService, conversation_view, current_action
+from bankpilot.services.search_subscriptions import (
+    acknowledge,
+    clear_subscription,
+    set_subscription,
+)
 from bankpilot.services.spending import comparison_evidence_page, spending_page
 from bankpilot.services.transaction_search import validate_ownership
 
@@ -221,6 +229,7 @@ async def set_search_context(
         raise PlanningError("assistant_context_stale", 409)
     if payload.filters:
         await validate_ownership(session, user.id, payload.filters)
+    clear_subscription(row)
     row.search_context = payload.filters.model_dump(mode="json") if payload.filters else None
     row.context_version += 1
     result = conversation_view(row)
@@ -267,3 +276,31 @@ async def cancel(
         result = await current_action(session, row)
     await session.commit()
     return result
+
+
+@router.put("/conversations/{identity}/search-subscription", response_model=ConversationView)
+async def update_search_subscription(
+    identity: UUID,
+    payload: SearchSubscriptionInput,
+    request: Request,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ConversationView:
+    async with asyncio.timeout(10):
+        row = await set_subscription(
+            session, user.id, identity, payload, request.app.state.settings
+        )
+        result = conversation_view(row)
+        await session.commit()
+        return result
+
+
+@router.post("/conversations/{identity}/search-subscription/seen", status_code=204)
+async def see_search_subscription(
+    identity: UUID,
+    payload: SearchSubscriptionSeen,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    await acknowledge(session, user.id, identity, payload.changed_at.isoformat())
+    await session.commit()

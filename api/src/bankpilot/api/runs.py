@@ -8,15 +8,22 @@
 
 import asyncio
 from collections.abc import AsyncIterator
+from time import monotonic
 from typing import cast
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
+from anyio import CancelScope
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.dependencies import (
+    SESSION_COOKIE,
+    get_current_user,
+    get_db_session,
+    get_detached_user_id,
+)
 from bankpilot.api.errors import ApiProblem
 from bankpilot.api.schemas import (
     AuditEventResponse,
@@ -32,8 +39,11 @@ from bankpilot.db.models import (
     UserRecord,
 )
 from bankpilot.db.run_repository import RunRepository
+from bankpilot.db.user_repository import SessionRepository, UserRepository
 from bankpilot.domain.bill_analysis import classify_transaction
 from bankpilot.domain.contracts import RunResult, RunStatus, TransactionResult
+from bankpilot.security import hash_session_token
+from bankpilot.services.security_admission import SecurityAdmission, admit_model_job
 from bankpilot.services.transactions import correct_category as save_category
 
 router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
@@ -48,6 +58,8 @@ async def create_run(
     session: AsyncSession = Depends(get_db_session),
 ) -> RunResponse:
     repository = RunRepository(session)
+    await UserRepository(session).lock(user.id)
+    await admit_model_job(session, user.id, request.app.state.settings)
     run = await repository.create(user_id=user.id, user_message=payload.message.strip())
     await session.commit()
     background_tasks.add_task(request.app.state.run_processor.process, run.id)
@@ -72,13 +84,14 @@ async def stream_run_events(
     run_id: UUID,
     request: Request,
     after: int = Query(default=0, ge=0),
-    user: UserRecord = Depends(get_current_user),
-    session: AsyncSession = Depends(get_db_session),
+    uid: UUID = Depends(get_detached_user_id),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> StreamingResponse:
-    repository = RunRepository(session)
-    run = await repository.get_for_user(run_id=run_id, user_id=user.id)
-    if run is None:
-        raise ApiProblem(status.HTTP_404_NOT_FOUND, "run_not_found", "Run not found")
+    session_factory = cast(async_sessionmaker[AsyncSession], request.app.state.session_factory)
+    async with session_factory() as session:
+        run = await RunRepository(session).get_for_user(run_id=run_id, user_id=uid)
+        if run is None:
+            raise ApiProblem(status.HTTP_404_NOT_FOUND, "run_not_found", "Run not found")
     cursor = after
     last_event_id = request.headers.get("last-event-id")
     if last_event_id is not None:
@@ -92,22 +105,37 @@ async def stream_run_events(
             raise ApiProblem(
                 status.HTTP_400_BAD_REQUEST, "invalid_event_cursor", "Invalid Last-Event-ID"
             )
-    session_factory = cast(async_sessionmaker[AsyncSession], request.app.state.session_factory)
+    settings = request.app.state.settings
+    admission = SecurityAdmission(session_factory, settings)
+    identity = await admission.reserve(
+        "stream", str(uid), settings.stream_user_active, settings.stream_global_active
+    )
+    token_hash = hash_session_token(session_token or "", settings.session_secret.get_secret_value())
 
-    async def generate() -> AsyncIterator[str]:
+    async def poll() -> AsyncIterator[str]:
         current_sequence = cursor
         idle_cycles = 0
+        started = renewed = monotonic()
         yield "retry: 1000\n\n"
-        while not await request.is_disconnected():
-            async with session_factory() as stream_session:
-                stream_repository = RunRepository(stream_session)
-                current_run = await stream_repository.get_for_user(
-                    run_id=run_id,
-                    user_id=user.id,
-                )
-                if current_run is None:
-                    return
-                events = await stream_repository.events_after(run_id, current_sequence)
+        while monotonic() - started < 120 and not await request.is_disconnected():
+            if monotonic() - renewed >= 15:
+                await admission.renew(identity)
+                renewed = monotonic()
+            with CancelScope(shield=True):
+                async with session_factory() as stream_session:
+                    owner = await SessionRepository(stream_session).resolve_user(token_hash)
+                    if owner is None or owner.id != uid:
+                        return
+                    stream_repository = RunRepository(stream_session)
+                    current_run = await stream_repository.get_for_user(
+                        run_id=run_id,
+                        user_id=uid,
+                    )
+                    if current_run is None:
+                        return
+                    events = await stream_repository.events_after(run_id, current_sequence)
+            if current_run is None:
+                return
             for event in events:
                 payload = AuditEventResponse(
                     sequence=event.sequence,
@@ -127,6 +155,14 @@ async def stream_run_events(
             if idle_cycles % 60 == 0:
                 yield ": keep-alive\n\n"
             await asyncio.sleep(0.25)
+
+    async def generate() -> AsyncIterator[str]:
+        try:
+            async for event in poll():
+                yield event
+        finally:
+            with CancelScope(shield=True):
+                await admission.release(identity)
 
     return StreamingResponse(
         generate(),

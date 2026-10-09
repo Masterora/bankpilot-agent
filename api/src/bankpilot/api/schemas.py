@@ -42,6 +42,7 @@ class RegisterRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    current_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH, repr=False)
     new_password: str = Field(
         min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH, repr=False
     )
@@ -50,6 +51,13 @@ class ChangePasswordRequest(BaseModel):
     @classmethod
     def validate_password_format(cls, value: str) -> str:
         return validate_new_password(value)
+
+
+class DeleteAccountRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH, repr=False)
+    confirmation: Literal["DELETE"]
 
 
 class UserResponse(BaseModel):

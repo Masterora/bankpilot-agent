@@ -3,6 +3,7 @@
 主要内容：消费和账本搜索工具参数、预算提案、会话轮次视图、独立搜索上下文及版本化更新输入。
 关键边界：模型只能读取或提出修改，不能批准写入；用户归属由服务端身份决定。
 """
+
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -181,7 +182,21 @@ class TurnView(PlanningInput):
     error_code: str | None
 
 
+class SearchSubscriptionInput(PlanningInput):
+    enabled: bool
+    expected_context_version: int = Field(ge=0)
+
+
+class SearchSubscriptionSeen(PlanningInput):
+    changed_at: datetime
+
+
 class ConversationView(PlanningInput):
+    search_subscribed: bool
+    search_checked_at: datetime | None
+    search_changed_at: datetime | None
+    search_check_error: str | None
+
     search_context: SearchFilters | None
     context_version: int
     id: UUID

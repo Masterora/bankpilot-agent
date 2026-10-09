@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import fields
+from dataclasses import fields, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Literal, cast
@@ -81,7 +81,7 @@ def recurring_fact(
     item: RecurringSource, occurrence: RecurringOccurrence, today: date
 ) -> AttentionFact:
     kind: AttentionType | None = None
-    if not occurrence.skipped:
+    if item.plan.status == "active" and not occurrence.skipped:
         if occurrence.transaction and not occurrence.transaction.eligible:
             kind = AttentionType.RECURRING_REVIEW_REQUIRED
         elif occurrence.transaction is None:
@@ -282,6 +282,10 @@ async def change_state(
             receipt=receipt.model_dump(mode="json"),
         )
     )
+    from bankpilot.services.notifications import invalidate, settings_for
+
+    if settings_for(session).notifications_enabled:
+        await invalidate(session, user_id, now)
     return receipt
 
 
@@ -317,6 +321,10 @@ async def change_preference(
             receipt=receipt.model_dump(mode="json"),
         )
     )
+    from bankpilot.services.notifications import invalidate, settings_for
+
+    if settings_for(session).notifications_enabled:
+        await invalidate(session, user_id, datetime.now(UTC))
     return receipt
 
 
@@ -334,29 +342,68 @@ async def synchronize_existing_states(
     months: set[date] | None = None,
     source_type: str | None = None,
     source_id: UUID | None = None,
+    emit: bool = True,
 ) -> None:
-    """Persist transitions for already-handled sources inside the caller's business transaction."""
+    """Persist scoped post-write transitions and outbox identities in the caller transaction."""
+    from bankpilot.db.attention_repository import _next_month
+    from bankpilot.services.notifications import (
+        in_window,
+        invalidate,
+        record_transition,
+        settings_for,
+    )
+
     now = now or datetime.now(UTC)
     repo = AttentionRepository(session)
     if months is None and source_id is None:
         raise ValueError("Attention synchronization requires an explicit impact scope")
+    enabled = settings_for(session).notifications_enabled
     rows = await repo.states(user_id, months=months, source_type=source_type, source_id=source_id)
     grouped: dict[tuple[str, date], list[AttentionStateRecord]] = {}
     for row in rows:
         grouped.setdefault((row.source_type, row.source_date.replace(day=1)), []).append(row)
-    for (source_type, month), group in grouped.items():
+    current = now.astimezone(BUSINESS_ZONE).date().replace(day=1)
+    if enabled:
+        candidates = months if months is not None else {current, _next_month(current)}
+        for month in candidates:
+            for kind in [source_type] if source_type else ["budget", "recurring"]:
+                if month == current or (kind == "recurring" and month == _next_month(current)):
+                    grouped.setdefault((kind, month), [])
+    for (kind, month), group in grouped.items():
         try:
-            facts = await facts_for_group(session, user_id, month, source_type, now)
+            facts = await facts_for_group(session, user_id, month, kind, now)
         except PlanningError as exc:
             if exc.code != "planning_period_limit":
                 raise
             for row in group:
                 _apply(row, project_attention(_stored(row), None, now))
             continue
+        known = {(row.source_id, row.source_date) for row in group}
+        if enabled:
+            for key, new_fact in facts.items():
+                if (
+                    key in known
+                    or (source_id is not None and new_fact.source_id != source_id)
+                    or not in_window(new_fact, now)
+                ):
+                    continue
+                row = AttentionStateRecord(
+                    user_id=user_id,
+                    source_type=kind,
+                    source_id=new_fact.source_id,
+                    source_date=new_fact.source_date,
+                )
+                projection = project_attention(None, new_fact, now)
+                projection = replace(projection, revision=1)
+                _apply(row, projection)
+                row.notification_window = True
+                repo.add(row)
+                await record_transition(session, row, None, new_fact, now, emit=emit)
         for row in group:
+            before = _stored(row)
             fact = facts.get((row.source_id, row.source_date))
             if fact is None:
-                if source_type == "recurring":
+                if kind == "recurring":
                     plan = await PlanningRepository(session).plan(user_id, row.source_id)
                     if plan is not None:
                         fact = AttentionFact(
@@ -373,7 +420,19 @@ async def synchronize_existing_states(
                 if fact is None:
                     await repo.delete_state(row)
                     continue
-            _apply(row, project_attention(_stored(row), fact, now))
+            _apply(row, project_attention(before, fact, now))
+            if enabled:
+                window = in_window(fact, now)
+                entered = window and not row.notification_window
+                if entered and before is not None and row.revision == before.revision:
+                    row.revision += 1
+                row.notification_window = window
+                await record_transition(session, row, before, fact, now, emit=emit, entered=entered)
+    if enabled:
+        await invalidate(session, user_id, now, fully_reconciled=(
+            source_type is None and source_id is None and months is not None
+            and {current, _next_month(current)}.issubset(months)
+        ))
 
 
 def next_refresh_at(groups: list[AttentionGroup], now: datetime) -> datetime:

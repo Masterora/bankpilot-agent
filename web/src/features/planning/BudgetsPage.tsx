@@ -6,9 +6,10 @@
 import { monthPeriod } from '../../shared/period'
 import { BudgetDetails } from './BudgetDetails'
 import { BudgetEditor } from './BudgetEditor'
+import { BudgetCarry } from './BudgetCarry'
 import type { BudgetEditorStart } from './BudgetEditor'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useUnsavedChanges } from '../../shared/useUnsavedChanges'
 import { api } from '../../api'
 import { formatMoney } from '../../format'
@@ -48,7 +49,10 @@ export function BudgetsPage({
   const [editorVisible, setEditorVisible] = useState(false)
   const [selected, setSelected] = useState('')
   const [confirmDelete, setConfirmDelete] = useState('')
-  const formOpen = editor !== null
+  const [carryOpen, setCarryOpen] = useState(false)
+  const [carryReceiptMonth, setCarryReceiptMonth] = useState('')
+  const carryTrigger = useRef<HTMLButtonElement>(null)
+  const formOpen = editor !== null || carryOpen
   useEffect(() => {
     onDraftChange(formOpen)
   }, [formOpen, onDraftChange])
@@ -123,7 +127,7 @@ export function BudgetsPage({
         >
           {t('设置预算', 'Set budget')}
         </button>
-        {formOpen && (
+        {editor && (
           <button onClick={() => setEditorVisible(true)}>
             {t('继续编辑草稿', 'Continue draft')}
           </button>
@@ -150,6 +154,9 @@ export function BudgetsPage({
         >
           {t('复制上月', 'Copy previous month')}
         </button>
+        <button ref={carryTrigger} disabled={state.busy || state.loading || formOpen} onClick={() => setCarryOpen(true)}>
+          {carryReceiptMonth === state.month ? t('查看结转回执', 'View carryover receipt') : t('预算结转', 'Budget carryover')}
+        </button>
         <IconButton
           icon="refresh"
           label={t('刷新', 'Refresh')}
@@ -157,6 +164,8 @@ export function BudgetsPage({
           onClick={() => void state.refresh()}
         />
       </div>
+      {carryOpen && <BudgetCarry month={state.month} copy={copy} locale={locale} active={active} currentItems={state.error || state.loading ? undefined : state.data?.items} onReceipt={setCarryReceiptMonth}
+        onClose={() => { setCarryOpen(false); requestAnimationFrame(() => carryTrigger.current?.focus()) }} onSaved={() => state.refresh(true)} />}
       {state.error && (
         <p className="error" role="alert">
           {state.error}

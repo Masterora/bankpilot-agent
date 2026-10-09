@@ -3,6 +3,7 @@
 主要内容：轮次幂等提交、受理上下文快照、过期恢复、历史读取及迟到结果和提案写回隔离。
 关键边界：通过短事务与版本约束写回；等待模型不占用数据库事务，删除或过期后不得复活旧结果。
 """
+
 import asyncio
 import hashlib
 import json
@@ -39,6 +40,7 @@ from bankpilot.domain.transaction_search import SearchFilters
 from bankpilot.errors import BankPilotError, PlanningError
 from bankpilot.ports import AssistantGateway
 from bankpilot.services.assistant import action_view, chat
+from bankpilot.services.security_admission import admit_model_job, model_identity
 from bankpilot.services.spending import compare_spending
 
 
@@ -253,10 +255,16 @@ class ConversationService:
                     raise PlanningError("assistant_recompare_invalid", 409) from exc
             now = await database_now(session)
             turn_month = row.month if recompare_scope is not None else payload.month
-            turn_scope = row.scope if recompare_scope is not None else (
-                payload.spending_context.model_dump(mode="json")
-                if payload.spending_context
-                else None
+            if recompare_scope is None:
+                await admit_model_job(session, uid, self.settings)
+            turn_scope = (
+                row.scope
+                if recompare_scope is not None
+                else (
+                    payload.spending_context.model_dump(mode="json")
+                    if payload.spending_context
+                    else None
+                )
             )
             if turn_month is None:
                 raise PlanningError("assistant_recompare_invalid", 409)
@@ -321,9 +329,7 @@ class ConversationService:
                         await session.connection(
                             execution_options={"isolation_level": "REPEATABLE READ"}
                         )
-                        comparison = await compare_spending(
-                            session, uid, recompare_scope, today
-                        )
+                        comparison = await compare_spending(session, uid, recompare_scope, today)
                     reply = {
                         "text": (
                             "已按当前日期重新比较，请核对新的实际范围。"
@@ -339,20 +345,21 @@ class ConversationService:
                         "action": None,
                     }
                 else:
-                    reply = await chat(
-                        self.factory,
-                        gateway,
-                        uid,
-                        ChatInput(
-                            messages=messages,
-                            month=payload.month,
-                            locale=payload.locale,
-                            spending_context=payload.spending_context,
-                            search_context=search_context,
-                        ),
-                        today,
-                        discovery_enabled=self.settings.recurring_discovery_enabled,
-                    )
+                    with model_identity(uid):
+                        reply = await chat(
+                            self.factory,
+                            gateway,
+                            uid,
+                            ChatInput(
+                                messages=messages,
+                                month=payload.month,
+                                locale=payload.locale,
+                                spending_context=payload.spending_context,
+                                search_context=search_context,
+                            ),
+                            today,
+                            discovery_enabled=self.settings.recurring_discovery_enabled,
+                        )
                 if payload.recompare_of:
                     reply["request_summary"] = {"recompare_of": str(payload.recompare_of)}
                 if len(json.dumps(reply)) > self.settings.assistant_max_result_chars:
