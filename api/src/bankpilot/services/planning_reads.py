@@ -13,6 +13,7 @@ from bankpilot.db.models import (
     BudgetRecord,
     RecurringRecord,
     RecurringRevisionRecord,
+    RecurringStatusRecord,
     TransactionRecord,
 )
 from bankpilot.db.planning_repository import PlanningRepository
@@ -24,12 +25,14 @@ from bankpilot.domain.planning import (
     RecurringItem,
     RecurringOccurrence,
     RecurringRevision,
+    RecurringStatusChange,
     RecurringTransaction,
     RecurringWorkspace,
     UnbudgetedCategory,
     due_in_month,
 )
 from bankpilot.services.planning_evidence import check_capacity, excluded_ids
+from bankpilot.services.recurring_status import status_at, status_changes
 from bankpilot.services.spending import MonthSpending, read_spending
 
 
@@ -39,6 +42,7 @@ class RecurringSource:
     config: RecurringRecord | RecurringRevisionRecord
     history: list[RecurringRevisionRecord]
     occurrences: list[RecurringOccurrence]
+    changes: list[RecurringStatusRecord]
 
 
 @dataclass
@@ -151,6 +155,7 @@ async def read_recurring_month(
 ) -> RecurringMonth:
     repo = PlanningRepository(session)
     plans = await repo.plans(uid)
+    changes = await status_changes(session, uid)
     matches = await repo.matches(uid, month)
     revisions = await repo.revisions(uid)
     skips = await repo.skips(uid, month)
@@ -185,11 +190,15 @@ async def read_recurring_month(
                     due_date=skipped.due_date, transaction=None, skipped=True
                 )
         due = due_in_month(config.start_date, config.cadence, month)
-        if due and plan.status == "active" and due not in occurrences:
+        if due and status_at(plan, changes, due) == "active" and due not in occurrences:
             occurrences[due] = RecurringOccurrence(due_date=due, transaction=None)
         items.append(
             RecurringSource(
-                plan, config, history, sorted(occurrences.values(), key=lambda o: o.due_date)
+                plan,
+                config,
+                history,
+                sorted(occurrences.values(), key=lambda o: o.due_date),
+                [r for r in changes if r.plan_id == plan.id],
             )
         )
     return RecurringMonth(
@@ -212,9 +221,23 @@ async def recurring_workspace(session: AsyncSession, uid: UUID, month: date) -> 
         item = RecurringItem(
             id=plan.id,
             name=plan.name,
-            status=cast(Literal["active", "paused", "ended"], plan.status),
+            status=cast(
+                Literal["active", "paused", "ended"],
+                status_at(
+                    plan,
+                    source.changes,
+                    due_in_month(config.start_date, config.cadence, month) or month,
+                ),
+            ),
+            current_status=cast(
+                Literal["active", "paused", "ended"],
+                status_at(plan, source.changes, planning_today()),
+            ),
+            server_date=planning_today(),
+            status_known_from=plan.status_known_from,
+            status_changes=[RecurringStatusChange.model_validate(r) for r in source.changes],
             version=plan.version,
-            next_due_date=next_planned_due(plan, history, month),
+            next_due_date=next_planned_due(plan, history, month, source.changes),
             future_revisions=[
                 RecurringRevision.model_validate(r)
                 for r in history
@@ -234,27 +257,38 @@ CONFIG_FIELDS = ("merchant", "account_id", "currency", "amount", "cadence", "sta
 
 
 def next_planned_due(
-    plan: RecurringRecord, history: list[RecurringRevisionRecord], month: date
+    plan: RecurringRecord,
+    history: list[RecurringRevisionRecord],
+    month: date,
+    changes: list[RecurringStatusRecord],
 ) -> date | None:
-    """在各生效区间寻找下一期，不跨过已安排变更或将暂停项目伪装成待扣款。"""
-    if plan.status != "active":
-        return None
-    configurations: list[RecurringRecord | RecurringRevisionRecord] = [plan, *history]
-    for index, config in enumerate(configurations):
-        effective = (
-            config.effective_month if isinstance(config, RecurringRevisionRecord) else date.min
-        )
-        boundary = history[index].effective_month if index < len(history) else date.max
-        cursor = max(month, effective, config.start_date.replace(day=1))
-        if cursor >= boundary:
+    """Search bounded configuration/status intervals, including a scheduled resume."""
+    boundaries = sorted(
+        {
+            month,
+            *(r.effective_month for r in history if r.effective_month > month),
+            *(r.effective_date for r in changes if r.effective_date > month),
+            date.max,
+        }
+    )
+    for lower, upper in zip(boundaries, boundaries[1:], strict=False):
+        if status_at(plan, changes, lower) != "active":
             continue
+        config = effective_config(plan, history, lower)
+        cursor = max(lower.replace(day=1), config.start_date.replace(day=1))
         if config.cadence == "yearly":
             year = cursor.year + int(cursor.month > config.start_date.month)
             if year > 9998:
                 continue
             cursor = date(year, config.start_date.month, 1)
         due = due_in_month(config.start_date, config.cadence, cursor)
-        if due and due < boundary:
+        if due and due < lower:
+            index = cursor.year * 12 + cursor.month - 1 + (12 if config.cadence == "yearly" else 1)
+            year, month_number = divmod(index, 12)
+            if year > 9998:
+                continue
+            due = due_in_month(config.start_date, config.cadence, date(year, month_number + 1, 1))
+        if due and due < upper:
             return due
     return None
 

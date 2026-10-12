@@ -15,11 +15,13 @@ from bankpilot.db.models import (
     RecurringRecord,
     RecurringRevisionRecord,
     RecurringSkipRecord,
+    RecurringStatusRecord,
 )
 from bankpilot.db.planning_repository import PlanningRepository
 from bankpilot.db.user_repository import UserRepository
 from bankpilot.domain.planning import (
     RecurringCancelRevisionInput,
+    RecurringCancelStatusInput,
     RecurringEditInput,
     RecurringInput,
     RecurringMatchInput,
@@ -37,6 +39,7 @@ from bankpilot.services.planning_reads import (
     planning_today,
     recurring_transaction,
 )
+from bankpilot.services.recurring_status import status_at, status_changes
 
 
 async def recurring_candidates(
@@ -70,7 +73,9 @@ async def create_recurring(session: AsyncSession, uid: UUID, payload: RecurringI
         raise PlanningError("planning_not_found", 404)
     if account.currency != payload.currency:
         raise PlanningError("planning_currency", 422)
-    PlanningRepository(session).add(RecurringRecord(user_id=uid, **payload.model_dump()))
+    PlanningRepository(session).add(
+        RecurringRecord(user_id=uid, status_known_from=payload.start_date, **payload.model_dump())
+    )
     await session.flush()
     await synchronize_existing_states(session, uid, source_type="recurring", source_id=payload.id)
 
@@ -94,9 +99,30 @@ async def set_recurring_status(
     payload: RecurringStatusInput,
 ) -> None:
     plan = await owned_plan(session, uid, identity, payload.expected_version)
-    if plan.status == "ended":
+    today = planning_today()
+    effective = payload.effective_date or today
+    changes = [r for r in await status_changes(session, uid) if r.plan_id == identity]
+    if effective < today or not 1900 <= effective.year <= 9998:
+        raise PlanningError("planning_status_date", 422)
+    if status_at(plan, changes, today) == "ended":
         raise PlanningError("planning_ended")
-    plan.status = payload.status
+    # End is terminal. Replacing a future end is permitted; an earlier end requires
+    # explicitly cancelling the later schedule first, rather than discarding it.
+    if any(
+        (r.status == "ended" and r.effective_date < effective)
+        or (payload.status == "ended" and r.effective_date > effective)
+        for r in changes
+    ):
+        raise PlanningError("planning_status_terminal")
+    existing = await session.get(RecurringStatusRecord, (identity, effective))
+    if existing:
+        existing.status = payload.status
+    else:
+        session.add(
+            RecurringStatusRecord(plan_id=identity, effective_date=effective, status=payload.status)
+        )
+    if plan.status_known_from is None:
+        plan.status_known_from = today
     plan.version += 1
     await session.flush()
     await synchronize_existing_states(session, uid, source_type="recurring", source_id=identity)
@@ -117,7 +143,7 @@ async def match_recurring(
     if payload.transaction_id is None:
         await PlanningRepository(session).remove_match(identity, payload.due_date)
     else:
-        if plan.status != "active":
+        if status_at(plan, await status_changes(session, uid), payload.due_date) != "active":
             raise PlanningError("planning_inactive")
         if await PlanningRepository(session).skip(identity, payload.due_date):
             raise PlanningError("planning_skipped")
@@ -158,7 +184,7 @@ async def edit_recurring(
     plan = await owned_plan(session, uid, identity, payload.expected_version)
     if payload.id != identity:
         raise PlanningError("planning_conflict")
-    if plan.status == "ended":
+    if status_at(plan, await status_changes(session, uid), planning_today()) == "ended":
         raise PlanningError("planning_ended")
     history = [r for r in await PlanningRepository(session).revisions(uid) if r.plan_id == identity]
     replacement = (
@@ -218,7 +244,7 @@ async def cancel_revision(
     session: AsyncSession, uid: UUID, identity: UUID, payload: RecurringCancelRevisionInput
 ) -> None:
     plan = await owned_plan(session, uid, identity, payload.expected_version)
-    if plan.status == "ended":
+    if status_at(plan, await status_changes(session, uid), planning_today()) == "ended":
         raise PlanningError("planning_ended")
     await ensure_future_revision(session, identity, payload.effective_month)
     revision = await PlanningRepository(session).revision(identity, payload.effective_month)
@@ -241,7 +267,7 @@ async def skip_recurring(
         raise PlanningError("planning_due_date", 422)
     existing = await PlanningRepository(session).skip(identity, payload.due_date)
     if payload.skipped:
-        if plan.status != "active":
+        if status_at(plan, await status_changes(session, uid), payload.due_date) != "active":
             raise PlanningError("planning_inactive")
         if payload.due_date > planning_today():
             raise PlanningError("planning_not_due", 422)
@@ -283,3 +309,18 @@ async def recurring_draft(session: AsyncSession, uid: UUID, transaction_id: UUID
         cadence="monthly",
         start_date=row.booking_date,
     )
+
+
+async def cancel_status_change(
+    session: AsyncSession, uid: UUID, identity: UUID, payload: RecurringCancelStatusInput
+) -> None:
+    plan = await owned_plan(session, uid, identity, payload.expected_version)
+    if payload.effective_date <= planning_today():
+        raise PlanningError("planning_status_date", 422)
+    change = await session.get(RecurringStatusRecord, (identity, payload.effective_date))
+    if change is None:
+        raise PlanningError("planning_not_found", 404)
+    await session.delete(change)
+    plan.version += 1
+    await session.flush()
+    await synchronize_existing_states(session, uid, source_type="recurring", source_id=identity)

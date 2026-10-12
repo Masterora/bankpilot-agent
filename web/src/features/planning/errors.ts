@@ -6,6 +6,11 @@
 import { apiErrorMessage } from '../../shared/apiErrors'
 
 const errors: Record<string, [string, string]> = {
+  month_review_month: ['请选择本月或以前的月份。', 'Choose this month or an earlier month.'],
+  month_review_close: ['月结需要先核对当前数据，且月份已结束。', 'Review the current data and wait until the month ends before closing.'],
+  month_review_reopen: ['请先重新打开账期，再核对。', 'Reopen the month before reviewing it again.'],
+  planning_status_date: ['状态只能从今天或未来日期生效；已生效记录不能取消。', 'Choose today or a future date. Effective changes cannot be cancelled.'],
+  planning_status_terminal: ['结束后不能安排后续状态；请先取消冲突的未来变更。', 'End is terminal. Cancel conflicting future changes first.'],
   budget_carry_month: ['只能结转已结束的上月预算，请选择 1900 年 2 月至本月。', 'Choose February 1900 through this month; the source month must be complete.'],
   budget_carry_applied: ['本月已结转，请重新读取回执；不能重复增加额度。', 'This month was already carried over. Reload the receipt.'],
   budget_carry_empty: ['上月没有可结转的剩余额度。', 'No remaining budget to carry over.'],
@@ -33,8 +38,8 @@ const errors: Record<string, [string, string]> = {
     'Select an eligible expense in the same account and currency.',
   ],
   planning_inactive: [
-    '请先恢复跟踪，再关联流水。',
-    'Resume this plan before linking a transaction.',
+    '该期次日期处于暂停或结束区间，不能关联流水。',
+    'This occurrence falls in a paused or ended interval and cannot be linked.',
   ],
   planning_effective_month: [
     '生效月份不能早于本月，且须晚于上一版配置及已核对月份。周期起始日不能晚于生效月份。',

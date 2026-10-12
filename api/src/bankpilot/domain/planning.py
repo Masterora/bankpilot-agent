@@ -159,6 +159,18 @@ class RecurringEditInput(RecurringInput):
 
 class RecurringStatusInput(PlanningInput):
     status: Literal["active", "paused", "ended"]
+    effective_date: date | None = None
+    expected_version: int = Field(ge=1)
+
+
+class RecurringStatusChange(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    effective_date: date
+    status: Literal["active", "paused", "ended"]
+
+
+class RecurringCancelStatusInput(PlanningInput):
+    effective_date: date
     expected_version: int = Field(ge=1)
 
 
@@ -210,6 +222,10 @@ class RecurringItem(RecurringInput):
     model_config = ConfigDict(from_attributes=True)
     status: Literal["active", "paused", "ended"]
     version: int
+    current_status: Literal["active", "paused", "ended"]
+    server_date: date
+    status_known_from: date | None
+    status_changes: list[RecurringStatusChange] = Field(default_factory=list)
     latest_effective_month: date
     next_due_date: date | None
     future_revisions: list[RecurringRevision] = Field(default_factory=list)

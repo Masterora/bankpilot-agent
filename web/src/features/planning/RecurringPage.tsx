@@ -354,12 +354,13 @@ export function RecurringPage({
                 <h2>{item.name}</h2>
                 <span className="planning-status">
                   {item.status === 'active'
-                    ? t('跟踪中', 'Active')
+                    ? t('本期跟踪中', 'Active for this occurrence')
                     : item.status === 'paused'
-                      ? t('已暂停', 'Paused')
-                      : t('已结束', 'Ended')}
+                      ? t('本期暂停', 'Paused for this occurrence')
+                      : t('本期已结束', 'Ended for this occurrence')}
                 </span>
               </header>
+              {item.status !== item.current_status && <p>{t('当前状态', 'Current status')} · {item.current_status === 'active' ? t('跟踪中', 'Active') : item.current_status === 'paused' ? t('已暂停', 'Paused') : t('已结束', 'Ended')}</p>}
               <strong className="planning-amount">
                 {money(item.amount, item.currency)}{' '}
                 <small>/ {item.cadence === 'monthly' ? t('月', 'month') : t('年', 'year')}</small>

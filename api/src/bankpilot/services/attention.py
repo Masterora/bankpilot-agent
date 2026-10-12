@@ -40,6 +40,7 @@ from bankpilot.domain.attention import (
 from bankpilot.domain.planning import BudgetItem, RecurringOccurrence
 from bankpilot.errors import PlanningError
 from bankpilot.services.planning_reads import RecurringSource, budget_items, read_recurring_month
+from bankpilot.services.recurring_status import status_at
 from bankpilot.services.spending import read_spending
 
 GROUP_TYPES: dict[str, tuple[AttentionType, ...]] = {
@@ -81,7 +82,10 @@ def recurring_fact(
     item: RecurringSource, occurrence: RecurringOccurrence, today: date
 ) -> AttentionFact:
     kind: AttentionType | None = None
-    if item.plan.status == "active" and not occurrence.skipped:
+    if (
+        status_at(item.plan, item.changes, occurrence.due_date) == "active"
+        and not occurrence.skipped
+    ):
         if occurrence.transaction and not occurrence.transaction.eligible:
             kind = AttentionType.RECURRING_REVIEW_REQUIRED
         elif occurrence.transaction is None:

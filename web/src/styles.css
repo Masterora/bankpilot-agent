@@ -11,3 +11,8 @@
 
 @import './styles/assistant.css';
 @import './styles/design.css';
+
+.month-reviews { margin-block: 1rem; border: 1px solid var(--line); border-radius: 12px; padding: 1rem; }
+.month-reviews > summary { cursor: pointer; font-weight: 600; }
+.month-review-card { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.month-reviews input { margin-inline-start: .5rem; }

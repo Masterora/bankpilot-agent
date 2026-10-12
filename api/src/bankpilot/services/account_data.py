@@ -35,6 +35,7 @@ async def export_account(session: AsyncSession, uid: UUID) -> dict[str, object]:
         "audit_events": "runs",
         "assistant_turns": "assistant_conversations",
         "recurring_revisions": "recurring_plans",
+        "recurring_status_changes": "recurring_plans",
         "recurring_skips": "recurring_plans",
         "recurring_matches": "recurring_plans",
     }

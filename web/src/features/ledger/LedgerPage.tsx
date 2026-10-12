@@ -20,6 +20,7 @@ import { SearchForm } from './SearchForm'
 import { useTransactionSearch } from './useTransactionSearch'
 import { periodFilters, readSearch, writeSearch, searchError, versions, searchChips } from './search'
 import type { SearchFilters, SearchPage } from './search'
+import { MonthReviews } from './MonthReviews'
 import { LedgerReviews } from './LedgerReviews'
 
 export interface LedgerEntry {
@@ -124,6 +125,7 @@ export function LedgerPage({ copy, english, period, onPeriodChange, active, entr
   }
   return <section className="product-page ledger-page">
     <div className="page-heading-actions"><PageHeader copy={copy} page="review" /><div className="planning-actions"><button onClick={onAsk}>{english ? 'Review this period' : '核查本期账单'}</button><button onClick={onImport}>{english ? 'Import statement' : '导入账单'}</button></div></div>
+    <MonthReviews key={period.start.slice(0, 7)} initialMonth={period.start.slice(0, 7)} english={english} active={active} />
     {canReturn && <button onClick={returnToAssistant}>{english ? 'Back to assistant' : '返回助手'}</button>}
     <dialog ref={detailDialog} className="transaction-drawer" onClose={() => setSelected(null)} onCancel={() => setSelected(null)} aria-label={english ? 'Transaction details' : '交易详情'}>
       {selected && <><header><h2>{english ? 'Transaction details' : '交易详情'}</h2><IconButton icon="close" onClick={() => setSelected(null)} label={english ? 'Close' : '关闭'} /></header>

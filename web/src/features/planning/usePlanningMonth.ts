@@ -23,18 +23,22 @@ export function usePlanningMonth<T extends { month: string }>(
   const active = useRef(false)
   const generation = useRef(0)
   const writing = useRef(false)
+  const pendingRefresh = useRef(false)
+  const failedWrite = useRef(false)
 
   const refresh = useCallback(
-    async (afterSave = false) => {
+    async (afterSave = false, preserveError = false) => {
+      pendingRefresh.current = false
       const token = ++generation.current
       setRefreshKey((value) => value + 1)
       setLoading(true)
-      setError('')
+      if (!preserveError) setError('')
+      if (!afterSave) setNotice('')
       try {
         const result = await load(month)
         if (active.current && token === generation.current) setData(result)
       } catch (error) {
-        if (active.current && token === generation.current) {
+        if (active.current && token === generation.current && !preserveError) {
           setError(
             afterSave
               ? english
@@ -50,15 +54,37 @@ export function usePlanningMonth<T extends { month: string }>(
     [load, month, english],
   )
 
+  const currentRead = useRef({ refresh, visible })
   useEffect(() => {
+    currentRead.current = { refresh, visible }
     active.current = true
     const requestGeneration = generation
-    if (visible && !writing.current) void refresh()
+    if (visible) {
+      if (writing.current) pendingRefresh.current = true
+      else void refresh()
+    }
     return () => {
       active.current = false
       requestGeneration.current++
     }
-  }, [refresh, visible, externalRevision])
+  }, [refresh, visible])
+
+  // Revisions received during a write are covered by its next read, or queued
+  // for a catch-up read if they arrive after that read has started.
+  const observedRevision = useRef(externalRevision)
+  useEffect(() => {
+    if (observedRevision.current === externalRevision) return
+    observedRevision.current = externalRevision
+    if (visible) {
+      if (writing.current) pendingRefresh.current = true
+      else void refresh()
+    }
+  }, [externalRevision, visible, refresh])
+
+  useEffect(() => {
+    if (!busy && visible && pendingRefresh.current && !writing.current)
+      void refresh(false, failedWrite.current)
+  }, [busy, visible, refresh])
 
   async function perform<R>(
     action: () => Promise<R>,
@@ -66,6 +92,7 @@ export function usePlanningMonth<T extends { month: string }>(
   ): Promise<boolean> {
     if (writing.current) return false
     writing.current = true
+    failedWrite.current = false
     generation.current++
     setBusy(true)
     setError('')
@@ -78,9 +105,11 @@ export function usePlanningMonth<T extends { month: string }>(
           ? success(result)
           : (success ?? (english ? 'Saved' : '已保存')),
       )
-      await refresh(true)
+      if (currentRead.current.visible) await currentRead.current.refresh(true)
+      else pendingRefresh.current = true
       return true
     } catch (error) {
+      failedWrite.current = true
       if (active.current) setError(planningError(error, english))
       return false
     } finally {

@@ -25,6 +25,7 @@ import type {
   User,
 } from './types'
 
+import type { AccountMonthReview } from './features/ledger/MonthReviews'
 import type { ProjectionRequest, ReviewProjection } from './features/ledger/LedgerReviews'
 import type { SearchFilters, SearchPage, SearchItem } from './features/ledger/search'
 import type { Conversation } from './features/assistant/types'
@@ -88,7 +89,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (init?.method === 'POST' && /^\/api\/v1\/(?:imports(?:\/[^/]+\/revoke)?|relations|accounts\/[^/]+\/name|transactions\/[^/]+\/category|runs\/[^/]+\/transactions\/[^/]+\/category)$/.test(path)) {
     window.dispatchEvent(new Event('bankpilot:ledger-changed'))
-  } else if (init?.method === 'POST' && (/^\/api\/v1\/(?:budgets(?:\/copy|\/delete|\/carry)?|recurring(?:\/[^/]+\/(?:edit|status|match|skip|cancel-revision))?|assistant\/confirm)$/.test(path) || /^\/api\/v1\/recurring\/discovery\/proposals\/[^/]+\/confirm$/.test(path))) {
+  } else if (init?.method === 'POST' && (/^\/api\/v1\/(?:budgets(?:\/copy|\/delete|\/carry)?|recurring(?:\/[^/]+\/(?:edit|status|match|skip|cancel-revision|cancel-status))?|assistant\/confirm)$/.test(path) || /^\/api\/v1\/recurring\/discovery\/proposals\/[^/]+\/confirm$/.test(path))) {
     window.dispatchEvent(new Event('bankpilot:planning-changed'))
   }
   if (response.status === 204) return undefined as T
@@ -158,7 +159,10 @@ export const api = {
   recurringDraft: (id: string) => request<RecurringInput>(`/api/v1/recurring/draft?transaction_id=${id}`),
   skipRecurring: (id: string, due_date: string, skipped: boolean, expected_version: number) => request<void>(`/api/v1/recurring/${id}/skip`, { method: 'POST', body: JSON.stringify({ due_date, skipped, expected_version }) }),
   cancelRecurringRevision: (id: string, effective_month: string, expected_version: number) => request<void>(`/api/v1/recurring/${id}/cancel-revision`, { method: 'POST', body: JSON.stringify({ effective_month, expected_version }) }),
-  recurringStatus: (id: string, status: RecurringItem['status'], expected_version: number) => request<void>(`/api/v1/recurring/${id}/status`, { method: 'POST', body: JSON.stringify({ status, expected_version }) }),
+  monthReviews: (month: string) => request<AccountMonthReview[]>(`/api/v1/month-reviews?month=${month}-01`),
+  changeMonthReview: (item: AccountMonthReview, action: 'review' | 'close' | 'reopen') => request<AccountMonthReview>(`/api/v1/month-reviews/${item.account_id}`, { method: 'POST', body: JSON.stringify({ month: item.month, action, expected_version: item.version, expected_revision: item.ledger_revision }) }),
+  cancelRecurringStatus: (id: string, effective_date: string, expected_version: number) => request<void>(`/api/v1/recurring/${id}/cancel-status`, { method: 'POST', body: JSON.stringify({ effective_date, expected_version }) }),
+  recurringStatus: (id: string, status: RecurringItem['status'], expected_version: number, effective_date?: string) => request<void>(`/api/v1/recurring/${id}/status`, { method: 'POST', body: JSON.stringify({ status, expected_version, effective_date }) }),
   matchRecurring: (id: string, due_date: string, transaction_id: string | null, expected_version: number) => request<void>(`/api/v1/recurring/${id}/match`, { method: 'POST', body: JSON.stringify({ due_date, transaction_id, expected_version }) }),
   overview: (start: string, end: string) => request<OverviewSnapshot>(`/api/v1/overview?start_date=${start}&end_date=${end}`),
   reports: (offset = 0) => request<{ items: MonthlyReport[]; has_more: boolean }>(`/api/v1/reports?offset=${offset}&limit=20`),

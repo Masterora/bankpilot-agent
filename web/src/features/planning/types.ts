@@ -113,6 +113,10 @@ export interface RecurringRevision extends Omit<RecurringInput, 'id' | 'name'> {
 }
 export interface RecurringItem extends RecurringInput {
   status: 'active' | 'paused' | 'ended'
+  current_status: 'active' | 'paused' | 'ended'
+  server_date: string
+  status_known_from: string | null
+  status_changes: { effective_date: string; status: 'active' | 'paused' | 'ended' }[]
   version: number
   latest_effective_month: string
   next_due_date: string | null

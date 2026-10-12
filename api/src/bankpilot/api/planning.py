@@ -23,6 +23,7 @@ from bankpilot.api.errors import ApiProblem
 from bankpilot.config import Settings
 from bankpilot.db.models import UserRecord
 from bankpilot.domain.contracts import TransactionCategory
+from bankpilot.domain.month_reviews import AccountMonthReview, MonthReviewInput
 from bankpilot.domain.planning import (
     BudgetCarryInput,
     BudgetCarryPreview,
@@ -32,6 +33,7 @@ from bankpilot.domain.planning import (
     Currency,
     PlanningInput,
     RecurringCancelRevisionInput,
+    RecurringCancelStatusInput,
     RecurringEditInput,
     RecurringInput,
     RecurringMatchInput,
@@ -52,6 +54,7 @@ from bankpilot.domain.recurring_discovery import (
 )
 from bankpilot.services import budget_carry as carry_service
 from bankpilot.services import budgets as budget_service
+from bankpilot.services import month_reviews as month_review_service
 from bankpilot.services import recurring as recurring_service
 from bankpilot.services import recurring_discovery as discovery_service
 from bankpilot.services.planning_reads import budget_workspace, recurring_workspace
@@ -376,3 +379,35 @@ async def cancel_revision(
 ) -> None:
     await recurring_service.cancel_revision(session, user.id, identity, payload)
     await session.commit()
+
+
+@router.post("/recurring/{identity}/cancel-status", status_code=204)
+async def cancel_status_change(
+    identity: UUID,
+    payload: RecurringCancelStatusInput,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    await recurring_service.cancel_status_change(session, user.id, identity, payload)
+    await session.commit()
+
+
+@router.get("/month-reviews", response_model=list[AccountMonthReview])
+async def month_reviews(
+    month: date,
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
+) -> list[AccountMonthReview]:
+    return await month_review_service.read_month_reviews(session, user.id, month)
+
+
+@router.post("/month-reviews/{identity}", response_model=AccountMonthReview)
+async def change_month_review(
+    identity: UUID,
+    payload: MonthReviewInput,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> AccountMonthReview:
+    result = await month_review_service.change_month_review(session, user.id, identity, payload)
+    await session.commit()
+    return result

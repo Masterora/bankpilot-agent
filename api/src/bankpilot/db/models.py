@@ -388,6 +388,8 @@ class RecurringRecord(Base):
     """周期锚点与预期金额；暂停停止显示待核对期次，结束后不可恢复。"""
 
     __tablename__ = "recurring_plans"
+
+    status_known_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     account_id: Mapped[UUID] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"))
@@ -768,3 +770,39 @@ class NotificationScheduleRecord(Base):
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     __table_args__ = (Index("ix_notification_schedule_due", "next_check_at", "lease_until"),)
+
+
+class RecurringStatusRecord(Base):
+    """Day-granularity status boundaries; legacy baseline remains on the plan."""
+
+    __tablename__ = "recurring_status_changes"
+    plan_id: Mapped[UUID] = mapped_column(
+        ForeignKey("recurring_plans.id", ondelete="CASCADE"), primary_key=True
+    )
+    effective_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    status: Mapped[str] = mapped_column(String(16))
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'paused', 'ended')", name="ck_recurring_change_status"
+        ),
+    )
+
+
+class AccountMonthReviewRecord(Base):
+    """User declarations, never bank-certified completeness or a ledger write lock."""
+
+    __tablename__ = "account_month_reviews"
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    month: Mapped[date] = mapped_column(Date, primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16))
+    ledger_revision: Mapped[int] = mapped_column(BigInteger)
+    version: Mapped[int] = mapped_column(Integer)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("status IN ('reviewed', 'closed', 'open')", name="ck_month_review_status"),
+        CheckConstraint("EXTRACT(DAY FROM month) = 1", name="ck_month_review_month"),
+        CheckConstraint("version > 0 AND ledger_revision >= 0", name="ck_month_review_version"),
+    )
