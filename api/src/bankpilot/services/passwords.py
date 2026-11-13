@@ -1,14 +1,15 @@
+"""编排当前用户密码修改与其他会话撤销。
+
+密码更新和会话撤销处于同一事务，由调用方提交；不记录明文密码。
 """
-文件职责：编排当前用户密码修改与其他会话撤销。
-主要内容：锁定用户、验证旧密码、生成新哈希并撤销其他登录会话。
-关键边界：密码更新和会话撤销处于同一事务，由调用方提交；不记录明文密码。
-"""
+
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bankpilot.db.user_repository import SessionRepository, UserRepository
 from bankpilot.security import hash_password_async, verify_password_async
+from bankpilot.services.integrations import unbind
 
 
 async def change_password(
@@ -35,3 +36,4 @@ async def change_password(
         raise ValueError("password_unchanged")
     user.password_hash = await hash_password_async(new_password)
     await sessions.delete_others(user_id, token_hash)
+    await unbind(session, user_id)

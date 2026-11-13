@@ -1,7 +1,5 @@
-/**
- * 文件职责：管理持久会话历史、轮次提交及同请求恢复。
- * 主要内容：会话列表和选择、轮次查询、待确认请求身份保存、上下文更新及删除。
- * 关键边界：状态按用户与视图隔离；恢复查询原请求，不自动重放写入，退出后迟到结果不得重建恢复状态。
+/** 管理持久会话历史、轮次提交及同请求恢复。
+ * 状态按用户与视图隔离；恢复查询原请求，不自动重放写入，退出后迟到结果不得重建恢复状态。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../../api'
@@ -19,10 +17,17 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   useEffect(() => {
     if (!open) return
     let disposed = false
-    void api.notificationAvailability().then(value => {
-      if (!disposed) setSubscriptionAvailable(value.enabled)
-    }).catch(() => { if (!disposed) setSubscriptionAvailable(false) })
-    return () => { disposed = true }
+    void api
+      .notificationAvailability()
+      .then((value) => {
+        if (!disposed) setSubscriptionAvailable(value.enabled)
+      })
+      .catch(() => {
+        if (!disposed) setSubscriptionAvailable(false)
+      })
+    return () => {
+      disposed = true
+    }
   }, [open, userId])
   const [searchUnsaved, setSearchUnsaved] = useState(false)
   const contextEpoch = useRef(0)
@@ -38,9 +43,12 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   const [storageFailed, setStorageFailed] = useState(() => {
     try {
       const probe = `assistant-probe:${userId}`
-      sessionStorage.setItem(probe, '1'); sessionStorage.removeItem(probe)
+      sessionStorage.setItem(probe, '1')
+      sessionStorage.removeItem(probe)
       return false
-    } catch { return true }
+    } catch {
+      return true
+    }
   })
   const [error, setError] = useState<unknown>(null)
   const epoch = useRef(0)
@@ -51,59 +59,90 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
   const key = `assistant:${userId}`
   const upgradeKey = `assistant-unverified:${userId}`
   const currentKey = `assistant-current:${userId}`
-  const preserveUnsupported = useCallback((raw: string) => {
-    const archived = sessionStorage.getItem(upgradeKey)
-    if (archived && archived !== raw) throw new Error('Unverified request already exists')
-    sessionStorage.setItem(upgradeKey, raw)
-    unsupportedRecovery.current = raw
-    setRecoveryUpgradeRequired(true)
-  }, [upgradeKey])
-  const saveRecovery = useCallback((payload: TurnInput | null) => {
-    try {
-      const raw = sessionStorage.getItem(key)
-      if (raw && JSON.parse(raw).protocol_version !== 5) preserveUnsupported(raw)
-      if (payload) sessionStorage.setItem(key, JSON.stringify(payload))
-      else sessionStorage.removeItem(key)
-      recovery.current = payload
-      setUnknown(payload)
-      return true
-    } catch { setStorageFailed(true); return false }
-  }, [key, preserveUnsupported])
+  const preserveUnsupported = useCallback(
+    (raw: string) => {
+      const archived = sessionStorage.getItem(upgradeKey)
+      if (archived && archived !== raw) throw new Error('Unverified request already exists')
+      sessionStorage.setItem(upgradeKey, raw)
+      unsupportedRecovery.current = raw
+      setRecoveryUpgradeRequired(true)
+    },
+    [upgradeKey],
+  )
+  const saveRecovery = useCallback(
+    (payload: TurnInput | null) => {
+      try {
+        const raw = sessionStorage.getItem(key)
+        if (raw && JSON.parse(raw).protocol_version !== 5) preserveUnsupported(raw)
+        if (payload) sessionStorage.setItem(key, JSON.stringify(payload))
+        else sessionStorage.removeItem(key)
+        recovery.current = payload
+        setUnknown(payload)
+        return true
+      } catch {
+        setStorageFailed(true)
+        return false
+      }
+    },
+    [key, preserveUnsupported],
+  )
   const list = useCallback(async (next?: string) => {
     const result = await api.assistantHistory(next)
     if (!alive.current) return result
-    setItems(old => next ? [...old, ...result.items.filter(item => !old.some(existing => existing.id === item.id))] : result.items)
+    setItems((old) =>
+      next
+        ? [
+            ...old,
+            ...result.items.filter((item) => !old.some((existing) => existing.id === item.id)),
+          ]
+        : result.items,
+    )
     setCursor(result.next_cursor)
     return result
   }, [])
-  const load = useCallback(async (target: string, earlier?: number) => {
-    const version = ++epoch.current
-    contextEpoch.current++
-    active.current = target
-    setId(target)
-    if (!earlier) setTurns([])
-    setLoading(true)
-    setError(null)
-    let result
-    try { result = await api.assistantConversation(target, earlier) }
-    catch (cause) {
-      if (alive.current && epoch.current === version) { setLoading(false); active.current = null; setId(null); setScope(null) }
-      throw cause
-    }
-    if (!alive.current || epoch.current !== version) return
-    setLoading(false)
-    setTurns(old => earlier ? [...result.turns, ...old] : result.turns)
-    setSubscription(result.conversation)
-    setScope(result.conversation.scope)
-    setSearchContext(result.conversation.search_context)
-    setContextVersion(result.conversation.context_version)
-    setSearchUnsaved(false)
-    setMonth(result.conversation.month)
-    setBefore(result.next_before)
-    setLimit(result.turn_limit)
-    try { sessionStorage.setItem(currentKey, target) } catch { setStorageFailed(true) }
-  }, [currentKey])
-  const invalidate = useCallback(() => { epoch.current++ }, [])
+  const load = useCallback(
+    async (target: string, earlier?: number) => {
+      const version = ++epoch.current
+      contextEpoch.current++
+      active.current = target
+      setId(target)
+      if (!earlier) setTurns([])
+      setLoading(true)
+      setError(null)
+      let result
+      try {
+        result = await api.assistantConversation(target, earlier)
+      } catch (cause) {
+        if (alive.current && epoch.current === version) {
+          setLoading(false)
+          active.current = null
+          setId(null)
+          setScope(null)
+        }
+        throw cause
+      }
+      if (!alive.current || epoch.current !== version) return
+      setLoading(false)
+      setTurns((old) => (earlier ? [...result.turns, ...old] : result.turns))
+      setSubscription(result.conversation)
+      setScope(result.conversation.scope)
+      setSearchContext(result.conversation.search_context)
+      setContextVersion(result.conversation.context_version)
+      setSearchUnsaved(false)
+      setMonth(result.conversation.month)
+      setBefore(result.next_before)
+      setLimit(result.turn_limit)
+      try {
+        sessionStorage.setItem(currentKey, target)
+      } catch {
+        setStorageFailed(true)
+      }
+    },
+    [currentKey],
+  )
+  const invalidate = useCallback(() => {
+    epoch.current++
+  }, [])
   useEffect(() => {
     alive.current = true
     let cancelled = false
@@ -119,7 +158,11 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
         const raw = sessionStorage.getItem(key)
         if (raw) {
           const payload = JSON.parse(raw) as TurnInput
-          if (payload.protocol_version === 5 && payload.request_id && typeof payload.question === 'string') {
+          if (
+            payload.protocol_version === 5 &&
+            payload.request_id &&
+            typeof payload.question === 'string'
+          ) {
             recovery.current = payload
             setUnknown(payload)
             const turn = await api.assistantLookup(payload).catch(() => null)
@@ -131,22 +174,40 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
             }
           } else preserveUnsupported(raw)
         }
-      } catch { setStorageFailed(true) }
+      } catch {
+        setStorageFailed(true)
+      }
       const result = await list()
       if (cancelled) return
       const target = stored || result.recent_id
-      if (target) await load(target).catch(async () => {
-        if (!cancelled && result.recent_id && result.recent_id !== target) await load(result.recent_id)
+      if (target)
+        await load(target).catch(async () => {
+          if (!cancelled && result.recent_id && result.recent_id !== target)
+            await load(result.recent_id)
+        })
+    })()
+      .catch((cause) => {
+        if (!cancelled) setError(cause)
       })
-    })().catch(cause => { if (!cancelled) setError(cause) }).finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true; alive.current = false; invalidate() }
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+      alive.current = false
+      invalidate()
+    }
   }, [key, upgradeKey, currentKey, list, load, saveRecovery, invalidate, preserveUnsupported])
   useEffect(() => {
-    const logout = () => { alive.current = false; invalidate(); recovery.current = null }
+    const logout = () => {
+      alive.current = false
+      invalidate()
+      recovery.current = null
+    }
     window.addEventListener('bankpilot-logout', logout)
     return () => window.removeEventListener('bankpilot-logout', logout)
   }, [invalidate])
-  const processing = turns.some(turn => turn.status === 'processing')
+  const processing = turns.some((turn) => turn.status === 'processing')
   useEffect(() => {
     if (!open || !id) return
     let cancelled = false
@@ -157,15 +218,25 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
         const result = await api.assistantConversation(id)
         if (cancelled || version !== epoch.current) return
         if (watchVersion === subscriptionEpoch.current) setSubscription(result.conversation)
-        setTurns(old => {
-          const replacements = new Map(result.turns.map(turn => [turn.id, turn]))
-          return [...old.filter(turn => !replacements.has(turn.id)), ...result.turns]
+        setTurns((old) => {
+          const replacements = new Map(result.turns.map((turn) => [turn.id, turn]))
+          return [...old.filter((turn) => !replacements.has(turn.id)), ...result.turns]
         })
-      } catch (cause) { if (!cancelled) setError(cause) }
+      } catch (cause) {
+        if (!cancelled) setError(cause)
+      }
     }
     void refresh()
-    const timer = window.setInterval(() => { void refresh() }, processing ? 3000 : 15000)
-    return () => { cancelled = true; clearInterval(timer) }
+    const timer = window.setInterval(
+      () => {
+        void refresh()
+      },
+      processing ? 3000 : 15000,
+    )
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
   }, [open, id, processing])
   async function send(payload: TurnInput) {
     const version = epoch.current
@@ -189,7 +260,8 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
         await list()
         return true
       } else {
-        if (cause instanceof ApiError && [400, 409, 410, 422].includes(cause.status)) saveRecovery(null)
+        if (cause instanceof ApiError && [400, 409, 410, 422].includes(cause.status))
+          saveRecovery(null)
         setError(cause)
       }
     }
@@ -201,7 +273,9 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
       if (!alive.current) return
       saveRecovery(null)
       await load(result.conversation_id)
-    } catch (cause) { setError(cause) }
+    } catch (cause) {
+      setError(cause)
+    }
   }
   async function lookupUnsupported() {
     const raw = unsupportedRecovery.current
@@ -210,11 +284,27 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     try {
       // Only use the envelope's identity. Never convert or replay the old request body.
       const value: unknown = JSON.parse(raw)
-      if (!value || typeof value !== 'object' || !('request_id' in value) || typeof value.request_id !== 'string') throw new Error('Missing request identity')
-      const cid = 'conversation_id' in value && typeof value.conversation_id === 'string' ? value.conversation_id : undefined
-      const creation = 'creation_id' in value && typeof value.creation_id === 'string' ? value.creation_id : undefined
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        !('request_id' in value) ||
+        typeof value.request_id !== 'string'
+      )
+        throw new Error('Missing request identity')
+      const cid =
+        'conversation_id' in value && typeof value.conversation_id === 'string'
+          ? value.conversation_id
+          : undefined
+      const creation =
+        'creation_id' in value && typeof value.creation_id === 'string'
+          ? value.creation_id
+          : undefined
       if (!!cid === !!creation) throw new Error('Missing conversation identity')
-      const result = await api.assistantLookup({ request_id: value.request_id, conversation_id: cid, creation_id: creation })
+      const result = await api.assistantLookup({
+        request_id: value.request_id,
+        conversation_id: cid,
+        creation_id: creation,
+      })
       if (!alive.current || epoch.current !== version) return
       await load(result.conversation_id)
       if (!alive.current || epoch.current !== version + 1) return
@@ -222,23 +312,43 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
       if (sessionStorage.getItem(key) === raw) sessionStorage.removeItem(key)
       unsupportedRecovery.current = null
       setRecoveryUpgradeRequired(false)
-    } catch (cause) { if (alive.current && epoch.current <= version + 1) setError(cause) }
+    } catch (cause) {
+      if (alive.current && epoch.current <= version + 1) setError(cause)
+    }
   }
   function fresh(inherit = false) {
     epoch.current++
     contextEpoch.current++
-    setContextVersion(0); setSearchContext(null); setSearchUnsaved(false); setSubscription(null)
+    setContextVersion(0)
+    setSearchContext(null)
+    setSearchUnsaved(false)
+    setSubscription(null)
     active.current = null
-    setId(null); setTurns([]); setBefore(null); setError(null); setLoading(false)
-    if (!inherit) { setScope(null); setMonth(`${initialMonth.slice(0, 7)}-01`) }
-    try { sessionStorage.removeItem(currentKey) } catch { setStorageFailed(true) }
+    setId(null)
+    setTurns([])
+    setBefore(null)
+    setError(null)
+    setLoading(false)
+    if (!inherit) {
+      setScope(null)
+      setMonth(`${initialMonth.slice(0, 7)}-01`)
+    }
+    try {
+      sessionStorage.removeItem(currentKey)
+    } catch {
+      setStorageFailed(true)
+    }
   }
   async function selectScope(value: SpendingScope | null) {
     const target = active.current
     if (target) {
       setLoading(true)
-      try { const saved = await api.assistantScope(target, value?.month ?? month, value, contextVersion); if (target === active.current && alive.current) setContextVersion(saved.context_version) }
-      finally { if (target === active.current && alive.current) setLoading(false) }
+      try {
+        const saved = await api.assistantScope(target, value?.month ?? month, value, contextVersion)
+        if (target === active.current && alive.current) setContextVersion(saved.context_version)
+      } finally {
+        if (target === active.current && alive.current) setLoading(false)
+      }
     }
     if (target !== active.current || !alive.current) return
     setScope(value)
@@ -252,17 +362,28 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     setSearchUnsaved(true)
     try {
       let saved
-      try { saved = await api.assistantSearchContext(target, filters, contextVersion) }
-      catch (cause) {
+      try {
+        saved = await api.assistantSearchContext(target, filters, contextVersion)
+      } catch (cause) {
         // A lost success response must be reconciled before retrying a write.
         if (cause instanceof ApiError && cause.status < 500) throw cause
         const current = await api.assistantConversation(target)
-        if (current.conversation.context_version !== contextVersion + 1 || JSON.stringify(current.conversation.search_context) !== JSON.stringify(filters)) throw cause
+        if (
+          current.conversation.context_version !== contextVersion + 1 ||
+          JSON.stringify(current.conversation.search_context) !== JSON.stringify(filters)
+        )
+          throw cause
         saved = current.conversation
       }
       if (!alive.current || active.current !== target || contextEpoch.current !== version) return
-      setSearchContext(saved.search_context); setContextVersion(saved.context_version); setSearchUnsaved(false); setSubscription(saved)
-    } catch (cause) { if (alive.current && active.current === target) setError(cause); throw cause }
+      setSearchContext(saved.search_context)
+      setContextVersion(saved.context_version)
+      setSearchUnsaved(false)
+      setSubscription(saved)
+    } catch (cause) {
+      if (alive.current && active.current === target) setError(cause)
+      throw cause
+    }
   }
   async function subscribe(enabled: boolean) {
     subscriptionEpoch.current++
@@ -273,7 +394,8 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     try {
       const saved = await api.assistantSubscription(target, enabled, contextVersion)
       if (!alive.current || active.current !== target || epoch.current !== version) return
-      setSubscription(saved); setContextVersion(saved.context_version)
+      setSubscription(saved)
+      setContextVersion(saved.context_version)
       await list()
     } catch (cause) {
       if (alive.current && active.current === target && epoch.current === version) {
@@ -281,11 +403,14 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
         // Reconcile a lost response and a stale context before another explicit write.
         const current = await api.assistantConversation(target).catch(() => null)
         if (current && alive.current && active.current === target && epoch.current === version) {
-          setSubscription(current.conversation); setContextVersion(current.conversation.context_version)
+          setSubscription(current.conversation)
+          setContextVersion(current.conversation.context_version)
           setSearchContext(current.conversation.search_context)
         }
       }
-    } finally { if (alive.current && active.current === target) setLoading(false) }
+    } finally {
+      if (alive.current && active.current === target) setLoading(false)
+    }
   }
   async function acknowledgeSearch() {
     subscriptionEpoch.current++
@@ -301,8 +426,11 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
       if (!alive.current || active.current !== target || epoch.current !== version) return
       setSubscription(current.conversation)
       await list()
-    } catch (cause) { if (alive.current && active.current === target) setError(cause) }
-    finally { if (alive.current && active.current === target) setLoading(false) }
+    } catch (cause) {
+      if (alive.current && active.current === target) setError(cause)
+    } finally {
+      if (alive.current && active.current === target) setLoading(false)
+    }
   }
   async function remove() {
     if (!id) return
@@ -311,6 +439,39 @@ export function useConversations(userId: string, open: boolean, initialMonth: st
     fresh()
     await list()
   }
-  return { subscriptionAvailable, subscription, subscribe, acknowledgeSearch, searchContext, contextVersion, searchUnsaved, selectSearch, setSearchUnsaved, items, turns, setTurns, id, scope, month, cursor, before, limit, unknown, storageFailed, recoveryUpgradeRequired,
-    error, setError, loading, processing, load, list, send, lookup, lookupUnsupported, fresh, selectScope, remove }
+  return {
+    subscriptionAvailable,
+    subscription,
+    subscribe,
+    acknowledgeSearch,
+    searchContext,
+    contextVersion,
+    searchUnsaved,
+    selectSearch,
+    setSearchUnsaved,
+    items,
+    turns,
+    setTurns,
+    id,
+    scope,
+    month,
+    cursor,
+    before,
+    limit,
+    unknown,
+    storageFailed,
+    recoveryUpgradeRequired,
+    error,
+    setError,
+    loading,
+    processing,
+    load,
+    list,
+    send,
+    lookup,
+    lookupUnsupported,
+    fresh,
+    selectScope,
+    remove,
+  }
 }

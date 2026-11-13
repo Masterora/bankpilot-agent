@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# 文件职责：接收 CI 发布制品并更新 BankPilot 远程 Docker Compose 服务。
-# 主要内容：校验目标、解压制品、同步源码、执行迁移、重建服务并验证健康。
-# 关键边界：保留远程 deploy/.env；发布包和临时目录执行后删除；脚本不读取或输出任何密钥。
+# 更新远程 Compose 服务，保留远端 deploy/.env。
 set -Eeuo pipefail
 
 : "${DEPLOY_PATH:?DEPLOY_PATH is required}"

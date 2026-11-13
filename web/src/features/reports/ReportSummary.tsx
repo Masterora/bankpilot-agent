@@ -1,7 +1,5 @@
-/**
- * 文件职责：将冻结月报快照呈现为阅读与打印摘要。
- * 主要内容：报告期间、按币种统计、分类与核查信息展示。
- * 关键边界：不重算金额，不混入实时账本或不同口径统计。
+/** 将冻结月报快照呈现为阅读与打印摘要。
+ * 不重算金额，不混入实时账本或不同口径统计。
  */
 import { formatMoney, formatTimestamp } from '../../format'
 import type { Locale } from '../../i18n'
@@ -30,7 +28,10 @@ export function ReportSummary({ report, locale }: { report: ReportDetail; locale
         {snapshot.review.coverage.transaction_count} {t('笔流水', 'transactions')} ·{' '}
         {t('截至', 'Through')} {latestDate ?? '—'}
       </p>
-      <p className="report-meta">{t('生成于', 'Generated')} {formatTimestamp(report.completed_at ?? report.created_at, locale)}</p>
+      <p className="report-meta">
+        {t('生成于', 'Generated')}{' '}
+        {formatTimestamp(report.completed_at ?? report.created_at, locale)}
+      </p>
       {report.stale && (
         <p>
           {t(

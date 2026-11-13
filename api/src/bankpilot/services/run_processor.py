@@ -1,13 +1,6 @@
-"""
-文件职责：编排单次 Agent 运行的持久化状态、工作流执行与异常收敛。
+"""编排单次 Agent 运行的持久化状态、工作流执行与异常收敛。
 
-主要内容：
-- `process`：领取 CREATED 运行，执行查询与确定性分析并写入终态。
-- `_record_plan`：持久化模型决策与模型元数据，合法动作才进入 EXECUTING。
-- `_fail`：将预期与非预期异常统一收敛为失败记录。
-- `reconcile_interrupted`：应用启动时处理遗留非终态运行。
-
-关键边界：模型调用和工具执行期间不持有长数据库事务；非预期错误不对外暴露内部细节。
+模型调用和工具执行期间不持有长数据库事务；非预期错误不对外暴露内部细节。
 """
 
 import asyncio
@@ -74,7 +67,9 @@ class RunProcessor:
             )
             with model_identity(user_id):
                 state = await workflow.run(
-                    run_id=run_id, user_id=user_id, user_message=user_message,
+                    run_id=run_id,
+                    user_id=user_id,
+                    user_message=user_message,
                     today=datetime.now(self.business_timezone).date(),
                 )
             result = state["result"]

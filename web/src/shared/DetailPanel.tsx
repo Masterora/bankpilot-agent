@@ -1,7 +1,5 @@
-/**
- * 文件职责：提供共享的模态详情侧栏。
- * 主要内容：侧栏展示、键盘关闭、焦点约束与关闭后焦点恢复。
- * 关键边界：关闭行为通知调用方，不自行处理业务保存或丢弃草稿。
+/** 提供共享的模态详情侧栏。
+ * 关闭行为通知调用方，不自行处理业务保存或丢弃草稿。
  */
 import { useEffect, useId, useRef } from 'react'
 import type { ReactNode } from 'react'
@@ -42,7 +40,8 @@ export function DetailPanel({
     return () => {
       if (docked) wide.removeEventListener('change', sync)
       node.close()
-      if (open && previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true })
+      if (open && previousFocus instanceof HTMLElement && previousFocus.isConnected)
+        previousFocus.focus({ preventScroll: true })
     }
   }, [open, docked])
   return (
@@ -51,7 +50,10 @@ export function DetailPanel({
       className={`detail-panel${docked ? ' assistant-panel' : ''}`}
       aria-labelledby={heading}
       onKeyDown={(event) => {
-        if (docked && event.key === 'Escape') { event.preventDefault(); onClose() }
+        if (docked && event.key === 'Escape') {
+          event.preventDefault()
+          onClose()
+        }
       }}
       onCancel={(event) => {
         event.preventDefault()

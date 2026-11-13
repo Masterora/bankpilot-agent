@@ -1,6 +1,4 @@
-# 文件职责：构建 BankPilot API 生产镜像。
-# 主要内容：安装锁定的 uv/Python 依赖，复制迁移与源码，创建非 root 运行用户。
-# 关键边界：迁移由显式发布步骤执行；普通启动不修改数据库结构。
+# API 启动不迁移数据库；发布时单独执行迁移。
 FROM python:3.13-slim-trixie
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /uvx /bin/

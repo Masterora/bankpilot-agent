@@ -1,8 +1,5 @@
-/**
- * 文件职责：展示 Agent 任务输入、运行结果、账单核查和分类修正界面。
- *
- * 主要内容：任务输入、执行时间线、确定性统计、异常与交易证据。
- * 关键边界：页面不计算账务结果；金额、分类、异常和重算均来自受控 API。
+/** 展示 Agent 任务输入、运行结果、账单核查和分类修正界面。
+ * 页面不计算账务结果；金额、分类、异常和重算均来自受控 API。
  */
 
 import { useRef } from 'react'
@@ -52,8 +49,26 @@ export function AgentPage({
     <section className="product-page">
       <PageHeader copy={copy} page="agent" />
       <section className="agent-command">
-        <details className="scope-note"><summary>{locale === 'en-US' ? 'Review scope' : '核查范围'}</summary><p>{locale === 'en-US' ? 'Review imported transactions by date. Use the ledger to filter by account or merchant.' : '按日期核查已导入流水；按账户或商户筛选请使用账本。'}</p></details>
-        <button onClick={() => onMessageChange(locale === 'en-US' ? `Review all imported statements from ${period.start} to ${period.end}` : `核查 ${period.start} 至 ${period.end} 的全部已导入账单`)}>{locale === 'en-US' ? 'Use current ledger dates' : '使用当前账本期间'} · {period.start} — {period.end}</button>
+        <details className="scope-note">
+          <summary>{locale === 'en-US' ? 'Review scope' : '核查范围'}</summary>
+          <p>
+            {locale === 'en-US'
+              ? 'Review imported transactions by date. Use the ledger to filter by account or merchant.'
+              : '按日期核查已导入流水；按账户或商户筛选请使用账本。'}
+          </p>
+        </details>
+        <button
+          onClick={() =>
+            onMessageChange(
+              locale === 'en-US'
+                ? `Review all imported statements from ${period.start} to ${period.end}`
+                : `核查 ${period.start} 至 ${period.end} 的全部已导入账单`,
+            )
+          }
+        >
+          {locale === 'en-US' ? 'Use current ledger dates' : '使用当前账本期间'} · {period.start} —{' '}
+          {period.end}
+        </button>
         <form aria-busy={submitting} className="prompt" onSubmit={onSubmit}>
           <textarea
             ref={inputRef}
@@ -65,31 +80,56 @@ export function AgentPage({
             maxLength={1000}
             onKeyDown={(event) => {
               // 多行输入保留 Enter 换行；快捷键只提交已完成的非空输入。
-              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !event.nativeEvent.isComposing && !submitting && message.trim()) {
+              if (
+                (event.metaKey || event.ctrlKey) &&
+                event.key === 'Enter' &&
+                !event.nativeEvent.isComposing &&
+                !submitting &&
+                message.trim()
+              ) {
                 event.preventDefault()
                 event.currentTarget.form?.requestSubmit()
               }
             }}
           />
           <div className="prompt-footer">
-          <span id="query-shortcut">{copy.queryShortcut}</span>
-          <button
-            aria-label={submitting ? copy.querying : copy.startQuery}
-            className="primary"
-            disabled={submitting || !message.trim()}
-          >
-            {submitting && <span className="button-spinner" aria-hidden="true" />}
-            <span>{submitting ? copy.querying : copy.startQuery}</span>
-          </button>
+            <span id="query-shortcut">{copy.queryShortcut}</span>
+            <button
+              aria-label={submitting ? copy.querying : copy.startQuery}
+              className="primary"
+              disabled={submitting || !message.trim()}
+            >
+              {submitting && <span className="button-spinner" aria-hidden="true" />}
+              <span>{submitting ? copy.querying : copy.startQuery}</span>
+            </button>
           </div>
         </form>
         <div className="suggestions">
           {copy.suggestions.map((item) => (
-            <button type="button" key={item} onClick={() => { onMessageChange(item); inputRef.current?.focus() }}>{item}</button>
+            <button
+              type="button"
+              key={item}
+              onClick={() => {
+                onMessageChange(item)
+                inputRef.current?.focus()
+              }}
+            >
+              {item}
+            </button>
           ))}
         </div>
-        {error && <p className="error" role="alert">{error}</p>}
-        {correctionSaved && <p role="status">{locale === 'en-US' ? 'Category saved to the ledger. Query again to generate an updated snapshot.' : '分类已保存到账本，请重新查询以生成新的结果快照。'}</p>}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        {correctionSaved && (
+          <p role="status">
+            {locale === 'en-US'
+              ? 'Category saved. Run the review again to update the results.'
+              : '分类已保存。重新核查后更新结果。'}
+          </p>
+        )}
       </section>
       <RunPanel
         copy={copy}
@@ -104,7 +144,11 @@ export function AgentPage({
 
 function RunPanel({ copy, correctingId, locale, onCategoryChange, run }: RunViewProps) {
   if (!run) {
-    return <section className="result-placeholder"><EmptyContent kind="agent" title={copy.emptyResult} /></section>
+    return (
+      <section className="result-placeholder">
+        <EmptyContent kind="agent" title={copy.emptyResult} />
+      </section>
+    )
   }
   const transactions = run.result?.transactions.items ?? []
   const resultMessage = run.result
@@ -118,48 +162,78 @@ function RunPanel({ copy, correctingId, locale, onCategoryChange, run }: RunView
     <section className="results-grid" aria-live="polite">
       <article className="result-card">
         <div className="result-heading">
-          <div><p className="eyebrow">{copy.resultEyebrow}</p><h2>{resultMessage}</h2></div>
+          <h2>{resultMessage}</h2>
           <Status copy={copy} status={run.status} />
         </div>
-        {run.error_message && <p className="error">{run.error_code}: {run.error_message}</p>}
+        {run.error_message && (
+          <p className="error">
+            {run.error_code}: {run.error_message}
+          </p>
+        )}
         {run.result?.review && <ReviewSnapshot review={run.result.review} locale={locale} />}
-        {run.result && <details className="raw-analysis" open={!run.result.review}><summary>{locale === 'en-US' ? 'Raw flows & category analysis' : '原始流水与分类分析'}</summary><AnalysisPanel copy={copy} locale={locale} run={run} /></details>}
-        {run.result && !run.result.review && <p className="scope-note">{locale === 'en-US' ? 'This result has no relationship review snapshot. Query again to review adjustments.' : '此结果未包含关系核查快照，重新查询可查看调整结果。'}</p>}
+        {run.result && (
+          <details className="raw-analysis" open={!run.result.review}>
+            <summary>
+              {locale === 'en-US' ? 'Raw flows & category analysis' : '原始流水与分类分析'}
+            </summary>
+            <AnalysisPanel copy={copy} locale={locale} run={run} />
+          </details>
+        )}
+        {run.result && !run.result.review && (
+          <p className="scope-note">
+            {locale === 'en-US'
+              ? 'This result has no relationship review snapshot. Query again to review adjustments.'
+              : '此结果未包含关系核查快照，重新查询可查看调整结果。'}
+          </p>
+        )}
         {transactions.length > 0 && (
-          <details className="transaction-details"><summary>{locale === 'en-US' ? 'Source entries' : '原始交易'} · {transactions.length}</summary><div className="transaction-list">
-            {transactions.map((item) => (
-              <div className="transaction" key={item.id}>
-                <div className="merchant-mark">{item.merchant.slice(0, 1)}</div>
-                <div className="transaction-copy">
-                  <strong>{item.merchant}</strong>
-                  <span>{formatTransactionTime(item, locale)}</span>
-                  {item.description && <small>{item.description}</small>}
-                  <select
-                    aria-label={`${copy.categoryLabel}: ${item.merchant}`}
-                    disabled={correctingId === item.id}
-                    value={item.category}
-                    onChange={(event) =>
-                      onCategoryChange(item.id, event.target.value as TransactionCategory)
-                    }
-                  >
-                    {Object.entries(copy.categoryLabels).map(([category, label]) => (
-                      <option key={category} value={category}>{label}</option>
-                    ))}
-                  </select>
+          <details className="transaction-details">
+            <summary>
+              {locale === 'en-US' ? 'Source entries' : '原始交易'} · {transactions.length}
+            </summary>
+            <div className="transaction-list">
+              {transactions.map((item) => (
+                <div className="transaction" key={item.id}>
+                  <div className="merchant-mark">{item.merchant.slice(0, 1)}</div>
+                  <div className="transaction-copy">
+                    <strong>{item.merchant}</strong>
+                    <span>{formatTransactionTime(item, locale)}</span>
+                    {item.description && <small>{item.description}</small>}
+                    <select
+                      aria-label={`${copy.categoryLabel}: ${item.merchant}`}
+                      disabled={correctingId === item.id}
+                      value={item.category}
+                      onChange={(event) =>
+                        onCategoryChange(item.id, event.target.value as TransactionCategory)
+                      }
+                    >
+                      {Object.entries(copy.categoryLabels).map(([category, label]) => (
+                        <option key={category} value={category}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <strong className={Number(item.amount) >= 0 ? 'income' : ''}>
+                    {formatMoney(item.amount, item.currency, locale)}
+                  </strong>
                 </div>
-                <strong className={Number(item.amount) >= 0 ? 'income' : ''}>
-                  {formatMoney(item.amount, item.currency, locale)}
-                </strong>
-              </div>
-            ))}
-          </div></details>
+              ))}
+            </div>
+          </details>
         )}
       </article>
       <aside className="timeline-card">
-        <p className="eyebrow">{copy.timelineEyebrow}</p>
+        <h2 className="event-heading">{copy.runEventsHeading}</h2>
         <ol>
           {run.events.map((event) => (
-            <li key={event.sequence}><span /><div>{copy.events[event.event_type] ?? event.event_type}<small className="event-time">{formatTimestamp(event.occurred_at, locale)}</small></div></li>
+            <li key={event.sequence}>
+              <span />
+              <div>
+                {copy.events[event.event_type] ?? event.event_type}
+                <small className="event-time">{formatTimestamp(event.occurred_at, locale)}</small>
+              </div>
+            </li>
           ))}
         </ol>
       </aside>
@@ -172,16 +246,31 @@ function AnalysisPanel({ copy, locale, run }: { copy: Messages; locale: Locale; 
   if (!analysis) return null
   return (
     <div className="analysis-panel">
-      <p className="eyebrow">{copy.analysisEyebrow}</p>
-      <details className="scope-note"><summary>{locale === 'en-US' ? 'Data scope' : '统计口径'}</summary><p>{locale === 'en-US' ? 'Imported flows only. Transfers and refunds are not netted. Coverage is unverified; corrections require a new query.' : '仅统计导入流水，未抵销转账与退款，期间完整性未验证。修正后需重新查询。'}</p></details>
+      <details className="scope-note">
+        <summary>{locale === 'en-US' ? 'Data scope' : '统计口径'}</summary>
+        <p>
+          {locale === 'en-US'
+            ? 'Imported flows only. Transfers and refunds are not netted. Coverage is unverified; corrections require a new query.'
+            : '仅统计导入流水，未抵销转账与退款，期间完整性未验证。修正后需重新查询。'}
+        </p>
+      </details>
       <div className="summary-grid">
         {analysis.currency_summaries.map((summary) => (
           <div className="currency-summary" key={summary.currency}>
             <span>{summary.currency}</span>
             <dl>
-              <div><dt>{copy.incomeLabel}</dt><dd className="income">{formatMoney(summary.income, summary.currency, locale)}</dd></div>
-              <div><dt>{copy.expenseLabel}</dt><dd>{formatMoney(summary.expense, summary.currency, locale)}</dd></div>
-              <div><dt>{copy.netLabel}</dt><dd>{formatMoney(summary.net, summary.currency, locale)}</dd></div>
+              <div>
+                <dt>{copy.incomeLabel}</dt>
+                <dd className="income">{formatMoney(summary.income, summary.currency, locale)}</dd>
+              </div>
+              <div>
+                <dt>{copy.expenseLabel}</dt>
+                <dd>{formatMoney(summary.expense, summary.currency, locale)}</dd>
+              </div>
+              <div>
+                <dt>{copy.netLabel}</dt>
+                <dd>{formatMoney(summary.net, summary.currency, locale)}</dd>
+              </div>
             </dl>
           </div>
         ))}
@@ -216,7 +305,8 @@ function AnalysisPanel({ copy, locale, run }: { copy: Messages; locale: Locale; 
             <ul className="anomaly-list">
               {analysis.anomalies.map((anomaly, index) => (
                 <li className={`anomaly-${anomaly.severity}`} key={`${anomaly.rule_id}-${index}`}>
-                  <span>!</span><p>{copy.anomalyDescription(anomaly)}</p>
+                  <span>!</span>
+                  <p>{copy.anomalyDescription(anomaly)}</p>
                 </li>
               ))}
             </ul>

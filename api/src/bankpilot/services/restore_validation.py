@@ -1,7 +1,6 @@
-"""
-文件职责：核对备份一致性并准备离线任务恢复。
-主要内容：生成结构与数据证据、校验数据库身份、收敛恢复库中的运行和助手任务状态。
-关键边界：不启动 API、模型或消费者；连接显式提供，核对只读，准备仅修改指定恢复库。
+"""核对备份一致性并准备离线任务恢复。
+
+不启动 API、模型或消费者；连接显式提供，核对只读，准备仅修改指定恢复库。
 """
 
 import hashlib
@@ -18,6 +17,8 @@ from bankpilot.db.models import (
     AssistantActionRecord,
     AssistantConversationRecord,
     AssistantTurnRecord,
+    FeishuBindingRecord,
+    FeishuMessageRecord,
     MonthlyReportRecord,
     NotificationOutboxRecord,
     NotificationScheduleRecord,
@@ -117,6 +118,9 @@ async def prepare_restored_tasks(session: AsyncSession) -> dict[str, int]:
     """调用方必须隔离执行者并持有恢复事务；保留历史事实和尝试次数。"""
     # A restored database has no surviving process owners; keep cumulative budgets intact.
     await session.execute(delete(SecurityLeaseRecord))
+    # Restoring a backup must never reactivate an old IM authorization or replay replies.
+    await session.execute(delete(FeishuMessageRecord))
+    await session.execute(delete(FeishuBindingRecord))
     reports = list(
         await session.scalars(
             select(MonthlyReportRecord)

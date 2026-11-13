@@ -1,7 +1,5 @@
-/**
- * 文件职责：管理规划页面的月份读取与显式写操作。
- * 主要内容：加载和刷新、写入状态、失败提示及异步结果隔离。
- * 关键边界：迟到响应不能覆盖新月份，失败保留编辑上下文，具体 API 由调用方提供。
+/** 管理规划页面的月份读取与显式写操作。
+ * 迟到响应不能覆盖新月份，失败保留编辑上下文，具体 API 由调用方提供。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { planningError } from './errors'

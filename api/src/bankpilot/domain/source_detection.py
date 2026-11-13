@@ -1,7 +1,6 @@
-"""
-文件职责：识别结构明确的交易 CSV 并生成字段映射。
-主要内容：有限表头别名、分隔符检测和唯一列匹配。
-关键边界：不依据文件名猜测银行；不确定字段返回失败，禁止模型猜测金额方向。
+"""识别结构明确的交易 CSV 并生成字段映射。
+
+不依据文件名猜测银行；不确定字段返回失败，禁止模型猜测金额方向。
 """
 
 import csv
@@ -60,9 +59,7 @@ def detect_statement(content: str) -> DetectedStatement:
     headers = list(reader.fieldnames or [])
     mapping = _detect_mapping(headers)
     account_name, currency = _detect_account(reader, mapping)
-    return DetectedStatement(
-        "standard", PARSER_VERSION, headers, mapping, account_name, currency
-    )
+    return DetectedStatement("standard", PARSER_VERSION, headers, mapping, account_name, currency)
 
 
 def _detect_mapping(headers: list[str]) -> StatementFieldMapping:

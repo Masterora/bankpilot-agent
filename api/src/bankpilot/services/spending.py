@@ -1,8 +1,8 @@
+"""生成预算与助手共享的确定性消费证据。
+
+调用方拥有一致快照事务；超限或版本过期明确失败，不以局部结果冒充完整统计。
 """
-文件职责：生成预算与助手共享的确定性消费证据。
-主要内容：完整月份消费贡献、退款原消费关联、分类汇总、稳定分页及账本和计算版本校验。
-关键边界：调用方拥有一致快照事务；超限或版本过期明确失败，不以局部结果冒充完整统计。
-"""
+
 import calendar
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -163,9 +163,7 @@ async def read_spending(session: AsyncSession, uid: UUID, month: date) -> MonthS
     )
 
 
-def comparison_period(
-    calculation: MonthSpending, currency: str
-) -> SpendingComparisonPeriod:
+def comparison_period(calculation: MonthSpending, currency: str) -> SpendingComparisonPeriod:
     entries = [entry for entry in calculation.evidence if entry.currency == currency]
     dates = calculation.imported_dates.get(currency, [])
     gross = sum((entry.contribution for entry in entries if entry.contribution > 0), Decimal())
@@ -326,7 +324,8 @@ async def comparison_evidence_page(
     # A user's category override does not change the sign of a contribution.
     # Every category included in the frozen comparison must be drillable.
     entries = [
-        entry for entry in calculation.evidence
+        entry
+        for entry in calculation.evidence
         if entry.category == category and entry.currency == comparison.scope.currency
     ]
     start = (page - 1) * PAGE_SIZE

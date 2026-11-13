@@ -1,7 +1,5 @@
-/**
- * 文件职责：提供基于真实账本关系汇总的财务总览。
- * 主要内容：共享期间、分币种收支指标、原始/调整对比图与核对入口。
- * 关键边界：金额来自服务端，不混算币种、不把净流入当余额；
+/** 提供基于真实账本关系汇总的财务总览。
+ * 金额来自服务端，不混算币种、不把净流入当余额；
  * 日期变更隔离读取状态，失败与空数据分别展示；总览不执行候选发现。
  */
 import { useEffect, useState } from 'react'
@@ -165,21 +163,30 @@ function OverviewData({
         onReview={() => onNavigate('relations')}
       />
       <div className="overview-analysis-grid">
-      {!!data.summaries.length && <div className="overview-charts">
-        {data.summaries.map(summary => <article className="overview-panel" key={summary.currency}>
-          <header><h2>{english ? 'Imported cash flow' : '已导入收支'} · {summary.currency}</h2><span>{english ? 'Raw / adjusted' : '原始 / 调整后'}</span></header>
-          <FlowChart summary={summary} english={english} />
-        </article>)}
-      </div>}
-      <NextActions
-        userId={userId}
-        revision={planningRevision}
-        key={`planning:${period.start}:${period.end}`}
-        month={period.end.slice(0, 7)}
-        english={english}
-        copy={copy}
-        onPlanning={onPlanning}
-      />
+        {!!data.summaries.length && (
+          <div className="overview-charts">
+            {data.summaries.map((summary) => (
+              <article className="overview-panel" key={summary.currency}>
+                <header>
+                  <h2>
+                    {english ? 'Imported cash flow' : '已导入收支'} · {summary.currency}
+                  </h2>
+                  <span>{english ? 'Raw / adjusted' : '原始 / 调整后'}</span>
+                </header>
+                <FlowChart summary={summary} english={english} />
+              </article>
+            ))}
+          </div>
+        )}
+        <NextActions
+          userId={userId}
+          revision={planningRevision}
+          key={`planning:${period.start}:${period.end}`}
+          month={period.end.slice(0, 7)}
+          english={english}
+          copy={copy}
+          onPlanning={onPlanning}
+        />
       </div>
       {data.recent_transactions.length > 0 && (
         <section className="recent-ledger">
@@ -230,9 +237,9 @@ function OverviewData({
           {latestTransaction ?? '—'}
         </span>
         <p>
-            {english
-              ? 'Dates reflect imported transactions. They do not prove that every account or day is complete.'
-              : '日期来自已导入流水，不能证明所有账户或每一天的数据均完整。'}
+          {english
+            ? 'Dates reflect imported transactions. They do not prove that every account or day is complete.'
+            : '日期来自已导入流水，不能证明所有账户或每一天的数据均完整。'}
         </p>
       </details>
       <details className="calculation-details">
@@ -274,7 +281,6 @@ function OverviewData({
           </section>
         ))}
       </details>
-
     </div>
   )
 }

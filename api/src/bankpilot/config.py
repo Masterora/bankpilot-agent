@@ -1,12 +1,6 @@
-"""
-文件职责：定义 BankPilot 的集中式运行配置。
+"""定义 BankPilot 的集中式运行配置。
 
-主要内容：
-- `Settings`：数据库、会话、CORS 和 OpenRouter 配置。
-- 字段校验器：限制模型供应商、模型 ID、密钥强度与数据收集策略。
-- `get_settings`：返回进程内缓存的配置实例。
-
-关键边界：生产环境不得使用默认会话密钥，敏感值统一使用 `SecretStr`。
+生产环境不得使用默认会话密钥，敏感值统一使用 `SecretStr`。
 """
 
 from functools import lru_cache
@@ -55,6 +49,68 @@ class Settings(BaseSettings):
         max_length=64,
         validation_alias="BANKPILOT_NOTIFICATION_EPOCH",
     )
+
+    feishu_enabled: bool = Field(default=False, validation_alias="FEISHU_ENABLED")
+    feishu_app_id: str = Field(default="", validation_alias="FEISHU_APP_ID")
+    feishu_app_secret: SecretStr = Field(
+        default=SecretStr(""), validation_alias="FEISHU_APP_SECRET"
+    )
+    feishu_encrypt_key: SecretStr = Field(
+        default=SecretStr(""), validation_alias="FEISHU_ENCRYPT_KEY"
+    )
+    feishu_verification_token: SecretStr = Field(
+        default=SecretStr(""), validation_alias="FEISHU_VERIFICATION_TOKEN"
+    )
+    feishu_tenant_key: str = Field(default="", validation_alias="FEISHU_TENANT_KEY")
+    alipay_sandbox_enabled: bool = Field(default=False, validation_alias="ALIPAY_SANDBOX_ENABLED")
+    alipay_app_id: str = Field(default="", validation_alias="ALIPAY_SANDBOX_APP_ID")
+    alipay_seller_id: str = Field(default="", validation_alias="ALIPAY_SANDBOX_SELLER_ID")
+    alipay_private_key: SecretStr = Field(
+        default=SecretStr(""), validation_alias="ALIPAY_SANDBOX_PRIVATE_KEY"
+    )
+    alipay_public_key: SecretStr = Field(
+        default=SecretStr(""), validation_alias="ALIPAY_SANDBOX_PUBLIC_KEY"
+    )
+    integration_public_url: str = Field(default="", validation_alias="BANKPILOT_PUBLIC_URL")
+
+    @model_validator(mode="after")
+    def integration_configuration(self) -> "Settings":
+        from urllib.parse import urlsplit
+
+        if self.feishu_enabled and not all(
+            (
+                self.feishu_app_id,
+                self.feishu_app_secret.get_secret_value(),
+                self.feishu_encrypt_key.get_secret_value(),
+                self.feishu_verification_token.get_secret_value(),
+                self.feishu_tenant_key,
+            )
+        ):
+            raise ValueError(
+                "Feishu requires app credentials, Encrypt Key, Verification Token and tenant key"
+            )
+        if self.alipay_sandbox_enabled and not all(
+            (
+                self.alipay_app_id,
+                self.alipay_seller_id,
+                self.alipay_private_key.get_secret_value(),
+                self.alipay_public_key.get_secret_value(),
+            )
+        ):
+            raise ValueError("Alipay sandbox requires app ID, seller ID and RSA2 keys")
+        if self.feishu_enabled or self.alipay_sandbox_enabled:
+            url = urlsplit(self.integration_public_url)
+            if (
+                url.scheme != "https"
+                or not url.hostname
+                or url.username
+                or url.password
+                or url.query
+                or url.fragment
+                or url.path not in ("", "/")
+            ):
+                raise ValueError("BANKPILOT_PUBLIC_URL must be a public HTTPS origin")
+        return self
 
     assistant_max_conversations: int = Field(default=100, ge=1, le=10000)
     assistant_max_turns: int = Field(default=200, ge=1, le=10000)

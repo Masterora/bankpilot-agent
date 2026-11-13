@@ -250,6 +250,23 @@ class SecurityAdmission:
         values["admission_secret_digest"] = hashlib.sha256(
             self.settings.session_secret.get_secret_value().encode()
         ).hexdigest()
+        integration_values = {
+            name: getattr(self.settings, name)
+            for name in Settings.model_fields
+            if name.startswith(("feishu_", "alipay_", "integration_"))
+        }
+        # Config mismatches fail closed across workers without putting credentials in leases.
+        values["integration_configuration_digest"] = hashlib.sha256(
+            json.dumps(
+                {
+                    name: (
+                        value.get_secret_value() if hasattr(value, "get_secret_value") else value
+                    )
+                    for name, value in integration_values.items()
+                },
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
         fingerprint = hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
         async with self.factory.begin() as session:
             now = await locked_now(session)

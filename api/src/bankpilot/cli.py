@@ -1,12 +1,6 @@
-"""
-文件职责：提供 BankPilot 的显式运维命令行入口。
+"""提供 BankPilot 的显式运维命令行入口。
 
-主要内容：
-- `seed`：校验邮箱和密码，触发异步初始化。
-- `_seed`：幂等创建本地用户、账户、卡片与可重复验证的交易记录。
-- `backup-db / restore-db / restore-check / restore-prepare`：显式离线备份与恢复。
-
-关键边界：密码仅从交互输入或环境变量读取，入库前必须哈希；引擎在命令结束时释放。
+密码仅从交互输入或环境变量读取，入库前必须哈希；引擎在命令结束时释放。
 """
 
 import asyncio
@@ -22,10 +16,9 @@ from pydantic import EmailStr, TypeAdapter
 from sqlalchemy import select
 
 from bankpilot.config import get_settings
-from bankpilot.db.models import AccountRecord, CardRecord, TransactionRecord
+from bankpilot.db.models import AccountRecord, TransactionRecord
 from bankpilot.db.session import create_engine, create_session_factory
 from bankpilot.db.user_repository import UserRepository
-from bankpilot.domain.contracts import CardStatus
 from bankpilot.security import hash_password, validate_new_password
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
@@ -112,22 +105,6 @@ async def _seed(email: str, password: str) -> None:
                     ]
                 )
                 await UserRepository(session).bump_revision(user.id)
-            card = await session.scalar(
-                select(CardRecord).where(
-                    CardRecord.account_id == account.id,
-                    CardRecord.display_name == "日常卡",
-                )
-            )
-            if card is None:
-                # 只写展示所需的卡片尾号，初始化流程不接触或保存完整卡号。
-                session.add(
-                    CardRecord(
-                        account_id=account.id,
-                        display_name="日常卡",
-                        last_four="1024",
-                        status=CardStatus.ACTIVE.value,
-                    )
-                )
         typer.echo(f"Local banking data is ready for {email.lower()}")
     finally:
         await engine.dispose()

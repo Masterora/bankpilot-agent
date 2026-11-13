@@ -1,8 +1,8 @@
+"""编排确定性规则核查和搜索结果证据投影。
+
+写入先锁用户，防止验证与撤销交错；投影校验查询版本，事务由调用方提交。
 """
-文件职责：编排确定性规则核查和搜索结果证据投影。
-主要内容：构造规则证据键、合并用户判断、投影搜索匹配项并在保存前重查事实。
-关键边界：写入先锁用户，防止验证与撤销交错；投影校验查询版本，事务由调用方提交。
-"""
+
 import hashlib
 from datetime import date
 from typing import cast
@@ -125,9 +125,7 @@ async def project_reviews(
                     **anomaly.model_dump(),
                     key=key,
                     state=(
-                        cast(ReviewState, decisions[key].state)
-                        if key in decisions
-                        else "pending"
+                        cast(ReviewState, decisions[key].state) if key in decisions else "pending"
                     ),
                     note=decisions[key].note if key in decisions else "",
                 ),

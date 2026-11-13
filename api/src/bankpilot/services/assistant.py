@@ -1,8 +1,8 @@
+"""执行助手工具循环及用户确认的预算提案。
+
+等待模型时不持有数据库连接；流水明细不交给模型，预算写入只发生在确认流程。
 """
-文件职责：执行助手工具循环及用户确认的预算提案。
-主要内容：读取预算、周期项、总览、消费与账本搜索证据，生成提案并处理显式确认或取消。
-关键边界：等待模型时不持有数据库连接；流水明细不交给模型，预算写入只发生在确认流程。
-"""
+
 import calendar
 import json
 from datetime import date
@@ -130,7 +130,8 @@ async def chat(
             if not discovery_enabled:
                 return {
                     "text": (
-                        "发现入口暂未开放。" if request.locale == "zh-CN"
+                        "发现入口暂未开放。"
+                        if request.locale == "zh-CN"
                         else "Discovery is unavailable."
                     ),
                     "evidence": observations,
@@ -141,7 +142,8 @@ async def chat(
             if through > latest:
                 return {
                     "text": (
-                        "请选择已结束的完整月份。" if request.locale == "zh-CN"
+                        "请选择已结束的完整月份。"
+                        if request.locale == "zh-CN"
                         else "Choose a completed month."
                     ),
                     "evidence": observations,
@@ -260,9 +262,7 @@ async def chat(
         if isinstance(decision, CompareSpending):
             async with factory() as session:
                 await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
-                comparison = await compare_spending(
-                    session, uid, decision.arguments, today
-                )
+                comparison = await compare_spending(session, uid, decision.arguments, today)
             if comparison.data_status == "both_missing":
                 text = (
                     "两个期间都没有该币种的已导入流水，暂无可比较数据。"
@@ -323,9 +323,7 @@ async def chat(
                 }
             if decision.kind == "budgets":
                 calculation = await read_spending(session, uid, month)
-                workspace = await budget_workspace(
-                    session, uid, month, calculation=calculation
-                )
+                workspace = await budget_workspace(session, uid, month, calculation=calculation)
                 data = workspace.model_dump(mode="json", exclude={"evidence"})
                 scopes = {
                     (row.category, row.currency)

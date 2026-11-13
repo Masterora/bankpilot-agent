@@ -1,13 +1,6 @@
-"""
-文件职责：定义 API 路由共用的 FastAPI 依赖。
+"""定义 API 路由共用的 FastAPI 依赖。
 
-主要内容：
-- `get_app_settings`：从应用状态获取配置。
-- `get_db_session`：为单次请求提供异步数据库会话。
-- `get_current_user`：根据 HttpOnly Cookie 解析已认证用户。
-- `get_snapshot_user` / `get_snapshot_session`：为多次读取共用认证与业务快照。
-
-关键边界：原始会话令牌先经 HMAC 哈希再查库，缺失或过期均返回 401。
+原始会话令牌先经 HMAC 哈希再查库，缺失或过期均返回 401。
 """
 
 from collections.abc import AsyncIterator

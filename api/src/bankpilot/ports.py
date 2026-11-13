@@ -1,8 +1,8 @@
+"""定义工作流与助手依赖的抽象能力端口。
+
+核心流程依赖 Protocol，不直接依赖模型供应商或具体数据库实现。
 """
-文件职责：定义工作流与助手依赖的抽象能力端口。
-主要内容：ModelGateway 规划、AssistantGateway 工具决策和 ReviewGateway 一致快照核查。
-关键边界：核心流程依赖 Protocol，不直接依赖模型供应商或具体数据库实现。
-"""
+
 from datetime import date
 from typing import Protocol
 from uuid import UUID

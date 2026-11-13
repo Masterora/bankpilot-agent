@@ -4,9 +4,15 @@ import type { AttentionStateRequest, AttentionType } from './attention'
 export const ATTENTION_RECOVERY_KEY = 'bankpilot.attention.pending'
 export type PendingAttention = { user_id: string } & (
   | { kind: 'state'; payload: AttentionStateRequest }
-  | { kind: 'preference'; type: AttentionType; payload: {
-    operation_id: string; enabled: boolean; expected_version: number
-  } }
+  | {
+      kind: 'preference'
+      type: AttentionType
+      payload: {
+        operation_id: string
+        enabled: boolean
+        expected_version: number
+      }
+    }
 )
 
 export function readPendingAttention(userId: string): PendingAttention | null {
@@ -17,13 +23,21 @@ export function readPendingAttention(userId: string): PendingAttention | null {
     sessionStorage.removeItem(ATTENTION_RECOVERY_KEY)
     return null
   }
-  if (!value.payload?.operation_id || !['state', 'preference'].includes(value.kind)
-    || (value.kind === 'state' && (!value.payload.source_id || !value.payload.source_date
-      || !value.payload.fact_token || !value.payload.expected_state_version
-      || !['budget', 'recurring'].includes(value.payload.source_type)
-      || !['read', 'snooze', 'restore'].includes(value.payload.action)))
-    || (value.kind === 'preference' && (!value.type || typeof value.payload.enabled !== 'boolean'
-      || !Number.isInteger(value.payload.expected_version)))) {
+  if (
+    !value.payload?.operation_id ||
+    !['state', 'preference'].includes(value.kind) ||
+    (value.kind === 'state' &&
+      (!value.payload.source_id ||
+        !value.payload.source_date ||
+        !value.payload.fact_token ||
+        !value.payload.expected_state_version ||
+        !['budget', 'recurring'].includes(value.payload.source_type) ||
+        !['read', 'snooze', 'restore'].includes(value.payload.action))) ||
+    (value.kind === 'preference' &&
+      (!value.type ||
+        typeof value.payload.enabled !== 'boolean' ||
+        !Number.isInteger(value.payload.expected_version)))
+  ) {
     throw new Error('Invalid attention recovery record')
   }
   return value

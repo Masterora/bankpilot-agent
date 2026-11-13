@@ -1,7 +1,5 @@
-/**
- * 文件职责：编排手动周期计划工作区。
- * 主要内容：月份和计划列表、创建编辑、详情与逐期核对入口。
- * 关键边界：预计金额仅展示，不自动写入账本或发起扣款。
+/** 编排手动周期计划工作区。
+ * 预计金额仅展示，不自动写入账本或发起扣款。
  */
 import { RecurringEditor } from './RecurringEditor'
 import type { RecurringEditorStart } from './RecurringEditor'
@@ -71,7 +69,9 @@ export function RecurringPage({
   const [discoveryAttempt, setDiscoveryAttempt] = useState(0)
   const [filter, setFilter] = useState('all')
   usePlanningFocus(focusTarget, state.loading, active)
-  const discoveryMonth = focusTarget.startsWith('discovery:') ? focusTarget.split(':')[1]?.slice(0, 7) : undefined
+  const discoveryMonth = focusTarget.startsWith('discovery:')
+    ? focusTarget.split(':')[1]?.slice(0, 7)
+    : undefined
   useEffect(() => {
     if (!active || !discoveryEnabled || !discoveryMonth) return
     setRequestedDiscoveryMonth(discoveryMonth)
@@ -86,12 +86,20 @@ export function RecurringPage({
     let current = true
     setDiscoveryEnabled(false)
     setDiscoveryState('loading')
-    api.recurringDiscoveryAvailability()
+    api
+      .recurringDiscoveryAvailability()
       .then(({ enabled }) => {
-        if (current) { setDiscoveryEnabled(enabled); setDiscoveryState('ready') }
+        if (current) {
+          setDiscoveryEnabled(enabled)
+          setDiscoveryState('ready')
+        }
       })
-      .catch(() => { if (current) setDiscoveryState('failed') })
-    return () => { current = false }
+      .catch(() => {
+        if (current) setDiscoveryState('failed')
+      })
+    return () => {
+      current = false
+    }
   }, [active, discoveryAttempt])
   useEffect(() => {
     if (seed && !draft) {
@@ -258,7 +266,11 @@ export function RecurringPage({
         >
           {t('添加固定支出', 'Add recurring charge')}
         </button>
-        {discoveryEnabled && <button onClick={() => setDiscoveryOpen(true)}>{t('发现可能的月付项目', 'Find possible monthly charges')}</button>}
+        {discoveryEnabled && (
+          <button onClick={() => setDiscoveryOpen(true)}>
+            {t('发现可能的月付项目', 'Find possible monthly charges')}
+          </button>
+        )}
         {draft && (
           <button onClick={() => setEditorVisible(true)}>
             {t('继续编辑草稿', 'Continue draft')}
@@ -275,12 +287,39 @@ export function RecurringPage({
           }}
         />
       </div>
-      {discoveryState === 'loading' && <p role="status">{t('正在读取发现功能状态', 'Loading discovery availability')}</p>}
-      {discoveryState === 'failed' && <p className="error" role="alert">
-        {t('无法读取月付发现功能状态。', 'Could not load monthly charge discovery availability.')} {' '}
-        <button onClick={() => setDiscoveryAttempt(value => value + 1)}>{t('重试', 'Retry')}</button>
-      </p>}
-      {discoveryEnabled && <RecurringDiscovery userId={userId} plans={state.data?.items ?? []} initialMonth={requestedDiscoveryMonth} open={discoveryOpen} locale={locale} onClose={() => setDiscoveryOpen(false)} onInspect={onInspect} onCreated={() => { void state.refresh() }} onOpenPlan={(planId) => { setDiscoveryOpen(false); setFilter('all'); setSelected(planId); requestAnimationFrame(() => document.getElementById(`recurring-${planId}`)?.scrollIntoView({ block: 'center' })) }} />}
+      {discoveryState === 'loading' && (
+        <p role="status">{t('正在读取发现功能状态', 'Loading discovery availability')}</p>
+      )}
+      {discoveryState === 'failed' && (
+        <p className="error" role="alert">
+          {t('无法读取月付发现功能状态。', 'Could not load monthly charge discovery availability.')}{' '}
+          <button onClick={() => setDiscoveryAttempt((value) => value + 1)}>
+            {t('重试', 'Retry')}
+          </button>
+        </p>
+      )}
+      {discoveryEnabled && (
+        <RecurringDiscovery
+          userId={userId}
+          plans={state.data?.items ?? []}
+          initialMonth={requestedDiscoveryMonth}
+          open={discoveryOpen}
+          locale={locale}
+          onClose={() => setDiscoveryOpen(false)}
+          onInspect={onInspect}
+          onCreated={() => {
+            void state.refresh()
+          }}
+          onOpenPlan={(planId) => {
+            setDiscoveryOpen(false)
+            setFilter('all')
+            setSelected(planId)
+            requestAnimationFrame(() =>
+              document.getElementById(`recurring-${planId}`)?.scrollIntoView({ block: 'center' }),
+            )
+          }}
+        />
+      )}
       {accountsLoading && <LoadingIndicator label={t('正在读取账户', 'Loading accounts')} />}
       {accountError && (
         <p className="error" role="alert">
@@ -293,8 +332,8 @@ export function RecurringPage({
           {t(
             '请先导入账单建立账户，再添加固定支出。',
             'Import a statement to create an account before adding a recurring charge.',
-          )}
-          {' '}<button onClick={onImport}>{t('导入账单', 'Import statement')}</button>
+          )}{' '}
+          <button onClick={onImport}>{t('导入账单', 'Import statement')}</button>
         </p>
       )}
       {state.error && (
@@ -327,20 +366,19 @@ export function RecurringPage({
         />
       )}
       {!state.loading && !state.error && state.data && !state.data.items.length && (
-        <EmptyContent
-          kind="recurring"
-          title={t('还没有周期项', 'No recurring charges')}
-        />
+        <EmptyContent kind="recurring" title={t('还没有周期项', 'No recurring charges')} />
       )}
-      {!!state.data?.items.length && <div className="relation-tabs" aria-label={t('核对状态', 'Review status')}>
-        {filters.map(([value, label]) => (
-          <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
-            {label} ·{' '}
-            {state.data?.items.filter((item) => value === 'all' || statusOf(item) === value)
-              .length ?? 0}
-          </button>
-        ))}
-      </div>}
+      {!!state.data?.items.length && (
+        <div className="relation-tabs" aria-label={t('核对状态', 'Review status')}>
+          {filters.map(([value, label]) => (
+            <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
+              {label} ·{' '}
+              {state.data?.items.filter((item) => value === 'all' || statusOf(item) === value)
+                .length ?? 0}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="recurring-list">
         {ordered.map((item) => (
           <Fragment key={item.id}>
@@ -360,7 +398,16 @@ export function RecurringPage({
                       : t('本期已结束', 'Ended for this occurrence')}
                 </span>
               </header>
-              {item.status !== item.current_status && <p>{t('当前状态', 'Current status')} · {item.current_status === 'active' ? t('跟踪中', 'Active') : item.current_status === 'paused' ? t('已暂停', 'Paused') : t('已结束', 'Ended')}</p>}
+              {item.status !== item.current_status && (
+                <p>
+                  {t('当前状态', 'Current status')} ·{' '}
+                  {item.current_status === 'active'
+                    ? t('跟踪中', 'Active')
+                    : item.current_status === 'paused'
+                      ? t('已暂停', 'Paused')
+                      : t('已结束', 'Ended')}
+                </p>
+              )}
               <strong className="planning-amount">
                 {money(item.amount, item.currency)}{' '}
                 <small>/ {item.cadence === 'monthly' ? t('月', 'month') : t('年', 'year')}</small>

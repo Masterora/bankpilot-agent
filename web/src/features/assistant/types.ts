@@ -1,7 +1,5 @@
-/**
- * 文件职责：定义助手界面消费的对话和证据类型。
- * 主要内容：会话轮次、消费与搜索上下文、工具证据、冻结预算提案及账本详情定位。
- * 关键边界：与服务端契约保持一致，不把展示类型当成权限或写入校验。
+/** 定义助手界面消费的对话和证据类型。
+ * 与服务端契约保持一致，不把展示类型当成权限或写入校验。
  */
 import type { SearchFilters, SearchPage } from '../ledger/search'
 import type {
@@ -12,10 +10,6 @@ import type {
   RecurringWorkspace,
 } from '../planning/types'
 import type { TransactionCategory, OverviewSnapshot } from '../../types'
-export interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
 export interface AssistantAction {
   id: string
   payload: BudgetInput
@@ -30,7 +24,11 @@ export type Evidence =
   | { tool: 'recurring_discovery'; data: RecurringDiscoverySummary }
   | { tool: 'find_transactions'; data: SearchPage }
   | { tool: 'spending'; month: string; data: SpendingSummary }
-  | { tool: 'budgets'; month: string; data: Omit<BudgetWorkspace, 'evidence'> & { spending_refs: SpendingSummary[] } }
+  | {
+      tool: 'budgets'
+      month: string
+      data: Omit<BudgetWorkspace, 'evidence'> & { spending_refs: SpendingSummary[] }
+    }
   | { tool: 'recurring'; month: string; data: Omit<RecurringWorkspace, 'candidates'> }
   | { tool: 'overview'; month: string; data: Pick<OverviewSnapshot, 'summaries'> }
   | { tool: 'compare_spending'; data: SpendingComparison }
@@ -84,7 +82,11 @@ export interface SpendingComparisonPeriod {
   refund_offset: string
   net_spending: string
   contribution_count: number
-  coverage: { transaction_count: number; earliest_transaction_date: string | null; latest_transaction_date: string | null }
+  coverage: {
+    transaction_count: number
+    earliest_transaction_date: string | null
+    latest_transaction_date: string | null
+  }
 }
 export interface SpendingCategoryComparison {
   category: TransactionCategory
@@ -121,14 +123,23 @@ export interface ComparisonEvidencePage {
   total: number
   items: BudgetEvidence[]
 }
-export interface EvidenceTarget { id: string; booking_date: string; version?: { expected_revision: number; expected_search_version: string } }
+export interface EvidenceTarget {
+  id: string
+  booking_date: string
+  version?: { expected_revision: number; expected_search_version: string }
+}
 
 export function spendingRefs(evidence: Evidence[]): SpendingSummary[] {
-  const refs = evidence.flatMap(item => item.tool === 'spending' ? [item.data] : item.tool === 'budgets' ? item.data.spending_refs : [])
+  const refs = evidence.flatMap((item) =>
+    item.tool === 'spending' ? [item.data] : item.tool === 'budgets' ? item.data.spending_refs : [],
+  )
   const unique = new Map<string, SpendingSummary>()
   for (const ref of refs) {
     const { month, category, currency } = ref.scope
-    unique.set(`${month}:${category}:${currency}:${ref.ledger_revision}:${ref.calculation_version}`, ref)
+    unique.set(
+      `${month}:${category}:${currency}:${ref.ledger_revision}:${ref.calculation_version}`,
+      ref,
+    )
   }
   return [...unique.values()]
 }
@@ -176,5 +187,14 @@ export interface Conversation {
   created_at: string
   updated_at: string
 }
-export interface ConversationPage { items: Conversation[]; next_cursor: string | null; recent_id: string | null }
-export interface ConversationDetail { conversation: Conversation; turns: SavedTurn[]; next_before: number | null; turn_limit: number }
+export interface ConversationPage {
+  items: Conversation[]
+  next_cursor: string | null
+  recent_id: string | null
+}
+export interface ConversationDetail {
+  conversation: Conversation
+  turns: SavedTurn[]
+  next_before: number | null
+  turn_limit: number
+}

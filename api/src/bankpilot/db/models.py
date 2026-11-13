@@ -1,7 +1,6 @@
-"""
-文件职责：定义身份、账本、规划、报告与助手的 ORM 持久化模型。
-主要内容：用户会话、账户卡片、导入流水、分类与关系、核查结论、运行审计、月报任务、预算周期项及助手会话和提案。
-关键边界：金额、归属、幂等与版本约束由数据库结构表达；模型定义不负责事务编排或调用外部服务。
+"""定义身份、账本、规划、报告与助手的 ORM 持久化模型。
+
+金额、归属、幂等与版本约束由数据库结构表达；模型定义不负责事务编排或调用外部服务。
 """
 
 from datetime import date, datetime
@@ -364,6 +363,28 @@ class BudgetRecord(Base):
     )
 
 
+class BudgetTemplateRecord(Base):
+    __tablename__ = "budget_templates"
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    entries: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    __table_args__ = (CheckConstraint("version > 0", name="ck_budget_template_version"),)
+
+
+class BudgetTemplateApplicationRecord(Base):
+    __tablename__ = "budget_template_applications"
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    operation_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    template_id: Mapped[UUID] = mapped_column(Uuid)
+    receipt: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
 class BudgetCarryRecord(Base):
     """One explicit, frozen carryover receipt per user and target month."""
 
@@ -375,9 +396,7 @@ class BudgetCarryRecord(Base):
     operation_id: Mapped[UUID] = mapped_column(Uuid)
     fingerprint: Mapped[str] = mapped_column(String(64))
     receipt: Mapped[dict[str, Any]] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     __table_args__ = (
         UniqueConstraint("user_id", "operation_id", name="uq_budget_carry_operation"),
         CheckConstraint("EXTRACT(DAY FROM month) = 1", name="ck_budget_carry_month"),
@@ -805,4 +824,65 @@ class AccountMonthReviewRecord(Base):
         CheckConstraint("status IN ('reviewed', 'closed', 'open')", name="ck_month_review_status"),
         CheckConstraint("EXTRACT(DAY FROM month) = 1", name="ck_month_review_month"),
         CheckConstraint("version > 0 AND ledger_revision >= 0", name="ck_month_review_version"),
+    )
+
+
+class FeishuBindingRecord(Base):
+    __tablename__ = "feishu_bindings"
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    open_id: Mapped[str | None] = mapped_column(String(128), unique=True)
+    generation: Mapped[UUID] = mapped_column(Uuid, default=uuid4)
+    code_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
+    code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    app_id: Mapped[str] = mapped_column(String(128))
+    tenant_key: Mapped[str] = mapped_column(String(128))
+
+
+class FeishuMessageRecord(Base):
+    __tablename__ = "feishu_messages"
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    message_id: Mapped[str] = mapped_column(String(128), unique=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    binding_generation: Mapped[UUID] = mapped_column(Uuid)
+    question: Mapped[str] = mapped_column(Text)
+    month: Mapped[date] = mapped_column(Date)
+    reply: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[UUID | None] = mapped_column(Uuid)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'processing', 'sent', 'failed', 'cancelled')",
+            name="ck_feishu_message_status",
+        ),
+        CheckConstraint("attempts >= 0 AND attempts <= 3", name="ck_feishu_message_attempts"),
+        Index("ix_feishu_messages_queue", "status", "lease_until"),
+    )
+
+
+class AlipayOrderRecord(Base):
+    __tablename__ = "alipay_sandbox_orders"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    operation_id: Mapped[UUID] = mapped_column(Uuid)
+    app_id: Mapped[str] = mapped_column(String(128))
+    seller_id: Mapped[str] = mapped_column(String(128))
+    subject: Mapped[str] = mapped_column(String(80))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    status: Mapped[str] = mapped_column(String(32), default="WAIT_BUYER_PAY")
+    trade_no: Mapped[str | None] = mapped_column(String(128), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint("user_id", "operation_id", name="uq_alipay_order_operation"),
+        CheckConstraint("amount > 0 AND amount <= 10000", name="ck_alipay_sandbox_amount"),
+        CheckConstraint(
+            "status IN ('WAIT_BUYER_PAY', 'TRADE_SUCCESS', 'TRADE_FINISHED', 'TRADE_CLOSED')",
+            name="ck_alipay_order_status",
+        ),
     )

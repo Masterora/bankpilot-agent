@@ -1,7 +1,5 @@
-/**
- * 文件职责：管理工作区可恢复的 URL 导航状态。
- * 主要内容：页面与期间解析、历史记录写入、浏览器前进后退订阅。
- * 关键边界：URL hash 保存页面、日期与已提交查找条件，不保存凭据或文件；退出时清理。
+/** 管理工作区可恢复的 URL 导航状态。
+ * URL hash 保存页面、日期与已提交查找条件，不保存凭据或文件；退出时清理。
  */
 import { useEffect, useState } from 'react'
 import { pageDefinitions } from './pages'
@@ -11,7 +9,7 @@ import type { ReviewPeriod } from '../shared/period'
 
 function readRoute() {
   const params = new URLSearchParams(window.location.hash.slice(1))
-  const page = pageDefinitions.find((item) => item.id === params.get('page'))?.id ?? 'overview'
+  const page = pageDefinitions.find((item) => item === params.get('page')) ?? 'overview'
   const period = { start: params.get('start') ?? '', end: params.get('end') ?? '' }
   const selectedPeriod = validPeriod(period) ? period : currentPeriod()
   const selectedMonth = (key: string) => {

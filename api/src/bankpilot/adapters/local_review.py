@@ -1,8 +1,6 @@
-"""
-文件职责：实现 Agent 的只读账单核查快照端口。
+"""实现 Agent 的只读账单核查快照端口。
 
-主要内容：在可重复读事务内组合期间流水、关系调整、双方证据和覆盖限制。
-关键边界：只返回当前用户数据；模型不接触流水；读取失败不得降级为无调整成功。
+只返回当前用户数据；模型不接触流水；读取失败不得降级为无调整成功。
 事务必须由本适配器创建，确保全部查询使用相同数据库快照。
 """
 
@@ -39,9 +37,7 @@ class LocalReviewGateway:
                 )
                 if revision is None:
                     raise ToolExecutionError("账本用户不存在。")
-                workspace = await relation_workspace(
-                    session, user_id, start_date, end_date
-                )
+                workspace = await relation_workspace(session, user_id, start_date, end_date)
                 transactions = await LocalBankingGateway(session).query_transactions(
                     user_id=user_id, start_date=start_date, end_date=end_date
                 )

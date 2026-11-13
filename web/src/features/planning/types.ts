@@ -1,7 +1,5 @@
-/**
- * 文件职责：定义预算与周期规划的前端接口类型。
- * 主要内容：预算工作区和证据、周期配置修订、期次匹配及写入参数。
- * 关键边界：金额保留十进制字符串；类型声明不代替服务端校验。
+/** 定义预算与周期规划的前端接口类型。
+ * 金额保留十进制字符串；类型声明不代替服务端校验。
  */
 import type { TransactionCategory } from '../../types'
 
@@ -243,5 +241,34 @@ export interface DiscoveryDecisionPage {
     target_plan_id: string | null
     evidence_status: 'not_checked'
     needs_review: boolean
+  }[]
+}
+
+export interface BudgetTemplateEntry {
+  category: TransactionCategory
+  currency: string
+  amount: string
+}
+export interface BudgetTemplate {
+  id: string
+  name: string
+  version: number
+  expected_version: number
+  entries: BudgetTemplateEntry[]
+}
+export interface TemplatePreview {
+  template_id: string
+  template_name: string
+  template_version: number
+  month: string
+  mode: 'missing' | 'overwrite'
+  fingerprint: string
+  applied: boolean
+  changes: {
+    category: TransactionCategory
+    currency: string
+    before: string | null
+    after: string
+    action: 'create' | 'replace' | 'keep'
   }[]
 }

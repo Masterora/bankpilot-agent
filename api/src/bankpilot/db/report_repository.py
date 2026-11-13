@@ -1,9 +1,6 @@
-"""
-文件职责：封装月报持久任务与快照写入。
+"""封装月报持久任务与快照写入。
 
-主要内容：按用户读取报告、幂等提交、额度限制、任务领取恢复、完成和删除。
-
-关键边界：不隐式提交；列表不加载快照；领取令牌与租约约束写回，删除使旧 worker 失效。
+不隐式提交；列表不加载快照；领取令牌与租约约束写回，删除使旧 worker 失效。
 """
 
 from dataclasses import dataclass
@@ -56,7 +53,7 @@ class ReportRepository:
         return record
 
     async def list_for_user(
-        self, user_id: UUID, *, offset: int, limit: int
+        self, user_id: UUID, *, offset: int, limit: int, successful_only: bool = False
     ) -> list[MonthlyReportRecord]:
         return list(
             await self.session.scalars(
@@ -64,7 +61,9 @@ class ReportRepository:
                 .options(defer(MonthlyReportRecord.snapshot))
                 .where(
                     MonthlyReportRecord.user_id == user_id,
-                    MonthlyReportRecord.status != ReportStatus.DELETED,
+                    MonthlyReportRecord.status == ReportStatus.SUCCEEDED
+                    if successful_only
+                    else MonthlyReportRecord.status != ReportStatus.DELETED,
                 )
                 .order_by(MonthlyReportRecord.created_at.desc(), MonthlyReportRecord.id.desc())
                 .offset(offset)

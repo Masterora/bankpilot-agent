@@ -1,7 +1,5 @@
-/**
- * 文件职责：提供工作区全局助手界面。
- * 主要内容：会话选择、历史恢复、输入提交、消费和搜索上下文、证据展开及提案确认取消。
- * 关键边界：会话由服务端持久保存，金融写入使用服务端提案身份并要求用户显式确认。
+/** 提供工作区全局助手界面。
+ * 会话由服务端持久保存，金融写入使用服务端提案身份并要求用户显式确认。
  */
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -20,7 +18,12 @@ import { ComparisonEvidenceDetails } from './ComparisonEvidenceDetails'
 import { SearchResultCard } from './SearchResultCard'
 import type { SearchFilters } from '../ledger/search'
 import { useConversations } from './useConversations'
-import type { EvidenceTarget, SpendingCategoryComparison, SpendingScope, SpendingSummary } from './types'
+import type {
+  EvidenceTarget,
+  SpendingCategoryComparison,
+  SpendingScope,
+  SpendingSummary,
+} from './types'
 export function AssistantPanel({
   userId,
   open,
@@ -47,14 +50,21 @@ export function AssistantPanel({
   const history = useConversations(userId, open, month)
   const turns = history.turns
   const context = history.scope
-  const setContext = (scope: SpendingScope | null) => { void history.selectScope(scope).catch(cause => history.setError(cause)) }
+  const setContext = (scope: SpendingScope | null) => {
+    void history.selectScope(scope).catch((cause) => history.setError(cause))
+  }
   const [historyVisible, setHistoryVisible] = useState(false)
   const [message, setMessage] = useState('')
   const [sending, setBusy] = useState(false)
   const busy = sending || history.loading
   const [error, setError] = useState('')
   const [detail, setDetail] = useState<{ summary: SpendingSummary; revision: number } | null>(null)
-  const [comparisonDetail, setComparisonDetail] = useState<{ turnId: string; side: 'baseline' | 'target'; category: SpendingCategoryComparison['category']; revision: number } | null>(null)
+  const [comparisonDetail, setComparisonDetail] = useState<{
+    turnId: string
+    side: 'baseline' | 'target'
+    category: SpendingCategoryComparison['category']
+    revision: number
+  } | null>(null)
   const [detailVisible, setDetailVisible] = useState(false)
   const conversation = useRef<HTMLDivElement>(null)
   const readingPosition = useRef(0)
@@ -66,7 +76,11 @@ export function AssistantPanel({
     setDetailVisible(true)
     conversation.current?.parentElement?.scrollTo({ top: 0 })
   }
-  function showComparisonDetail(turnId: string, side: 'baseline' | 'target', category: SpendingCategoryComparison['category']) {
+  function showComparisonDetail(
+    turnId: string,
+    side: 'baseline' | 'target',
+    category: SpendingCategoryComparison['category'],
+  ) {
     readingPosition.current = conversation.current?.parentElement?.scrollTop ?? 0
     setDetail(null)
     setComparisonDetail({ turnId, side, category, revision: ledgerRevision })
@@ -75,7 +89,9 @@ export function AssistantPanel({
   }
   function backToAnswer() {
     setDetailVisible(false)
-    requestAnimationFrame(() => conversation.current?.parentElement?.scrollTo({ top: readingPosition.current }))
+    requestAnimationFrame(() =>
+      conversation.current?.parentElement?.scrollTo({ top: readingPosition.current }),
+    )
   }
   const input = useRef<HTMLTextAreaElement>(null)
   const lock = useRef(false)
@@ -90,14 +106,35 @@ export function AssistantPanel({
   }
   function failure(cause: unknown) {
     return apiErrorMessage(cause, english, {
-      notifications_disabled: ['站内通知尚未启用，暂不能订阅。', 'Notifications are disabled; subscriptions are unavailable.'],
-      search_subscription_limit: ['最多订阅 20 个查询，请先取消其他订阅。', 'Up to 20 queries can be watched. Stop another subscription first.'],
-      search_subscription_stale: ['查询再次变化，请刷新后核对。', 'The query changed again. Refresh and review.'],
-      assistant_conversation_limit: ['历史对话已达上限，请先删除不再需要的对话。', 'History limit reached. Delete a conversation to continue.'],
-      assistant_turn_limit: ['本段对话已达上限，请新建对话继续。', 'Conversation limit reached. Start a new conversation.'],
+      notifications_disabled: [
+        '站内通知尚未启用，暂不能订阅。',
+        'Notifications are disabled; subscriptions are unavailable.',
+      ],
+      search_subscription_limit: [
+        '最多订阅 20 个查询，请先取消其他订阅。',
+        'Up to 20 queries can be watched. Stop another subscription first.',
+      ],
+      search_subscription_stale: [
+        '查询再次变化，请刷新后核对。',
+        'The query changed again. Refresh and review.',
+      ],
+      assistant_conversation_limit: [
+        '历史对话已达上限，请先删除不再需要的对话。',
+        'History limit reached. Delete a conversation to continue.',
+      ],
+      assistant_turn_limit: [
+        '本段对话已达上限，请新建对话继续。',
+        'Conversation limit reached. Start a new conversation.',
+      ],
       assistant_conversation_busy: ['正在处理，请稍后查看。', 'Processing. Check back shortly.'],
-      assistant_conversation_deleted: ['这段对话已删除，请新建对话。', 'This conversation was deleted. Start a new one.'],
-      assistant_request_not_found: ['尚未确认接收，可稍后查询或重试原问题。', 'Receipt unconfirmed. Check again or retry the original question.'],
+      assistant_conversation_deleted: [
+        '这段对话已删除，请新建对话。',
+        'This conversation was deleted. Start a new one.',
+      ],
+      assistant_request_not_found: [
+        '尚未确认接收，可稍后查询或重试原问题。',
+        'Receipt unconfirmed. Check again or retry the original question.',
+      ],
       planning_stale: [
         '预算已被修改，请取消此提案并重新提出修改。',
         'Budget changed. Cancel this proposal and request a new one.',
@@ -106,10 +143,7 @@ export function AssistantPanel({
         '提案已过期，请取消后重新提出修改。',
         'Proposal expired. Cancel it and request a new one.',
       ],
-      assistant_timeout: [
-        '处理超时，请重试。',
-        'Request timed out. Retry.',
-      ],
+      assistant_timeout: ['处理超时，请重试。', 'Request timed out. Retry.'],
       assistant_step_limit: [
         '本次查询步骤过多，请缩小问题范围。',
         'This question requires too many steps. Narrow its scope.',
@@ -130,10 +164,7 @@ export function AssistantPanel({
         '助手未返回有效结果，请重试。',
         'The assistant returned an invalid result. Please retry.',
       ],
-      MODEL_UNAVAILABLE: [
-        '助手暂不可用，请稍后重试。',
-        'Assistant unavailable. Retry later.',
-      ],
+      MODEL_UNAVAILABLE: ['助手暂不可用，请稍后重试。', 'Assistant unavailable. Retry later.'],
     })
   }
   async function submit(event: FormEvent) {
@@ -143,12 +174,23 @@ export function AssistantPanel({
     setBusy(true)
     setError('')
     try {
-      const accepted = await history.send({ protocol_version: 5, expected_context_version: history.contextVersion, request_id: newIdempotencyKey(),
+      const accepted = await history.send({
+        protocol_version: 5,
+        expected_context_version: history.contextVersion,
+        request_id: newIdempotencyKey(),
         ...(history.id ? { conversation_id: history.id } : { creation_id: newIdempotencyKey() }),
-        question: message.trim(), month: history.month, locale, spending_context: context })
+        question: message.trim(),
+        month: history.month,
+        locale,
+        spending_context: context,
+      })
       if (accepted) setMessage('')
-    } catch (cause) { setError(failure(cause)) }
-    finally { lock.current = false; setBusy(false) }
+    } catch (cause) {
+      setError(failure(cause))
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
   }
   async function resolve(id: string, cancel: boolean) {
     if (lock.current) return
@@ -188,8 +230,12 @@ export function AssistantPanel({
       })
       setDetailVisible(false)
       setComparisonDetail(null)
-    } catch (cause) { setError(failure(cause)) }
-    finally { lock.current = false; setBusy(false) }
+    } catch (cause) {
+      setError(failure(cause))
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
   }
   return (
     <DetailPanel
@@ -200,50 +246,227 @@ export function AssistantPanel({
       onClose={onClose}
     >
       <div className="assistant-toolbar">
-        <button disabled={busy || !!history.unknown} onClick={() => { history.fresh(); setHistoryVisible(false); setMessage(''); setDetail(null); setComparisonDetail(null); setDetailVisible(false) }}><span aria-hidden="true">＋</span>{t('新对话', 'New conversation')}</button>
-        <button aria-expanded={historyVisible} aria-controls="assistant-history" disabled={busy} onClick={() => setHistoryVisible(value => !value)}>{t('历史对话', 'History')}</button>
-        {history.id && <button disabled={busy} onClick={() => {
-          if (window.confirm(t('删除对话及待确认提案？已执行的预算修改不会撤销，历史备份可能仍保留对话。', 'Delete this conversation and pending proposals? Applied budgets are kept; old backups may retain history.'))) void history.remove().catch(cause => history.setError(cause))
-        }}>{t('删除对话', 'Delete conversation')}</button>}
+        <button
+          disabled={busy || !!history.unknown}
+          onClick={() => {
+            history.fresh()
+            setHistoryVisible(false)
+            setMessage('')
+            setDetail(null)
+            setComparisonDetail(null)
+            setDetailVisible(false)
+          }}
+        >
+          <span aria-hidden="true">＋</span>
+          {t('新对话', 'New conversation')}
+        </button>
+        <button
+          aria-expanded={historyVisible}
+          aria-controls="assistant-history"
+          disabled={busy}
+          onClick={() => setHistoryVisible((value) => !value)}
+        >
+          {t('历史对话', 'History')}
+        </button>
+        {history.id && (
+          <button
+            disabled={busy}
+            onClick={() => {
+              if (
+                window.confirm(
+                  t(
+                    '删除对话及待确认提案？已执行的预算修改不会撤销，历史备份可能仍保留对话。',
+                    'Delete this conversation and pending proposals? Applied budgets are kept; old backups may retain history.',
+                  ),
+                )
+              )
+                void history.remove().catch((cause) => history.setError(cause))
+            }}
+          >
+            {t('删除对话', 'Delete conversation')}
+          </button>
+        )}
       </div>
-      {historyVisible && <nav id="assistant-history" className="assistant-history" aria-label={t('历史对话', 'Conversation history')}>
-        {history.items.map(item => <button key={item.id} aria-current={history.id === item.id ? "page" : undefined} disabled={busy || !!history.unknown} onClick={() => {
-          setDetail(null); setComparisonDetail(null); setDetailVisible(false); setMessage(''); void history.load(item.id).catch(cause => history.setError(cause))
-        }}><strong>{item.title}{item.search_changed_at ? t(' · 查询已变化', ' · Query changed') : item.search_subscribed ? t(' · 已订阅', ' · Watching') : ''}</strong><time dateTime={item.updated_at}>{new Date(item.updated_at).toLocaleString(locale)}</time></button>)}
-        {history.cursor && <button onClick={() => void history.list(history.cursor!).catch(cause => history.setError(cause))}>{t('更多', 'More')}</button>}
-      </nav>}
-      {history.id && history.searchContext && (history.subscriptionAvailable || history.subscription?.search_subscribed) && <section className="inline-note" aria-label={t('查询订阅', 'Query subscription')}>
-        <button disabled={busy || pending} onClick={() => void history.subscribe(!history.subscription?.search_subscribed)}>{history.subscription?.search_subscribed ? t('取消查询变化订阅', 'Stop watching query') : t('订阅查询变化', 'Watch query changes')}</button>
-        {history.subscription?.search_changed_at && <p role="status">{t('已保存查询的匹配流水或内容有变化。请打开查询核对。', 'Matching transactions or their contents have changed. Open the query to review.')} <button disabled={busy} onClick={() => onSearchLedger(history.searchContext!)}>{t('打开查询', 'Open query')}</button> <button disabled={busy} onClick={() => void history.acknowledgeSearch()}>{t('已查看', 'Mark seen')}</button></p>}
-        {history.subscription?.search_check_error && <p role="status">{t('查询暂无法完整同步；已有变化记录保留。请检查查询范围或重试。', 'The query could not be fully checked. Existing changes are retained. Review the filters or try again.')}</p>}
-        {history.subscription?.search_subscribed && !history.subscriptionAvailable && <p role="status">{t('站内通知未启用，订阅扫描已暂停。', 'Notifications are disabled; subscription checks are paused.')}</p>}
-        {history.subscription?.search_subscribed && <small>{t('固定查找范围；修改已保存条件会取消订阅，需要重新开启。', 'Watches the saved fixed period. Changing filters stops the subscription; enable it again.')}</small>}
-      </section>}
-      {history.storageFailed && <p role="alert">{t('浏览器存储不可用，刷新可能丢失待处理请求。', 'Browser storage unavailable: unacknowledged requests may not survive refresh.')}</p>}
-      {history.recoveryUpgradeRequired && <p role="status">{t('升级前有一条请求尚未确认接收，已保留其标识。', 'A request from before the upgrade is still unconfirmed. Its identity is retained.')} <button disabled={busy || pending} onClick={() => void history.lookupUnsupported()}>{t('核对原请求', 'Check original request')}</button></p>}
-      {history.unknown && <section role="status">
-        <p>{t('接收状态未知，请先查询结果。', 'Receipt unknown. Check the result first.')}</p>
-        <button disabled={busy} onClick={() => void history.lookup()}>{t('重新查询状态', 'Check status')}</button>
-        <button disabled={busy} onClick={() => { setBusy(true); void history.send(history.unknown!).finally(() => setBusy(false)) }}>{t('重试本次发送', 'Retry original request')}</button>
-      </section>}
-      {history.before && <button disabled={busy} onClick={() => void history.load(history.id!, history.before!).catch(cause => history.setError(cause))}>{t('更早消息', 'Earlier messages')}</button>}
-      {detail && <div hidden={!detailVisible}>
-        <SpendingDetails key={`${detail.summary.calculated_at}:${JSON.stringify(detail.summary.scope)}`} summary={detail.summary} copy={copy} locale={locale}
-          active={open && detailVisible} stale={detail.revision !== ledgerRevision} onBack={backToAnswer} onInspect={onInspect}
-          onRequery={() => {
-            setContext(detail.summary.scope)
-            const scope = detail.summary.scope
-            setMessage(`${scope.month.slice(0, 7)} ${copy.categoryLabels[scope.category]} ${scope.currency} ${t('实际支出和构成', 'spending and breakdown')}`)
-            backToAnswer()
-            requestAnimationFrame(() => input.current?.focus())
-          }} />
-      </div>}
-      {comparisonDetail && <div hidden={!detailVisible}>
-        <ComparisonEvidenceDetails key={`${comparisonDetail.turnId}:${comparisonDetail.side}:${comparisonDetail.category}`}
-          turnId={comparisonDetail.turnId} side={comparisonDetail.side} category={comparisonDetail.category}
-          copy={copy} locale={locale} active={open && detailVisible} stale={comparisonDetail.revision !== ledgerRevision}
-          onBack={backToAnswer} onRecompare={() => void recompare(comparisonDetail.turnId)} onInspect={onInspect} />
-      </div>}
+      {historyVisible && (
+        <nav
+          id="assistant-history"
+          className="assistant-history"
+          aria-label={t('历史对话', 'Conversation history')}
+        >
+          {history.items.map((item) => (
+            <button
+              key={item.id}
+              aria-current={history.id === item.id ? 'page' : undefined}
+              disabled={busy || !!history.unknown}
+              onClick={() => {
+                setDetail(null)
+                setComparisonDetail(null)
+                setDetailVisible(false)
+                setMessage('')
+                void history.load(item.id).catch((cause) => history.setError(cause))
+              }}
+            >
+              <strong>
+                {item.title}
+                {item.search_changed_at
+                  ? t(' · 查询已变化', ' · Query changed')
+                  : item.search_subscribed
+                    ? t(' · 已订阅', ' · Watching')
+                    : ''}
+              </strong>
+              <time dateTime={item.updated_at}>
+                {new Date(item.updated_at).toLocaleString(locale)}
+              </time>
+            </button>
+          ))}
+          {history.cursor && (
+            <button
+              onClick={() =>
+                void history.list(history.cursor!).catch((cause) => history.setError(cause))
+              }
+            >
+              {t('更多', 'More')}
+            </button>
+          )}
+        </nav>
+      )}
+      {history.id &&
+        history.searchContext &&
+        (history.subscriptionAvailable || history.subscription?.search_subscribed) && (
+          <section className="inline-note" aria-label={t('查询订阅', 'Query subscription')}>
+            <button
+              disabled={busy || pending}
+              onClick={() => void history.subscribe(!history.subscription?.search_subscribed)}
+            >
+              {history.subscription?.search_subscribed
+                ? t('取消查询变化订阅', 'Stop watching query')
+                : t('订阅查询变化', 'Watch query changes')}
+            </button>
+            {history.subscription?.search_changed_at && (
+              <p role="status">
+                {t('查询结果有变化。', 'Query results changed.')}{' '}
+                <button disabled={busy} onClick={() => onSearchLedger(history.searchContext!)}>
+                  {t('打开查询', 'Open query')}
+                </button>{' '}
+                <button disabled={busy} onClick={() => void history.acknowledgeSearch()}>
+                  {t('已查看', 'Mark seen')}
+                </button>
+              </p>
+            )}
+            {history.subscription?.search_check_error && (
+              <p role="status">
+                {t(
+                  '查询暂无法完整同步；已有变化记录保留。请检查查询范围或重试。',
+                  'The query could not be fully checked. Existing changes are retained. Review the filters or try again.',
+                )}
+              </p>
+            )}
+            {history.subscription?.search_subscribed && !history.subscriptionAvailable && (
+              <p role="status">
+                {t(
+                  '站内通知未启用，订阅扫描已暂停。',
+                  'Notifications are disabled; subscription checks are paused.',
+                )}
+              </p>
+            )}
+            {history.subscription?.search_subscribed && (
+              <small>
+                {t(
+                  '固定查找范围；修改已保存条件会取消订阅，需要重新开启。',
+                  'Watches the saved fixed period. Changing filters stops the subscription; enable it again.',
+                )}
+              </small>
+            )}
+          </section>
+        )}
+      {history.storageFailed && (
+        <p role="alert">
+          {t(
+            '浏览器存储不可用，刷新可能丢失待处理请求。',
+            'Browser storage unavailable: unacknowledged requests may not survive refresh.',
+          )}
+        </p>
+      )}
+      {history.recoveryUpgradeRequired && (
+        <p role="status">
+          {t(
+            '升级前有一条请求尚未确认接收，已保留其标识。',
+            'A request from before the upgrade is still unconfirmed. Its identity is retained.',
+          )}{' '}
+          <button disabled={busy || pending} onClick={() => void history.lookupUnsupported()}>
+            {t('核对原请求', 'Check original request')}
+          </button>
+        </p>
+      )}
+      {history.unknown && (
+        <section role="status">
+          <p>{t('尚未确认请求是否收到。', 'Request receipt is unconfirmed.')}</p>
+          <button disabled={busy} onClick={() => void history.lookup()}>
+            {t('重新查询状态', 'Check status')}
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => {
+              setBusy(true)
+              void history.send(history.unknown!).finally(() => setBusy(false))
+            }}
+          >
+            {t('重试本次发送', 'Retry original request')}
+          </button>
+        </section>
+      )}
+      {history.before && (
+        <button
+          disabled={busy}
+          onClick={() =>
+            void history
+              .load(history.id!, history.before!)
+              .catch((cause) => history.setError(cause))
+          }
+        >
+          {t('更早消息', 'Earlier messages')}
+        </button>
+      )}
+      {detail && (
+        <div hidden={!detailVisible}>
+          <SpendingDetails
+            key={`${detail.summary.calculated_at}:${JSON.stringify(detail.summary.scope)}`}
+            summary={detail.summary}
+            copy={copy}
+            locale={locale}
+            active={open && detailVisible}
+            stale={detail.revision !== ledgerRevision}
+            onBack={backToAnswer}
+            onInspect={onInspect}
+            onRequery={() => {
+              setContext(detail.summary.scope)
+              const scope = detail.summary.scope
+              setMessage(
+                `${scope.month.slice(0, 7)} ${copy.categoryLabels[scope.category]} ${scope.currency} ${t('实际支出和构成', 'spending and breakdown')}`,
+              )
+              backToAnswer()
+              requestAnimationFrame(() => input.current?.focus())
+            }}
+          />
+        </div>
+      )}
+      {comparisonDetail && (
+        <div hidden={!detailVisible}>
+          <ComparisonEvidenceDetails
+            key={`${comparisonDetail.turnId}:${comparisonDetail.side}:${comparisonDetail.category}`}
+            turnId={comparisonDetail.turnId}
+            side={comparisonDetail.side}
+            category={comparisonDetail.category}
+            copy={copy}
+            locale={locale}
+            active={open && detailVisible}
+            stale={comparisonDetail.revision !== ledgerRevision}
+            onBack={backToAnswer}
+            onRecompare={() => void recompare(comparisonDetail.turnId)}
+            onInspect={onInspect}
+          />
+        </div>
+      )}
       <div className="assistant-conversation" ref={conversation} hidden={detailVisible}>
         {!turns.length && (
           <div className="assistant-intro">
@@ -269,61 +492,149 @@ export function AssistantPanel({
         {turns.map((turn) => (
           <article className="assistant-turn" key={turn.id}>
             <p className="assistant-question">{turn.question}</p>
-            <details className="assistant-message-meta"><summary>{t('详情', 'Details')}</summary><time dateTime={turn.created_at}>{new Date(turn.created_at).toLocaleString(locale)}</time><span>{turn.month.slice(0, 7)}{turn.scope && ` · ${copy.categoryLabels[turn.scope.category]} · ${turn.scope.currency}`}</span></details>
+            <details className="assistant-message-meta">
+              <summary>{t('详情', 'Details')}</summary>
+              <time dateTime={turn.created_at}>
+                {new Date(turn.created_at).toLocaleString(locale)}
+              </time>
+              <span>
+                {turn.month.slice(0, 7)}
+                {turn.scope &&
+                  ` · ${copy.categoryLabels[turn.scope.category]} · ${turn.scope.currency}`}
+              </span>
+            </details>
             {turn.status === 'processing' && <p role="status">{t('处理中…', 'Working…')}</p>}
-            {turn.status === 'failed' && <p>{t('处理失败', 'Failed')} · {turn.error_code} <button disabled={busy || pending} onClick={() => {
-              if (turn.recompare_of) void recompare(turn.recompare_of)
-              else {
-                setBusy(true); void history.send({ protocol_version: 5, expected_context_version: history.contextVersion, conversation_id: turn.conversation_id, request_id: newIdempotencyKey(), retry_of: turn.id,
-                  question: turn.question, month: turn.month, spending_context: turn.scope, locale }).finally(() => setBusy(false))
-              }
-            }}>{turn.recompare_of ? t('重新比较', 'Recompare') : t('重新处理', 'Retry')}</button></p>}
-            {turn.reply && <>
-            <p className="assistant-answer">{turn.reply.text}</p>
-            {turn.reply.assistant_result_unavailable && <p>{t("旧版本结果不可用，请重新查询。", "This older result is unavailable. Query again.")}</p>}
-            {!turn.reply.evidence.some(item => item.tool === 'compare_spending') && <button disabled={busy || pending} onClick={() => { setContext(turn.scope); setMessage(`${turn.month.slice(0, 7)} ${turn.scope ? copy.categoryLabels[turn.scope.category] + ' ' + turn.scope.currency : ''} ${t('重新查询当前账本', 'Query current ledger')}`) }}>{t('重新查询', 'Query again')}</button>}
-            {turn.reply.evidence.filter(item => item.tool === 'find_transactions').map((item, index) => <SearchResultCard key={`${history.id}:${turn.id}:${index}`} initial={item.data} english={english} copy={copy} onInspect={onInspect} onLedger={onSearchLedger} onSave={history.selectSearch} onUnsaved={() => history.setSearchUnsaved(true)} />)}
-            <AssistantEvidence evidence={turn.reply.evidence} copy={copy} locale={locale} stale={loadedRevision.current !== ledgerRevision} onInspect={summary => showDetail(summary, ledgerRevision)} onOpenDiscovery={onOpenDiscovery} />
-            {turn.reply.evidence.filter(item => item.tool === 'compare_spending').map(item => <SpendingComparison
-              key={`${turn.id}:${item.data.calculated_at}`} comparison={item.data} turnId={turn.id} copy={copy} locale={locale}
-              ledgerRevision={ledgerRevision} onEvidence={showComparisonDetail} onRecompare={() => void recompare(turn.id)} />)}
-            {turn.reply.action && (
-              <section className="assistant-proposal" aria-label={t('预算修改', 'Budget change')}>
-                <strong>{describe(turn.reply.action)}</strong>
-                {turn.reply.action.can_confirm ? (
-                  <>
-                    <p>
-                      {t(
-                        '确认后生效 · 15 分钟内有效',
-                        'Applies after confirmation · Valid for 15 minutes',
-                      )}
-                    </p>
-                    <div className="planning-actions">
-                      <button
-                        className="primary"
-                        disabled={busy}
-                        onClick={() => void resolve(turn.reply!.action!.id, false)}
-                      >
-                        {t('确认修改', 'Confirm change')}
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={() => void resolve(turn.reply!.action!.id, true)}
-                      >
-                        {t('取消', 'Cancel')}
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <p role="status">
-                    {turn.reply.action.effective_status === 'applied' ? t('当时已执行', 'Applied then') : ({ cancelled: t("已取消", "Cancelled"), expired: t("已过期", "Expired"), conflict: t("预算已变化，请重新提出修改", "Budget changed; request a new proposal"), unavailable: t("会话不可用", "Conversation unavailable"), pending: t("等待核对", "Awaiting review") }[turn.reply.action.effective_status])}
-                    {turn.reply.action.result &&
-                      ` · ${t('执行后剩余', 'Remaining after change')} ${money(turn.reply.action.result.remaining, turn.reply.action.result.currency)}`}
-                  </p>
-                )}
-              </section>
+            {turn.status === 'failed' && (
+              <p>
+                {t('处理失败', 'Failed')} · {turn.error_code}{' '}
+                <button
+                  disabled={busy || pending}
+                  onClick={() => {
+                    if (turn.recompare_of) void recompare(turn.recompare_of)
+                    else {
+                      setBusy(true)
+                      void history
+                        .send({
+                          protocol_version: 5,
+                          expected_context_version: history.contextVersion,
+                          conversation_id: turn.conversation_id,
+                          request_id: newIdempotencyKey(),
+                          retry_of: turn.id,
+                          question: turn.question,
+                          month: turn.month,
+                          spending_context: turn.scope,
+                          locale,
+                        })
+                        .finally(() => setBusy(false))
+                    }
+                  }}
+                >
+                  {turn.recompare_of ? t('重新比较', 'Recompare') : t('重新处理', 'Retry')}
+                </button>
+              </p>
             )}
-            </>}
+            {turn.reply && (
+              <>
+                <p className="assistant-answer">{turn.reply.text}</p>
+                {turn.reply.assistant_result_unavailable && (
+                  <p>{t('旧版结果不可用。', 'This older result is unavailable.')}</p>
+                )}
+                {!turn.reply.evidence.some((item) => item.tool === 'compare_spending') && (
+                  <button
+                    disabled={busy || pending}
+                    onClick={() => {
+                      setContext(turn.scope)
+                      setMessage(
+                        `${turn.month.slice(0, 7)} ${turn.scope ? copy.categoryLabels[turn.scope.category] + ' ' + turn.scope.currency : ''} ${t('重新查询当前账本', 'Query current ledger')}`,
+                      )
+                    }}
+                  >
+                    {t('重新查询', 'Query again')}
+                  </button>
+                )}
+                {turn.reply.evidence
+                  .filter((item) => item.tool === 'find_transactions')
+                  .map((item, index) => (
+                    <SearchResultCard
+                      key={`${history.id}:${turn.id}:${index}`}
+                      initial={item.data}
+                      english={english}
+                      copy={copy}
+                      onInspect={onInspect}
+                      onLedger={onSearchLedger}
+                      onSave={history.selectSearch}
+                      onUnsaved={() => history.setSearchUnsaved(true)}
+                    />
+                  ))}
+                <AssistantEvidence
+                  evidence={turn.reply.evidence}
+                  copy={copy}
+                  locale={locale}
+                  stale={loadedRevision.current !== ledgerRevision}
+                  onInspect={(summary) => showDetail(summary, ledgerRevision)}
+                  onOpenDiscovery={onOpenDiscovery}
+                />
+                {turn.reply.evidence
+                  .filter((item) => item.tool === 'compare_spending')
+                  .map((item) => (
+                    <SpendingComparison
+                      key={`${turn.id}:${item.data.calculated_at}`}
+                      comparison={item.data}
+                      turnId={turn.id}
+                      copy={copy}
+                      locale={locale}
+                      ledgerRevision={ledgerRevision}
+                      onEvidence={showComparisonDetail}
+                      onRecompare={() => void recompare(turn.id)}
+                    />
+                  ))}
+                {turn.reply.action && (
+                  <section
+                    className="assistant-proposal"
+                    aria-label={t('预算修改', 'Budget change')}
+                  >
+                    <strong>{describe(turn.reply.action)}</strong>
+                    {turn.reply.action.can_confirm ? (
+                      <>
+                        <p>{t('提案有效期为 15 分钟。', 'Proposal valid for 15 minutes.')}</p>
+                        <div className="planning-actions">
+                          <button
+                            className="primary"
+                            disabled={busy}
+                            onClick={() => void resolve(turn.reply!.action!.id, false)}
+                          >
+                            {t('确认修改', 'Confirm change')}
+                          </button>
+                          <button
+                            disabled={busy}
+                            onClick={() => void resolve(turn.reply!.action!.id, true)}
+                          >
+                            {t('取消', 'Cancel')}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <p role="status">
+                        {turn.reply.action.effective_status === 'applied'
+                          ? t('当时已执行', 'Applied then')
+                          : {
+                              cancelled: t('已取消', 'Cancelled'),
+                              expired: t('已过期', 'Expired'),
+                              conflict: t(
+                                '预算已变化，请重新提出修改',
+                                'Budget changed; request a new proposal',
+                              ),
+                              unavailable: t('会话不可用', 'Conversation unavailable'),
+                              pending: t('等待核对', 'Awaiting review'),
+                            }[turn.reply.action.effective_status]}
+                        {turn.reply.action.result &&
+                          ` · ${t('执行后剩余', 'Remaining after change')} ${money(turn.reply.action.result.remaining, turn.reply.action.result.currency)}`}
+                      </p>
+                    )}
+                  </section>
+                )}
+              </>
+            )}
           </article>
         ))}
         {busy && <LoadingIndicator label={t('正在处理', 'Working')} />}
@@ -332,13 +643,42 @@ export function AssistantPanel({
             {error || failure(history.error)}
           </p>
         )}
-        {history.searchContext && <details><summary>{t('已选查找条件', 'Selected search filters')}</summary><SearchResultCard key={`${history.id}:${history.contextVersion}`} filters={history.searchContext} english={english} copy={copy} onInspect={onInspect} onLedger={onSearchLedger} onSave={history.selectSearch} onUnsaved={() => history.setSearchUnsaved(true)} /></details>}
-        {history.searchUnsaved && <p role="status">{t('条件未保存，请重试保存或重新打开会话。', 'Filters not saved. Retry saving or reopen the conversation.')}</p>}
+        {history.searchContext && (
+          <details>
+            <summary>{t('已选查找条件', 'Selected search filters')}</summary>
+            <SearchResultCard
+              key={`${history.id}:${history.contextVersion}`}
+              filters={history.searchContext}
+              english={english}
+              copy={copy}
+              onInspect={onInspect}
+              onLedger={onSearchLedger}
+              onSave={history.selectSearch}
+              onUnsaved={() => history.setSearchUnsaved(true)}
+            />
+          </details>
+        )}
+        {history.searchUnsaved && (
+          <p role="status">
+            {t(
+              '条件未保存，请重试保存或重新打开会话。',
+              'Filters not saved. Retry saving or reopen the conversation.',
+            )}
+          </p>
+        )}
         <form onSubmit={(event) => void submit(event)} className="assistant-composer">
           <label>
             {t('月份', 'Month')} · {history.month.slice(0, 7)}
           </label>
-          {context && <p className="assistant-context">{t('追问范围', 'Follow-up scope')}：{context.month.slice(0, 7)} · {copy.categoryLabels[context.category]} · {context.currency} <button type="button" disabled={busy || pending} onClick={() => setContext(null)}>{t('清除', 'Clear')}</button></p>}
+          {context && (
+            <p className="assistant-context">
+              {t('追问范围', 'Follow-up scope')}：{context.month.slice(0, 7)} ·{' '}
+              {copy.categoryLabels[context.category]} · {context.currency}{' '}
+              <button type="button" disabled={busy || pending} onClick={() => setContext(null)}>
+                {t('清除', 'Clear')}
+              </button>
+            </p>
+          )}
           <textarea
             ref={input}
             onKeyDown={(event) => {
@@ -370,7 +710,9 @@ export function AssistantPanel({
             </span>
             <button
               className="primary"
-              disabled={busy || pending || !message.trim() || (turns.at(-1)?.sequence ?? 0) >= history.limit}
+              disabled={
+                busy || pending || !message.trim() || (turns.at(-1)?.sequence ?? 0) >= history.limit
+              }
             >
               {t('发送', 'Send')}
             </button>

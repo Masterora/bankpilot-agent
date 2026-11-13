@@ -1,7 +1,5 @@
-/**
- * 文件职责：管理月报请求、任务轮询与用户操作。
- * 主要内容：提交幂等、历史选择、刷新、删除及导出状态。
- * 关键边界：仅待完成任务轮询；失败保留上下文，迟到响应不能覆盖当前选择。
+/** 管理月报请求、任务轮询与用户操作。
+ * 仅待完成任务轮询；失败保留上下文，迟到响应不能覆盖当前选择。
  */
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../../api'
@@ -12,8 +10,14 @@ import type { MonthlyReport, ReportDetail } from '../../types'
 
 function errorMessage(error: unknown, english: boolean): string {
   return apiErrorMessage(error, english, {
-    report_quota_exceeded: ['已有两份报告待完成，请稍后重试。', 'Two reports are pending. Retry when one finishes.'],
-    report_not_found: ['报告已不可用，请刷新列表。', 'This report is unavailable. Refresh the list.'],
+    report_quota_exceeded: [
+      '已有两份报告待完成，请稍后重试。',
+      'Two reports are pending. Retry when one finishes.',
+    ],
+    report_not_found: [
+      '报告已不可用，请刷新列表。',
+      'This report is unavailable. Refresh the list.',
+    ],
     report_deleted: ['报告已删除，请刷新列表。', 'This report was deleted. Refresh the list.'],
   })
 }
@@ -38,7 +42,9 @@ export function useReports(initialMonth: string, english: boolean, visible: bool
 
   useEffect(() => {
     mounted.current = true
-    return () => { mounted.current = false }
+    return () => {
+      mounted.current = false
+    }
   }, [])
 
   useEffect(() => {
@@ -67,7 +73,9 @@ export function useReports(initialMonth: string, english: boolean, visible: bool
         setHasMore(result.has_more)
         setListError(false)
         if (result.items.some((item) => item.status === 'QUEUED' || item.status === 'RUNNING')) {
-          timer = window.setTimeout(() => { void load() }, 3000)
+          timer = window.setTimeout(() => {
+            void load()
+          }, 3000)
         }
       } catch {
         if (active) setListError(true)
@@ -78,7 +86,10 @@ export function useReports(initialMonth: string, english: boolean, visible: bool
       }
     }
     void load()
-    return () => { active = false; window.clearTimeout(timer) }
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
   }, [offset, refresh, visible])
 
   useEffect(() => {
@@ -95,13 +106,19 @@ export function useReports(initialMonth: string, english: boolean, visible: bool
         if (!active) return
         setDetail(result)
         setDetailError(false)
-        if (pending) timer = window.setTimeout(() => { void load() }, 3000)
+        if (pending)
+          timer = window.setTimeout(() => {
+            void load()
+          }, 3000)
       } catch {
         if (active) setDetailError(true)
       }
     }
     void load()
-    return () => { active = false; window.clearTimeout(timer) }
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
   }, [selected, refresh, visible])
 
   function selectReport(id: string) {
@@ -116,7 +133,8 @@ export function useReports(initialMonth: string, english: boolean, visible: bool
     mutation.current = true
     setBusy(true)
     setError('')
-    if (submission.current?.month !== targetMonth) submission.current = { month: targetMonth, key: newIdempotencyKey() }
+    if (submission.current?.month !== targetMonth)
+      submission.current = { month: targetMonth, key: newIdempotencyKey() }
     try {
       const result = await api.createReport(`${targetMonth}-01`, submission.current.key)
       if (!mounted.current) return
@@ -141,8 +159,8 @@ export function useReports(initialMonth: string, english: boolean, visible: bool
     try {
       await api.deleteReport(id)
       if (!mounted.current) return
-      setSelected((current) => current === id ? null : current)
-      setDetail((current) => current?.id === id ? null : current)
+      setSelected((current) => (current === id ? null : current))
+      setDetail((current) => (current?.id === id ? null : current))
       setOffset(0)
       setRefresh((value) => value + 1)
     } catch (cause) {
@@ -156,21 +174,39 @@ export function useReports(initialMonth: string, english: boolean, visible: bool
   async function exportReport(id: string) {
     try {
       const content = await api.exportReport(id)
-      if (mounted.current) downloadFile(JSON.stringify(content, null, 2), `bankpilot-report-${id}.json`, 'application/json')
+      if (mounted.current)
+        downloadFile(
+          JSON.stringify(content, null, 2),
+          `bankpilot-report-${id}.json`,
+          'application/json',
+        )
     } catch (cause) {
       if (mounted.current) setError(errorMessage(cause, english))
     }
   }
 
   return {
-    month, setMonth, items, offset: displayedOffset, hasMore, selected, detail,
+    month,
+    setMonth,
+    items,
+    offset: displayedOffset,
+    hasMore,
+    selected,
+    detail,
     goToPage: (nextOffset: number) => {
       setOffset(nextOffset)
       setLoading(true)
       setRefresh((value) => value + 1)
     },
-    listError, detailError, loading, busy, error,
-    selectReport, generate, remove, exportReport,
+    listError,
+    detailError,
+    loading,
+    busy,
+    error,
+    selectReport,
+    generate,
+    remove,
+    exportReport,
     refreshReports: () => setRefresh((value) => value + 1),
   }
 }

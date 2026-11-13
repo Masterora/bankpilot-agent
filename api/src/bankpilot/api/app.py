@@ -1,7 +1,6 @@
-"""
-文件职责：创建 FastAPI 应用并组装运行时依赖。
-主要内容：注册路由、错误与耗时中间件；管理模型客户端、运行恢复、月报处理和助手过期轮次恢复。
-关键边界：只关闭自身创建的资源；注入资源由调用方管理，启动失败也必须释放已取得的资源。
+"""创建 FastAPI 应用并组装运行时依赖。
+
+只关闭自身创建的资源；注入资源由调用方管理，启动失败也必须释放已取得的资源。
 """
 
 import asyncio
@@ -15,16 +14,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from bankpilot.adapters.alipay_sandbox import AlipaySandbox
+from bankpilot.adapters.feishu import FeishuAdapter
 from bankpilot.adapters.local_review import LocalReviewGateway
 from bankpilot.adapters.openrouter import OpenRouterModelGateway
 from bankpilot.api.accounts import router as accounts_router
 from bankpilot.api.assistant import router as assistant_router
 from bankpilot.api.attention import router as attention_router
 from bankpilot.api.auth import router as auth_router
-from bankpilot.api.cards import router as cards_router
 from bankpilot.api.errors import ErrorResponse, register_error_handlers
 from bankpilot.api.import_tools import router as import_tools_router
 from bankpilot.api.imports import router as imports_router
+from bankpilot.api.integrations import router as integrations_router
 from bankpilot.api.notifications import router as notifications_router
 from bankpilot.api.overview import router as overview_router
 from bankpilot.api.planning import router as planning_router
@@ -39,6 +40,7 @@ from bankpilot.db.session import create_engine, create_session_factory
 from bankpilot.observability import RequestTimingMiddleware
 from bankpilot.ports import AssistantGateway, ModelGateway, ReviewGateway
 from bankpilot.services.conversations import ConversationService
+from bankpilot.services.integrations import FeishuProcessor
 from bankpilot.services.notification_processor import NotificationProcessor
 from bankpilot.services.report_processor import ReportProcessor
 from bankpilot.services.run_processor import RunProcessor
@@ -148,6 +150,26 @@ def create_app(
                             start_workers()
                         app.state.security_ready = True
 
+            app.state.alipay_sandbox = (
+                AlipaySandbox(resolved_settings)
+                if resolved_settings.alipay_sandbox_enabled
+                else None
+            )
+            app.state.feishu = None
+            if resolved_settings.feishu_enabled:
+                integration_client = await resources.enter_async_context(
+                    httpx.AsyncClient(timeout=10, follow_redirects=False)
+                )
+                app.state.feishu = FeishuAdapter(resolved_settings, integration_client)
+                worker_functions.append(
+                    FeishuProcessor(
+                        session_factory,
+                        resolved_settings,
+                        app.state.feishu,
+                        app.state.assistant_gateway,
+                    ).run
+                )
+
             # Revalidate after startup work, before accepting requests or starting workers.
             async with asyncio.timeout(3):
                 await admission.register_instance(instance_id)
@@ -183,13 +205,13 @@ def create_app(
 
     register_error_handlers(app)
 
+    app.include_router(integrations_router)
     app.include_router(assistant_router)
     app.include_router(attention_router)
     app.include_router(notifications_router)
     app.include_router(planning_router)
     app.include_router(system_router)
     app.include_router(auth_router)
-    app.include_router(cards_router)
     app.include_router(accounts_router)
     app.include_router(transactions_router)
     app.include_router(imports_router)

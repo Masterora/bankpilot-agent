@@ -1,8 +1,8 @@
+"""封装账单导入批次持久化。
+
+只参与调用方事务，不隐式提交或补造来源字段。
 """
-文件职责：封装账单导入批次持久化。
-主要内容：创建批次、按用户倒序读取历史、按用户与操作幂等键查找已提交结果。
-关键边界：只参与调用方事务，不隐式提交或补造来源字段。
-"""
+
 from datetime import date
 from typing import Any, cast
 from uuid import UUID

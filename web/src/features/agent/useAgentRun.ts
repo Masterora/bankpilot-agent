@@ -1,9 +1,5 @@
-/**
- * 文件职责：管理 Agent 运行的前端状态。
- *
- * 主要内容：处理查询提交、SSE 续读、终态获取和分类修正并发隔离。
- *
- * 关键边界：旧运行和旧修正响应不得覆盖当前运行，卸载时必须关闭事件流。
+/** 管理 Agent 运行的前端状态。
+ * 旧运行和旧修正响应不得覆盖当前运行，卸载时必须关闭事件流。
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -32,10 +28,13 @@ export function useAgentRun(copy: Messages) {
     setMessage((current) => (isPresetQuery(current) ? copy.defaultQuery : current))
   }, [copy])
 
-  useEffect(() => () => {
-    activeRunId.current = null
-    eventSource.current?.close()
-  }, [])
+  useEffect(
+    () => () => {
+      activeRunId.current = null
+      eventSource.current?.close()
+    },
+    [],
+  )
 
   async function finishRun(runId: string) {
     if (activeRunId.current !== runId || finishingRunId.current === runId) return
@@ -60,10 +59,16 @@ export function useAgentRun(copy: Messages) {
       (event) => {
         if (activeRunId.current !== runId) return
         setRun((current) => {
-          if (current?.id !== runId || current.events.some((item) => item.sequence === event.sequence)) {
+          if (
+            current?.id !== runId ||
+            current.events.some((item) => item.sequence === event.sequence)
+          ) {
             return current
           }
-          return { ...current, events: [...current.events, event].sort((a, b) => a.sequence - b.sequence) }
+          return {
+            ...current,
+            events: [...current.events, event].sort((a, b) => a.sequence - b.sequence),
+          }
         })
         if (event.event_type === 'run.completed' || event.event_type === 'run.failed') {
           void finishRun(runId)
@@ -71,20 +76,23 @@ export function useAgentRun(copy: Messages) {
       },
       () => {
         if (activeRunId.current !== runId || finishingRunId.current === runId) return
-        void api.getRun(runId).then((current) => {
-          if (activeRunId.current !== runId) return
-          setRun(current)
-          if (terminalStatuses.has(current.status)) {
+        void api
+          .getRun(runId)
+          .then((current) => {
+            if (activeRunId.current !== runId) return
+            setRun(current)
+            if (terminalStatuses.has(current.status)) {
+              eventSource.current?.close()
+              eventSource.current = null
+              setSubmitting(false)
+            }
+          })
+          .catch(() => {
+            if (activeRunId.current !== runId) return
             eventSource.current?.close()
-            eventSource.current = null
+            setError(copy.queryStatusFailed)
             setSubmitting(false)
-          }
-        }).catch(() => {
-          if (activeRunId.current !== runId) return
-          eventSource.current?.close()
-          setError(copy.queryStatusFailed)
-          setSubmitting(false)
-        })
+          })
       },
     )
   }
@@ -117,8 +125,8 @@ export function useAgentRun(copy: Messages) {
     if (!run) return
     const runId = run.id
     const sequence = ++correctionSequence.current
-    const ownsResponse = () => activeRunId.current === runId
-      && correctionSequence.current === sequence
+    const ownsResponse = () =>
+      activeRunId.current === runId && correctionSequence.current === sequence
     setError('')
     setCorrectingId(transactionId)
     try {
@@ -126,7 +134,7 @@ export function useAgentRun(copy: Messages) {
       if (revision == null) throw new Error('Reload current evidence before editing')
       const updated = await api.correctCategory(runId, transactionId, category, revision)
       if (!ownsResponse()) return
-      setRun((current) => current?.id === runId ? updated : current)
+      setRun((current) => (current?.id === runId ? updated : current))
       setCorrectionSaved(true)
     } catch {
       if (ownsResponse()) setError(copy.categoryUpdateFailed)

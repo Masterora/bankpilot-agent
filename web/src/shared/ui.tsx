@@ -1,7 +1,5 @@
-/**
- * 文件职责：提供共享显示与基础交互组件。
- * 主要内容：语言切换、页面标题、导航图标、空状态、加载提示、图标按钮和带结果反馈的复制。
- * 关键边界：不读取业务数据或调用 API；复制仅由点击触发，失败保留原文供手动选择。
+/** 提供共享显示与基础交互组件。
+ * 不读取业务数据或调用 API；复制仅由点击触发，失败保留原文供手动选择。
  */
 
 import { useState, type ComponentProps, type ReactNode } from 'react'
@@ -48,62 +46,180 @@ export function PageHeader({ copy, page }: { copy: Messages; page: ProductPage }
 
 export function Logo() {
   // 页面品牌标识与浏览器 favicon 复用同一资产，避免不同入口出现两套视觉语言。
-  return <img className="logo" src="/bankpilot-mark.svg?v=4" alt="" aria-hidden="true" draggable={false} />
+  return (
+    <img
+      className="logo"
+      src="/bankpilot-mark.svg?v=4"
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+    />
+  )
 }
 
 /** 空数据保留功能轮廓与下一步操作，不用占位数字冒充真实统计。 */
-export function EmptyContent({ title, detail, kind, children }: {
-  title: string; detail?: string; kind: ProductPage; children?: ReactNode
+export function EmptyContent({
+  title,
+  detail,
+  kind,
+  children,
+}: {
+  title: string
+  detail?: string
+  kind: ProductPage
+  children?: ReactNode
 }) {
-  return <div className="empty-content"><span className="empty-content-icon" aria-hidden="true"><NavigationIcon kind={kind} /></span><h3>{title}</h3>{detail && <p>{detail}</p>}{children && <div className="empty-content-actions">{children}</div>}</div>
+  return (
+    <div className="empty-content">
+      <span className="empty-content-icon" aria-hidden="true">
+        <NavigationIcon kind={kind} />
+      </span>
+      <h3>{title}</h3>
+      {detail && <p>{detail}</p>}
+      {children && <div className="empty-content-actions">{children}</div>}
+    </div>
+  )
 }
 
 export function NavigationIcon({ kind }: { kind: ProductPage }) {
   const paths: Record<ProductPage, ReactNode> = {
-    settings: <><path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z" /><circle cx="12" cy="12" r="3" /></>,
+    settings: (
+      <>
+        <path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z" />
+        <circle cx="12" cy="12" r="3" />
+      </>
+    ),
     overview: <path d="m4 11 8-7 8 7v9h-5v-6H9v6H4Z" />,
-    relations: <><path d="M10 7H7a5 5 0 0 0 0 10h3m4-10h3a5 5 0 0 1 0 10h-3M8 12h8" /></>,
-    reports: <><path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h5" /></>,
-    recurring: <><path d="m17 3 4 4-4 4" /><path d="M3 12V9a2 2 0 0 1 2-2h16" /><path d="m7 21-4-4 4-4" /><path d="M21 12v3a2 2 0 0 1-2 2H3" /></>,
-    budgets: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></>,
-    agent: <><path d="M4 5h16v12H9l-5 4zM8 9h8M8 13h5" /></>,
-    import: <><path d="M12 16V3m-5 5 5-5 5 5" /><path d="M4 15v5h16v-5" /></>,
+    relations: (
+      <>
+        <path d="M10 7H7a5 5 0 0 0 0 10h3m4-10h3a5 5 0 0 1 0 10h-3M8 12h8" />
+      </>
+    ),
+    reports: (
+      <>
+        <path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h5" />
+      </>
+    ),
+    recurring: (
+      <>
+        <path d="m17 3 4 4-4 4" />
+        <path d="M3 12V9a2 2 0 0 1 2-2h16" />
+        <path d="m7 21-4-4 4-4" />
+        <path d="M21 12v3a2 2 0 0 1-2 2H3" />
+      </>
+    ),
+    budgets: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="12" r="5" />
+        <circle cx="12" cy="12" r="1" />
+      </>
+    ),
+    agent: (
+      <>
+        <path d="M4 5h16v12H9l-5 4zM8 9h8M8 13h5" />
+      </>
+    ),
+    import: (
+      <>
+        <path d="M12 16V3m-5 5 5-5 5 5" />
+        <path d="M4 15v5h16v-5" />
+      </>
+    ),
     review: <path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h5" />,
-    audit: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" /><path d="m9 12 2 2 4-4" /></>,
+    audit: (
+      <>
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+        <path d="m9 12 2 2 4-4" />
+      </>
+    ),
   }
-  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">{paths[kind]}</svg>
+  return (
+    <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      {paths[kind]}
+    </svg>
+  )
 }
 
 export function LoadingScreen({ label }: { label: string }) {
-  return <main className="loading-screen"><Logo /><p>{label}</p></main>
+  return (
+    <main className="loading-screen">
+      <Logo />
+      <p>{label}</p>
+    </main>
+  )
 }
 
 /** 轻量进度线表示请求进行中；与成功提示分离，不显示虚构进度。 */
 export function LoadingIndicator({ label }: { label: string }) {
-  return <div className="loading-indicator" role="status" aria-label={label}>
-    <span className="loading-track" aria-hidden="true"><span /></span>
-    <span className="loading-label">{label}</span>
-  </div>
+  return (
+    <div className="loading-indicator" role="status" aria-label={label}>
+      <span className="loading-track" aria-hidden="true">
+        <span />
+      </span>
+      <span className="loading-label">{label}</span>
+    </div>
+  )
 }
 
 /** 常见操作共用线性图标；按钮名称同时用于读屏和悬停提示。 */
-export function ActionIcon({ kind }: { kind: 'close' | 'refresh' | 'edit' | 'delete' | 'logout' | 'menu' }) {
+export function ActionIcon({
+  kind,
+}: {
+  kind: 'close' | 'refresh' | 'edit' | 'delete' | 'logout' | 'menu'
+}) {
   const paths = {
     close: <path d="m6 6 12 12M6 18 18 6" />,
-    refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" /></>,
-    edit: <><path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15Z" /></>,
-    delete: <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></>,
-    logout: <><path d="M10 4H4v16h6M10 12h11m-4-4 4 4-4 4" /></>,
+    refresh: (
+      <>
+        <path d="M20 7v5h-5M4 17v-5h5" />
+        <path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" />
+      </>
+    ),
+    edit: (
+      <>
+        <path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15Z" />
+      </>
+    ),
+    delete: (
+      <>
+        <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+      </>
+    ),
+    logout: (
+      <>
+        <path d="M10 4H4v16h6M10 12h11m-4-4 4 4-4 4" />
+      </>
+    ),
     menu: <path d="M4 6h16M4 12h16M4 18h16" />,
   }
-  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">{paths[kind]}</svg>
+  return (
+    <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      {paths[kind]}
+    </svg>
+  )
 }
 
-export function IconButton({ icon, label, className = '', ...props }: Omit<ComponentProps<'button'>, 'children' | 'aria-label' | 'title'> & {
+export function IconButton({
+  icon,
+  label,
+  className = '',
+  ...props
+}: Omit<ComponentProps<'button'>, 'children' | 'aria-label' | 'title'> & {
   icon: ComponentProps<typeof ActionIcon>['kind']
   label: string
 }) {
-  return <button {...props} type={props.type ?? 'button'} className={`icon-button ${className}`.trim()} aria-label={label} title={label}><ActionIcon kind={icon} /></button>
+  return (
+    <button
+      {...props}
+      type={props.type ?? 'button'}
+      className={`icon-button ${className}`.trim()}
+      aria-label={label}
+      title={label}
+    >
+      <ActionIcon kind={icon} />
+    </button>
+  )
 }
 
 /** 只在点击时访问剪贴板；失败保留原文供手动选择。 */
@@ -112,9 +228,37 @@ export function CopyValue({ value, english }: { value: string; english: boolean 
   async function copy() {
     if (state === 'busy') return
     setState('busy')
-    try { await navigator.clipboard.writeText(value); setState('done') }
-    catch { setState('failed') }
+    try {
+      await navigator.clipboard.writeText(value)
+      setState('done')
+    } catch {
+      setState('failed')
+    }
   }
-  return <><span className="copy-value"><code>{value}</code><button type="button" disabled={state === 'busy'} aria-busy={state === 'busy'} onClick={() => void copy()}>{english ? 'Copy' : '复制'}</button></span>
-    <span className="copy-feedback" role="status">{state === 'done' ? (english ? 'Copied' : '已复制') : state === 'failed' ? (english ? 'Select the text to copy manually.' : '请选中文字手动复制。') : ''}</span></>
+  return (
+    <>
+      <span className="copy-value">
+        <code>{value}</code>
+        <button
+          type="button"
+          disabled={state === 'busy'}
+          aria-busy={state === 'busy'}
+          onClick={() => void copy()}
+        >
+          {english ? 'Copy' : '复制'}
+        </button>
+      </span>
+      <span className="copy-feedback" role="status">
+        {state === 'done'
+          ? english
+            ? 'Copied'
+            : '已复制'
+          : state === 'failed'
+            ? english
+              ? 'Select the text to copy manually.'
+              : '请选中文字手动复制。'
+            : ''}
+      </span>
+    </>
+  )
 }

@@ -1,7 +1,6 @@
-"""
-文件职责：提供助手对话、上下文与预算提案的 HTTP 接口。
-主要内容：提交和恢复轮次、分页读取与删除会话、更新消费范围及搜索上下文、确认或取消提案。
-关键边界：所有操作绑定当前用户；模型不能调用确认端点，上下文更新与提案写入由服务端校验。
+"""提供助手对话、上下文与预算提案的 HTTP 接口。
+
+所有操作绑定当前用户；模型不能调用确认端点，上下文更新与提案写入由服务端校验。
 """
 
 import asyncio
@@ -86,13 +85,6 @@ async def evidence(
         query.expected_revision,
         query.expected_calculation_version,
         query.page,
-    )
-
-
-@router.post("/chat")
-async def legacy_conversation() -> None:
-    raise ApiProblem(
-        409, "assistant_protocol_upgrade", "Refresh the page to use conversation history"
     )
 
 

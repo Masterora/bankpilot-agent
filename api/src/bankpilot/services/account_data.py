@@ -43,7 +43,7 @@ async def export_account(session: AsyncSession, uid: UUID) -> dict[str, object]:
     remaining = 50_000
     size = 0
     for table in Base.metadata.sorted_tables:
-        if table.name in {"sessions", "security_budgets", "security_leases"}:
+        if table.name in {"sessions", "security_budgets", "security_leases", "feishu_bindings"}:
             continue
         columns = [column for column in table.c if column.name != "password_hash"]
         if table.name == "users":
@@ -108,7 +108,8 @@ async def delete_account(
         select(RunRecord.id).where(
             # UNKNOWN seals an interrupted read-only run; its old worker cannot
             # complete it. It must not permanently prevent account deletion.
-            RunRecord.user_id == uid, RunRecord.status.not_in(["SUCCEEDED", "FAILED", "UNKNOWN"])
+            RunRecord.user_id == uid,
+            RunRecord.status.not_in(["SUCCEEDED", "FAILED", "UNKNOWN"]),
         ),
         select(MonthlyReportRecord.id).where(
             MonthlyReportRecord.user_id == uid,

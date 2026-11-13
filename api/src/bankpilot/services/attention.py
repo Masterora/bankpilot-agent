@@ -433,10 +433,17 @@ async def synchronize_existing_states(
                 row.notification_window = window
                 await record_transition(session, row, before, fact, now, emit=emit, entered=entered)
     if enabled:
-        await invalidate(session, user_id, now, fully_reconciled=(
-            source_type is None and source_id is None and months is not None
-            and {current, _next_month(current)}.issubset(months)
-        ))
+        await invalidate(
+            session,
+            user_id,
+            now,
+            fully_reconciled=(
+                source_type is None
+                and source_id is None
+                and months is not None
+                and {current, _next_month(current)}.issubset(months)
+            ),
+        )
 
 
 def next_refresh_at(groups: list[AttentionGroup], now: datetime) -> datetime:

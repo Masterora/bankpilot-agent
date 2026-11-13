@@ -1,9 +1,3 @@
-/**
- * 文件职责：汇总 Web 全局样式加载入口。
- * 主要内容：按顺序加载基础、外壳、功能、响应式、助手及视觉系统样式。
- * 关键边界：仅声明加载顺序；后续样式覆盖依赖该顺序，不在此定义业务选择器。
- */
-
 @import './styles/base.css';
 @import './styles/shell.css';
 @import './styles/features.css';
@@ -12,7 +6,135 @@
 @import './styles/assistant.css';
 @import './styles/design.css';
 
-.month-reviews { margin-block: 1rem; border: 1px solid var(--line); border-radius: 12px; padding: 1rem; }
-.month-reviews > summary { cursor: pointer; font-weight: 600; }
-.month-review-card { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-.month-reviews input { margin-inline-start: .5rem; }
+.month-reviews {
+  margin-block: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+}
+.month-reviews > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.month-review-card {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+.month-reviews input {
+  margin-inline-start: 0.5rem;
+}
+
+.budget-templates,
+.report-comparison {
+  margin-block: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.comparison-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  padding-block: 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+.comparison-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.comparison-facts pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
+.budget-templates form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+@media (max-width: 700px) {
+  .comparison-row,
+  .comparison-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.budget-templates summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.budget-templates input,
+.budget-templates select,
+.report-comparison select {
+  max-width: 100%;
+  min-width: 0;
+}
+.comparison-row > *,
+.comparison-facts > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.integration-card {
+  min-width: 0;
+}
+.integration-card > p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.integration-form {
+  display: grid;
+  gap: 16px;
+  margin-block: 20px;
+}
+.integration-form label {
+  display: grid;
+  gap: 8px;
+}
+.integration-form .integration-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.integration-confirm input {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.integration-code {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-block: 16px;
+}
+.integration-code code,
+.integration-orders small {
+  overflow-wrap: anywhere;
+}
+.integration-orders {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 20px;
+}
+.integration-orders li {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.integration-orders li > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.integration-orders .settings-row {
+  flex-wrap: wrap;
+}
+.integration-orders .settings-row a {
+  align-self: center;
+  text-decoration: underline;
+}

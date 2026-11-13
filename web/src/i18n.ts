@@ -1,13 +1,5 @@
-/**
- * 文件职责：集中管理 BankPilot Web 的中英文文案与语言偏好。
- *
- * 主要内容：
- * - `Messages`：约束每种语言必须实现的界面文案。
- * - `zhCN` / `enUS`：注册、登录、卡片、账单导入、统计、异常、分类和事件文案。
- * - `storedLocale`：读取持久化语言，异常值回退为中文。
- * - `isPresetQuery`：识别可随语言切换的预设查询。
- *
- * 关键边界：切换语言只替换预设查询，不覆盖用户自行输入的文本。
+/** 集中管理 BankPilot Web 的中英文文案与语言偏好。
+ * 切换语言只替换预设查询，不覆盖用户自行输入的文本。
  */
 
 import type { BillAnomaly, Run, TransactionCategory } from './types'
@@ -20,13 +12,12 @@ export type Locale = 'zh-CN' | 'en-US'
 export interface ProductPageCopy {
   navigation: string
   title: string
-  empty: string
 }
 
 export interface ImportCopy {
   chooseFile: string
   fileRequirements: string
-  fileTooLarge: string
+
   missingHeader: string
   fileReadFailed: string
   accountName: string
@@ -81,12 +72,7 @@ export interface Messages {
   passwordMismatch: string
   navigationLabel: string
   productPages: Record<ProductPage, ProductPageCopy>
-  transactionsMetric: string
-  reviewSignalsMetric: string
-  latestRunMetric: string
-  noRunStatus: string
-  quickTasksHeading: string
-  openAgent: string
+
   openReview: string
   auditEventsHeading: string
   queryInputLabel: string
@@ -99,9 +85,7 @@ export interface Messages {
   createRunFailed: string
   logout: string
   emptyResult: string
-  resultEyebrow: string
-  timelineEyebrow: string
-  analysisEyebrow: string
+  runEventsHeading: string
   incomeLabel: string
   expenseLabel: string
   netLabel: string
@@ -143,42 +127,32 @@ const zhCN: Messages = {
     overview: {
       navigation: '总览',
       title: '账单总览',
-      empty: '',
     },
     agent: {
       navigation: '智能核查',
       title: '智能核查',
-      empty: '',
     },
     import: {
       navigation: '账户与导入',
       title: '账户与导入',
-      empty: '暂无导入批次',
     },
     review: {
       navigation: '账本',
       title: '交易账本',
-      empty: '暂无核查结果',
     },
-    relations: { navigation: '交易关系核对', title: '核对重复、转账与退款', empty: '暂无交易关系' },
-    reports: { navigation: '月度报告', title: '月度报告', empty: '报告功能尚未开放' },
-    recurring: { navigation: '固定支出', title: '固定支出', empty: '尚未添加周期项' },
-    budgets: { navigation: '预算', title: '预算', empty: '本月尚未设置预算' },
-    settings: { navigation: '设置', title: '设置', empty: '' },
+    relations: { navigation: '交易关系核对', title: '核对重复、转账与退款' },
+    reports: { navigation: '月度报告', title: '月度报告' },
+    recurring: { navigation: '固定支出', title: '固定支出' },
+    budgets: { navigation: '预算', title: '预算' },
+    settings: { navigation: '设置', title: '设置' },
     audit: {
       navigation: '运行记录',
       title: '运行记录',
-      empty: '暂无执行记录',
     },
   },
-  transactionsMetric: '本次查询',
-  reviewSignalsMetric: '待核查',
-  latestRunMetric: '最近运行',
-  noRunStatus: '无记录',
-  quickTasksHeading: '快捷操作',
-  openAgent: '发起核查',
+
   openReview: '查看结果',
-  auditEventsHeading: 'Agent 审计',
+  auditEventsHeading: '运行事件',
   queryInputLabel: '核查任务',
   queryShortcut: '⌘ / Ctrl + Enter 提交',
   defaultQuery: '核查本月交易',
@@ -189,9 +163,7 @@ const zhCN: Messages = {
   createRunFailed: '运行创建失败',
   logout: '退出',
   emptyResult: '暂无核查结果',
-  resultEyebrow: '核查结果',
-  timelineEyebrow: '执行链',
-  analysisEyebrow: '收支统计',
+  runEventsHeading: '运行过程',
   incomeLabel: '流入',
   expenseLabel: '流出',
   netLabel: '净额',
@@ -203,7 +175,7 @@ const zhCN: Messages = {
   imports: {
     chooseFile: '选择账单文件',
     fileRequirements: 'CSV / XLSX · 最大 10 MB',
-    fileTooLarge: '文件超过 10 MB 限制',
+
     missingHeader: '未识别到 CSV 表头',
     fileReadFailed: '文件读取失败',
     accountName: '账户名称',
@@ -313,42 +285,32 @@ const enUS: Messages = {
     overview: {
       navigation: 'Overview',
       title: 'Statement overview',
-      empty: '',
     },
     agent: {
       navigation: 'Agent review',
       title: 'Agent review',
-      empty: '',
     },
     import: {
       navigation: 'Accounts & import',
       title: 'Accounts & import',
-      empty: 'No import batches',
     },
     review: {
       navigation: 'Ledger',
       title: 'Ledger',
-      empty: 'No review result',
     },
-    relations: { navigation: 'Relationships', title: 'Relationships', empty: 'No relationships' },
-    reports: { navigation: 'Monthly reports', title: 'Monthly reports', empty: 'Reports are not available yet' },
-    recurring: { navigation: 'Fixed expenses', title: 'Fixed expenses', empty: 'No recurring charges yet' },
-    budgets: { navigation: 'Budgets', title: 'Budgets', empty: 'No budgets this month' },
-    settings: { navigation: 'Settings', title: 'Settings', empty: '' },
+    relations: { navigation: 'Relationships', title: 'Relationships' },
+    reports: { navigation: 'Monthly reports', title: 'Monthly reports' },
+    recurring: { navigation: 'Fixed expenses', title: 'Fixed expenses' },
+    budgets: { navigation: 'Budgets', title: 'Budgets' },
+    settings: { navigation: 'Settings', title: 'Settings' },
     audit: {
       navigation: 'Audit trail',
       title: 'Audit trail',
-      empty: 'No execution records',
     },
   },
-  transactionsMetric: 'Current query',
-  reviewSignalsMetric: 'Review signals',
-  latestRunMetric: 'Latest run',
-  noRunStatus: 'No record',
-  quickTasksHeading: 'Quick actions',
-  openAgent: 'Start review',
+
   openReview: 'View result',
-  auditEventsHeading: 'Agent audit',
+  auditEventsHeading: 'Run events',
   queryInputLabel: 'Review task',
   queryShortcut: '⌘ / Ctrl + Enter to submit',
   defaultQuery: 'Review transactions this month',
@@ -363,9 +325,7 @@ const enUS: Messages = {
   createRunFailed: 'Unable to create run',
   logout: 'Sign out',
   emptyResult: 'No review result',
-  resultEyebrow: 'REVIEW RESULT',
-  timelineEyebrow: 'EXECUTION TRACE',
-  analysisEyebrow: 'INCOME & SPENDING',
+  runEventsHeading: 'Run events',
   incomeLabel: 'Inflow',
   expenseLabel: 'Outflow',
   netLabel: 'Net',
@@ -377,7 +337,7 @@ const enUS: Messages = {
   imports: {
     chooseFile: 'Choose statement file',
     fileRequirements: 'CSV / XLSX · 10 MB maximum',
-    fileTooLarge: 'File exceeds the 10 MB limit',
+
     missingHeader: 'CSV header could not be detected',
     fileReadFailed: 'Unable to read the file',
     accountName: 'Account name',
@@ -393,7 +353,8 @@ const enUS: Messages = {
     duplicateMapping: 'Each standard field must use a different source column',
     importing: 'Validating',
     importFailed: 'Statement import failed',
-    conflict: 'Import conflict. Check transaction identifiers against saved records before retrying.',
+    conflict:
+      'Import conflict. Check transaction identifiers against saved records before retrying.',
     reportHeading: 'Import report',
     totalRows: 'Total rows',
     importedRows: 'Imported',

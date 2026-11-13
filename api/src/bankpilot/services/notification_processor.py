@@ -52,10 +52,12 @@ class NotificationProcessor:
             )
             await session.execute(
                 update(NotificationScheduleRecord)
-                .where(or_(
-                    NotificationScheduleRecord.baseline_epoch.is_(None),
-                    NotificationScheduleRecord.baseline_epoch != settings.notification_epoch,
-                ))
+                .where(
+                    or_(
+                        NotificationScheduleRecord.baseline_epoch.is_(None),
+                        NotificationScheduleRecord.baseline_epoch != settings.notification_epoch,
+                    )
+                )
                 .values(next_check_at=now)
             )
 

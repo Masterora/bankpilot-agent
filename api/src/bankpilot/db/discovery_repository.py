@@ -72,12 +72,17 @@ class DiscoveryRepository:
         )
 
     async def pending_proposal_count(self, user_id: UUID) -> int:
-        return int(await self.session.scalar(
-            select(func.count()).select_from(RecurringDiscoveryProposalRecord).where(
-                RecurringDiscoveryProposalRecord.user_id == user_id,
-                RecurringDiscoveryProposalRecord.status == "pending",
+        return int(
+            await self.session.scalar(
+                select(func.count())
+                .select_from(RecurringDiscoveryProposalRecord)
+                .where(
+                    RecurringDiscoveryProposalRecord.user_id == user_id,
+                    RecurringDiscoveryProposalRecord.status == "pending",
+                )
             )
-        ) or 0)
+            or 0
+        )
 
     def add(
         self,

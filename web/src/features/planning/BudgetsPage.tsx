@@ -1,11 +1,10 @@
-/**
- * 文件职责：编排月度分类预算工作区。
- * 主要内容：选择月份、加载预算、编辑和删除、复制上月设置及证据下钻。
- * 关键边界：金额计算全部来自服务端；页面通过共享请求 Hook 管理读取与写入状态。
+/** 编排月度分类预算工作区。
+ * 金额计算全部来自服务端；页面通过共享请求 Hook 管理读取与写入状态。
  */
 import { monthPeriod } from '../../shared/period'
 import { BudgetDetails } from './BudgetDetails'
 import { BudgetEditor } from './BudgetEditor'
+import { BudgetTemplates } from './BudgetTemplates'
 import { BudgetCarry } from './BudgetCarry'
 import type { BudgetEditorStart } from './BudgetEditor'
 
@@ -52,7 +51,8 @@ export function BudgetsPage({
   const [carryOpen, setCarryOpen] = useState(false)
   const [carryReceiptMonth, setCarryReceiptMonth] = useState('')
   const carryTrigger = useRef<HTMLButtonElement>(null)
-  const formOpen = editor !== null || carryOpen
+  const [templateDirty, setTemplateDirty] = useState(false)
+  const formOpen = editor !== null || carryOpen || templateDirty
   useEffect(() => {
     onDraftChange(formOpen)
   }, [formOpen, onDraftChange])
@@ -154,8 +154,14 @@ export function BudgetsPage({
         >
           {t('复制上月', 'Copy previous month')}
         </button>
-        <button ref={carryTrigger} disabled={state.busy || state.loading || formOpen} onClick={() => setCarryOpen(true)}>
-          {carryReceiptMonth === state.month ? t('查看结转回执', 'View carryover receipt') : t('预算结转', 'Budget carryover')}
+        <button
+          ref={carryTrigger}
+          disabled={state.busy || state.loading || formOpen}
+          onClick={() => setCarryOpen(true)}
+        >
+          {carryReceiptMonth === state.month
+            ? t('查看结转回执', 'View carryover receipt')
+            : t('预算结转', 'Budget carryover')}
         </button>
         <IconButton
           icon="refresh"
@@ -164,8 +170,29 @@ export function BudgetsPage({
           onClick={() => void state.refresh()}
         />
       </div>
-      {carryOpen && <BudgetCarry month={state.month} copy={copy} locale={locale} active={active} currentItems={state.error || state.loading ? undefined : state.data?.items} onReceipt={setCarryReceiptMonth}
-        onClose={() => { setCarryOpen(false); requestAnimationFrame(() => carryTrigger.current?.focus()) }} onSaved={() => state.refresh(true)} />}
+      {carryOpen && (
+        <BudgetCarry
+          month={state.month}
+          copy={copy}
+          locale={locale}
+          active={active}
+          currentItems={state.error || state.loading ? undefined : state.data?.items}
+          onReceipt={setCarryReceiptMonth}
+          onClose={() => {
+            setCarryOpen(false)
+            requestAnimationFrame(() => carryTrigger.current?.focus())
+          }}
+          onSaved={() => state.refresh(true)}
+        />
+      )}
+      <BudgetTemplates
+        state={state}
+        copy={copy}
+        locale={locale}
+        disabled={state.busy || state.loading || editor !== null || carryOpen}
+        externalRevision={externalRevision}
+        onDirty={setTemplateDirty}
+      />
       {state.error && (
         <p className="error" role="alert">
           {state.error}
@@ -186,10 +213,7 @@ export function BudgetsPage({
         />
       )}
       {!state.loading && !state.error && state.data && !state.data.items.length && (
-        <EmptyContent
-          kind="budgets"
-          title={t('本月尚未设置预算', 'No budgets this month')}
-        />
+        <EmptyContent kind="budgets" title={t('本月尚未设置预算', 'No budgets this month')} />
       )}
       {state.data && state.data.coverage.every((row) => row.transaction_count === 0) && (
         <p className="scope-note">

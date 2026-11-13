@@ -1,12 +1,6 @@
-"""
-文件职责：定义账单查询与确定性分析 Agent 的 LangGraph 状态与节点流程。
+"""定义账单查询与确定性分析 Agent 的 LangGraph 状态与节点流程。
 
-主要内容：
-- `AgentState`：携带运行 ID、用户 ID、模型计划、交易、核查快照和最终结果。
-- `ReadOnlyBillWorkflow`：按 plan、execute、analyze、respond/reject 节点组装工作流。
-- `after_plan`：允许应用层在执行前持久化模型计划。
-
-关键边界：只有 `query_transactions` 能进入执行节点，不支持的意图直接终止。
+只有 `query_transactions` 能进入执行节点，不支持的意图直接终止。
 """
 
 from collections.abc import Awaitable, Callable

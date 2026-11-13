@@ -1,14 +1,15 @@
-/**
- * 文件职责：建立 BankPilot React 应用的顶层会话与语言边界。
- *
- * 主要内容：恢复当前会话，在认证页与产品工作区之间切换，并同步全局语言和主题。
- * 关键边界：业务页面、跨页面状态和 API 细节分别由 feature、Workspace 与 api 模块负责。
+/** 建立 BankPilot React 应用的顶层会话与语言边界。
+ * 业务页面、跨页面状态和 API 细节分别由 feature、Workspace 与 api 模块负责。
  */
 
 import { useEffect, useRef, useState } from 'react'
 
 import { api, ApiError } from './api'
-import { announceSessionChange, bindSessionIdentity, sessionChangeKey } from './shared/sessionIdentity'
+import {
+  announceSessionChange,
+  bindSessionIdentity,
+  sessionChangeKey,
+} from './shared/sessionIdentity'
 import { Workspace } from './app/Workspace'
 import { AuthPage } from './features/auth/AuthPage'
 import { messages, storedLocale } from './i18n'
@@ -35,28 +36,46 @@ export default function App() {
     let active = true
     async function refresh(clear = false) {
       const sequence = ++sessionSequence.current
-      if (clear) { bindSessionIdentity(null); setUser(null); setCheckingSession(true); window.dispatchEvent(new Event('bankpilot-logout')) }
+      if (clear) {
+        bindSessionIdentity(null)
+        setUser(null)
+        setCheckingSession(true)
+        window.dispatchEvent(new Event('bankpilot-logout'))
+      }
       try {
         const next = await api.me()
         if (!active || sequence !== sessionSequence.current) return
-        bindSessionIdentity(next.id); setUser(next)
+        bindSessionIdentity(next.id)
+        setUser(next)
       } catch (cause) {
-        if (active && sequence === sessionSequence.current && (clear || cause instanceof ApiError && cause.status === 401)) {
-          bindSessionIdentity(null); setUser(null)
+        if (
+          active &&
+          sequence === sessionSequence.current &&
+          (clear || (cause instanceof ApiError && cause.status === 401))
+        ) {
+          bindSessionIdentity(null)
+          setUser(null)
         }
       } finally {
         if (active && sequence === sessionSequence.current) setCheckingSession(false)
       }
     }
-    const invalidated = () => { void refresh(true) }
-    const storage = (event: StorageEvent) => { if (event.key === sessionChangeKey) invalidated() }
-    const focus = () => { void refresh() }
+    const invalidated = () => {
+      void refresh(true)
+    }
+    const storage = (event: StorageEvent) => {
+      if (event.key === sessionChangeKey) invalidated()
+    }
+    const focus = () => {
+      void refresh()
+    }
     void refresh()
     window.addEventListener('bankpilot:session-invalidated', invalidated)
     window.addEventListener('storage', storage)
     window.addEventListener('focus', focus)
     return () => {
-      active = false; sessionSequence.current += 1
+      active = false
+      sessionSequence.current += 1
       window.removeEventListener('bankpilot:session-invalidated', invalidated)
       window.removeEventListener('storage', storage)
       window.removeEventListener('focus', focus)
@@ -71,7 +90,13 @@ export default function App() {
         locale={locale}
         onLocaleChange={setLocale}
         switchingAccount={switchingAccount}
-        onAuthenticated={(nextUser) => { sessionSequence.current += 1; bindSessionIdentity(nextUser.id); announceSessionChange(); setSwitchingAccount(false); setUser(nextUser) }}
+        onAuthenticated={(nextUser) => {
+          sessionSequence.current += 1
+          bindSessionIdentity(nextUser.id)
+          announceSessionChange()
+          setSwitchingAccount(false)
+          setUser(nextUser)
+        }}
       />
     )
   }
@@ -82,7 +107,13 @@ export default function App() {
       locale={locale}
       onLocaleChange={setLocale}
       user={user}
-      onLogout={(switchAccount = false) => { sessionSequence.current += 1; bindSessionIdentity(null); announceSessionChange(); setSwitchingAccount(switchAccount); setUser(null) }}
+      onLogout={(switchAccount = false) => {
+        sessionSequence.current += 1
+        bindSessionIdentity(null)
+        announceSessionChange()
+        setSwitchingAccount(switchAccount)
+        setUser(null)
+      }}
     />
   )
 }

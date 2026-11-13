@@ -1,15 +1,15 @@
+"""定义认证、导入与 Agent 运行的公共 HTTP 契约。
+
+在协议边界校验格式与容量；资源专属契约保留在对应模块，不在此执行持久化或业务计算。
 """
-文件职责：定义认证、导入与 Agent 运行的公共 HTTP 契约。
-主要内容：登录注册与密码修改、卡片摘要、导入预览及幂等写入、运行事件和分类修正的请求响应模型。
-关键边界：在协议边界校验格式与容量；资源专属契约保留在对应模块，不在此执行持久化或业务计算。
-"""
+
 from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from bankpilot.domain.contracts import CardStatus, RunResult, TransactionCategory
+from bankpilot.domain.contracts import RunResult, TransactionCategory
 from bankpilot.domain.statement_import import StatementFieldMapping
 from bankpilot.errors import StatementSizeError
 from bankpilot.security import MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, validate_new_password
@@ -63,19 +63,6 @@ class DeleteAccountRequest(BaseModel):
 class UserResponse(BaseModel):
     id: UUID
     email: EmailStr
-
-
-class CardResponse(BaseModel):
-    id: UUID
-    account_id: UUID
-    account_name: str
-    display_name: str
-    last_four: str
-    status: CardStatus
-
-
-class CardListResponse(BaseModel):
-    items: list[CardResponse]
 
 
 class ImportPreviewRequest(BaseModel):

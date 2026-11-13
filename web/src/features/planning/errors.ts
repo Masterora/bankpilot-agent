@@ -1,20 +1,43 @@
-/**
- * 文件职责：将规划业务错误码转换为中英文提示。
- * 主要内容：预算版本冲突、周期配置锁定、匹配和未来修订等错误文案。
- * 关键边界：只负责展示；未覆盖状态交给共享错误处理，不暴露内部异常原文。
+/** 将规划业务错误码转换为中英文提示。
+ * 只负责展示；未覆盖状态交给共享错误处理，不暴露内部异常原文。
  */
 import { apiErrorMessage } from '../../shared/apiErrors'
 
 const errors: Record<string, [string, string]> = {
+  template_capacity: [
+    '模板或应用回执数量已达上限。',
+    'Template or application receipt limit reached.',
+  ],
   month_review_month: ['请选择本月或以前的月份。', 'Choose this month or an earlier month.'],
-  month_review_close: ['月结需要先核对当前数据，且月份已结束。', 'Review the current data and wait until the month ends before closing.'],
-  month_review_reopen: ['请先重新打开账期，再核对。', 'Reopen the month before reviewing it again.'],
-  planning_status_date: ['状态只能从今天或未来日期生效；已生效记录不能取消。', 'Choose today or a future date. Effective changes cannot be cancelled.'],
-  planning_status_terminal: ['结束后不能安排后续状态；请先取消冲突的未来变更。', 'End is terminal. Cancel conflicting future changes first.'],
-  budget_carry_month: ['只能结转已结束的上月预算，请选择 1900 年 2 月至本月。', 'Choose February 1900 through this month; the source month must be complete.'],
-  budget_carry_applied: ['本月已结转，请重新读取回执；不能重复增加额度。', 'This month was already carried over. Reload the receipt.'],
+  month_review_close: [
+    '月结需要先核对当前数据，且月份已结束。',
+    'Review the current data and wait until the month ends before closing.',
+  ],
+  month_review_reopen: [
+    '请先重新打开账期，再核对。',
+    'Reopen the month before reviewing it again.',
+  ],
+  planning_status_date: [
+    '状态只能从今天或未来日期生效；已生效记录不能取消。',
+    'Choose today or a future date. Effective changes cannot be cancelled.',
+  ],
+  planning_status_terminal: [
+    '结束后不能安排后续状态；请先取消冲突的未来变更。',
+    'End is terminal. Cancel conflicting future changes first.',
+  ],
+  budget_carry_month: [
+    '只能结转已结束的上月预算，请选择 1900 年 2 月至本月。',
+    'Choose February 1900 through this month; the source month must be complete.',
+  ],
+  budget_carry_applied: [
+    '本月已结转，请重新读取回执；不能重复增加额度。',
+    'This month was already carried over. Reload the receipt.',
+  ],
   budget_carry_empty: ['上月没有可结转的剩余额度。', 'No remaining budget to carry over.'],
-  budget_carry_amount_limit: ['结转后的预算超出金额上限。', 'The resulting budget exceeds the amount limit.'],
+  budget_carry_amount_limit: [
+    '结转后的预算超出金额上限。',
+    'The resulting budget exceeds the amount limit.',
+  ],
   planning_revision_locked: [
     '该计划已生效或已有核对结果，不能改写；请安排后续变更。',
     'This configuration is effective or reviewed. Schedule a later change.',

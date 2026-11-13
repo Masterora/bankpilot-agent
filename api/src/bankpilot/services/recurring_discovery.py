@@ -542,9 +542,7 @@ async def change_decision(
 
 def _proposal_view(row: RecurringDiscoveryProposalRecord) -> DiscoveryProposal:
     status = (
-        "expired"
-        if row.status == "pending" and row.expires_at <= datetime.now(UTC)
-        else row.status
+        "expired" if row.status == "pending" and row.expires_at <= datetime.now(UTC) else row.status
     )
     return DiscoveryProposal(
         id=row.id,

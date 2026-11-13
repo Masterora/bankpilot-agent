@@ -1,7 +1,6 @@
-"""
-文件职责：提供月度预算与手动周期扣款的 HTTP 接口。
-主要内容：预算读取、保存、复制、删除，以及周期配置、未来修订、逐期匹配和未发生确认。
-关键边界：读取使用一致快照，写入经过服务端校验后显式提交，不触发真实扣款。
+"""提供月度预算与手动周期扣款的 HTTP 接口。
+
+读取使用一致快照，写入经过服务端校验后显式提交，不触发真实扣款。
 """
 
 from datetime import date, datetime
@@ -21,7 +20,16 @@ from bankpilot.api.dependencies import (
 )
 from bankpilot.api.errors import ApiProblem
 from bankpilot.config import Settings
+from bankpilot.db.budget_template_repository import TemplateRepository
 from bankpilot.db.models import UserRecord
+from bankpilot.domain.budget_templates import (
+    TemplateApply,
+    TemplateDelete,
+    TemplateInput,
+    TemplatePreview,
+    TemplateTarget,
+    TemplateView,
+)
 from bankpilot.domain.contracts import TransactionCategory
 from bankpilot.domain.month_reviews import AccountMonthReview, MonthReviewInput
 from bankpilot.domain.planning import (
@@ -53,6 +61,7 @@ from bankpilot.domain.recurring_discovery import (
     month_start,
 )
 from bankpilot.services import budget_carry as carry_service
+from bankpilot.services import budget_templates as template_service
 from bankpilot.services import budgets as budget_service
 from bankpilot.services import month_reviews as month_review_service
 from bankpilot.services import recurring as recurring_service
@@ -409,5 +418,57 @@ async def change_month_review(
     session: AsyncSession = Depends(get_db_session),
 ) -> AccountMonthReview:
     result = await month_review_service.change_month_review(session, user.id, identity, payload)
+    await session.commit()
+    return result
+
+
+@router.get("/budget-templates", response_model=list[TemplateView])
+async def list_templates(
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
+) -> list[TemplateView]:
+    return [template_service.view(row) for row in await TemplateRepository(session).items(user.id)]
+
+
+@router.post("/budget-templates", response_model=TemplateView)
+async def save_template(
+    payload: TemplateInput,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> TemplateView:
+    result = await template_service.save(session, user.id, payload)
+    await session.commit()
+    return result
+
+
+@router.post("/budget-templates/{template_id}/delete", status_code=204)
+async def delete_template(
+    template_id: UUID,
+    payload: TemplateDelete,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    await template_service.remove(session, user.id, template_id, payload.expected_version)
+    await session.commit()
+
+
+@router.post("/budget-templates/{template_id}/preview", response_model=TemplatePreview)
+async def preview_template(
+    template_id: UUID,
+    payload: TemplateTarget,
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
+) -> TemplatePreview:
+    return await template_service.preview(session, user.id, template_id, payload)
+
+
+@router.post("/budget-templates/{template_id}/apply", response_model=TemplatePreview)
+async def apply_template(
+    template_id: UUID,
+    payload: TemplateApply,
+    user: UserRecord = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> TemplatePreview:
+    result = await template_service.apply(session, user.id, template_id, payload)
     await session.commit()
     return result

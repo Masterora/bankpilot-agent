@@ -12,7 +12,12 @@ export interface NotificationItem {
 }
 
 export interface NotificationPage {
-  query_changes: { conversation_id: string; title: string; filters: import('../ledger/search').SearchFilters; changed_at: string }[]
+  query_changes: {
+    conversation_id: string
+    title: string
+    filters: import('../ledger/search').SearchFilters
+    changed_at: string
+  }[]
   items: NotificationItem[]
   server_time: string
   count_status: 'ready' | 'incomplete'

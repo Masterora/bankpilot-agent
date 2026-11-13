@@ -1,6 +1,4 @@
-# 文件职责：定义 BankPilot 的持续集成门禁与 main 分支自动发布。
-# 主要内容：API/Web 独立验证；通过后经私有网络与 SSH 更新远程 Docker Compose 服务。
-# 关键边界：Pull Request 只验证；只有 main 推送可部署；地址与访问凭据全部来自 GitHub Environment。
+# PR 只验证；推送 main 可触发部署，凭据来自 GitHub Environment。
 name: CI
 
 on:
@@ -54,12 +52,17 @@ jobs:
           python-version: "3.13"
       - run: uv sync --all-groups --locked
       - run: uv run ruff check .
+      - run: uv run ruff format --check src tests
       - run: uv run mypy src
       - run: uv run alembic upgrade head
       - run: uv run alembic check
       - run: uv run alembic downgrade 20260906_0006
       - run: uv run alembic upgrade head
       - run: uv run alembic check
+      - name: Run offline regressions
+        env:
+          BANKPILOT_TEST_DATABASE_URL: ${{ env.BANKPILOT_DATABASE_URL }}
+        run: uv run python -m unittest discover -s tests -v
       - run: docker build -t bankpilot-api:ci .
 
   web:
@@ -77,6 +80,7 @@ jobs:
       - run: npm ci
       - run: make -C .. verify-assets
       - run: npm run lint
+      - run: npm run format:check
       - run: npm run build
       - run: docker build -t bankpilot-web:ci .
 

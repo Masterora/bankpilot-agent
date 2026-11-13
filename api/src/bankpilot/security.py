@@ -1,13 +1,6 @@
-"""
-文件职责：提供认证边界所需的密码与会话安全原语。
+"""提供认证边界所需的密码与会话安全原语。
 
-主要内容：
-- `hash_password` / `verify_password`：密码哈希与校验。
-- `validate_new_password`：统一新密码的长度和字符组合规则。
-- `DUMMY_PASSWORD_HASH`：减少未知邮箱产生的认证耗时差异。
-- `create_session_token` / `hash_session_token`：生成会话令牌并转换为可持久化标识。
-
-关键边界：数据库只保存会话令牌的 HMAC-SHA256 结果，不保存原始令牌。
+数据库只保存会话令牌的 HMAC-SHA256 结果，不保存原始令牌。
 """
 
 import asyncio

@@ -1,9 +1,6 @@
-"""
-文件职责：提供月度报告 HTTP 接口。
+"""提供月度报告 HTTP 接口。
 
-主要内容：包含提交、列表、详情、状态、快照导出与删除。
-
-关键边界：所有查询按用户隔离，导出只使用不可变快照，删除使迟到结果失效。
+所有查询按用户隔离，导出只使用不可变快照，删除使迟到结果失效。
 """
 
 import json
@@ -14,12 +11,19 @@ from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bankpilot.api.dependencies import get_current_user, get_db_session
+from bankpilot.api.dependencies import (
+    get_current_user,
+    get_db_session,
+    get_snapshot_session,
+    get_snapshot_user,
+)
 from bankpilot.api.errors import ApiProblem
 from bankpilot.db.models import MonthlyReportRecord, UserRecord
 from bankpilot.db.report_repository import ReportConflict, ReportRepository
 from bankpilot.db.user_repository import UserRepository
+from bankpilot.domain.report_comparison import ReportComparison
 from bankpilot.domain.reports import REPORT_RULE_VERSION, MonthlySnapshot, ReportStatus
+from bankpilot.services.report_comparison import compare
 
 
 def prevent_cache(response: Response) -> None:
@@ -120,14 +124,27 @@ async def create_report(
 async def list_reports(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    successful_only: bool = False,
     user: UserRecord = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ReportList:
-    rows = await ReportRepository(session).list_for_user(user.id, offset=offset, limit=limit + 1)
+    rows = await ReportRepository(session).list_for_user(
+        user.id, offset=offset, limit=limit + 1, successful_only=successful_only
+    )
     revision = await current_revision(session, user.id)
     return ReportList(
         items=[summary(r, revision) for r in rows[:limit]], has_more=len(rows) > limit
     )
+
+
+@router.get("/compare", response_model=ReportComparison)
+async def compare_report_snapshots(
+    before_id: UUID,
+    after_id: UUID,
+    user: UserRecord = Depends(get_snapshot_user),
+    session: AsyncSession = Depends(get_snapshot_session),
+) -> ReportComparison:
+    return await compare(session, user.id, before_id, after_id)
 
 
 @router.get("/{report_id}", response_model=ReportDetail)

@@ -1,6 +1,5 @@
-# 文件职责：声明 Python 包元数据、依赖与开发工具配置。
-# 主要内容：运行和开发依赖、CLI 入口、构建后端以及 Ruff、Mypy 检查规则。
-# 关键边界：依赖解析由 uv.lock 锁定；不保存部署环境或凭据。
+# 声明 Python 包元数据、依赖与开发工具配置。
+# 依赖解析由 uv.lock 锁定；不保存部署环境或凭据。
 [project]
 name = "bankpilot-agent"
 version = "0.3.0"
@@ -21,6 +20,8 @@ dependencies = [
   "openpyxl>=3.1.5,<4",
   "defusedxml>=0.7,<1",
   "anyio>=4,<5",
+  "cryptography>=46,<47",
+  "alipay-sdk-python>=3.7,<4",
 ]
 
 [project.scripts]

@@ -1,16 +1,6 @@
-"""
-文件职责：定义工作流、卡片、账单分析、适配器与应用层共用的领域契约。
+"""定义工作流、卡片、账单分析、适配器与应用层共用的领域契约。
 
-主要内容：
-- `RunStatus`：Agent 运行的持久化状态集。
-- `CardStatus`：卡片可被展示和后续状态操作使用的稳定状态集。
-- `TransactionQuery`：受限的交易日期范围。
-- `SupportedAction` / `UnsupportedIntent`：模型规划决策的可辨别联合。
-- `ModelPlan`：模型决策、供应商、耗时和 Token 用量。
-- `TransactionCategory`：稳定的账单分类代码。
-- `TransactionResult` / `BillAnalysis` / `RunResult`：查询、统计与工作流结果结构。
-
-关键边界：模型只能产生白名单动作或不支持意图；交易查询最长 366 天。
+模型只能产生白名单动作或不支持意图；交易查询最长 366 天。
 """
 
 from datetime import date, datetime

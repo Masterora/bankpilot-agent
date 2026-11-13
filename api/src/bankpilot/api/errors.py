@@ -1,8 +1,8 @@
+"""统一 HTTP 错误响应与异常处理。
+
+响应不包含校验原文、数据库参数或内部异常详情。
 """
-文件职责：统一 HTTP 错误响应与异常处理。
-主要内容：定义错误响应结构，将业务、校验、框架及未预期异常映射为稳定状态与错误码。
-关键边界：响应不包含校验原文、数据库参数或内部异常详情。
-"""
+
 import logging
 from collections.abc import Mapping
 from uuid import UUID
@@ -37,7 +37,10 @@ class ApiProblem(Exception):
 
 
 def error_response(
-    status: int, code: str, message: str, headers: Mapping[str, str] | None = None,
+    status: int,
+    code: str,
+    message: str,
+    headers: Mapping[str, str] | None = None,
     target_plan_id: UUID | None = None,
 ) -> JSONResponse:
     return JSONResponse(

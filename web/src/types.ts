@@ -1,7 +1,5 @@
-/**
- * 文件职责：定义 Web 使用的核心 API 响应与写入类型。
- * 主要内容：用户卡片、导入、交易分类、关系和核查、运行事件、总览与月报；规划和助手类型位于各自模块。
- * 关键边界：金额保持服务端字符串，运行状态与版本字段须匹配服务端契约，前端类型不代替授权验证。
+/** 定义 Web 使用的核心 API 响应与写入类型。
+ * 金额保持服务端字符串，运行状态与版本字段须匹配服务端契约，前端类型不代替授权验证。
  */
 
 export interface User {
@@ -83,7 +81,20 @@ export interface TransactionRelation {
   updated_at: string | null
 }
 
-export type RelationTransaction = Pick<Transaction, 'id' | 'booking_date' | 'occurred_at' | 'time_precision' | 'account_name' | 'merchant' | 'description' | 'amount' | 'currency' | 'import_batch_id' | 'source_row_number'> & { account_id: string }
+export type RelationTransaction = Pick<
+  Transaction,
+  | 'id'
+  | 'booking_date'
+  | 'occurred_at'
+  | 'time_precision'
+  | 'account_name'
+  | 'merchant'
+  | 'description'
+  | 'amount'
+  | 'currency'
+  | 'import_batch_id'
+  | 'source_row_number'
+> & { account_id: string }
 export interface RelationWorkspace {
   items: TransactionRelation[]
   transactions: RelationTransaction[]
@@ -277,5 +288,30 @@ export interface ImportPreview {
     merchant: string
     amount: string
     classification: 'new' | 'duplicate'
+  }[]
+}
+
+export interface ReportComparisonResult {
+  before_id: string
+  after_id: string
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+  same_month: boolean
+  same_rules: boolean
+  metrics: {
+    section: string
+    key: string
+    currency: string | null
+    field: string
+    before: string
+    after: string
+    delta: string
+  }[]
+  changes: {
+    section: string
+    key: string
+    kind: 'added' | 'removed' | 'changed'
+    before: Record<string, unknown> | null
+    after: Record<string, unknown> | null
   }[]
 }

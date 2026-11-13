@@ -1,7 +1,5 @@
-/**
- * 文件职责：提供当前账户密码修改表单。
- * 主要内容：旧密码、新密码与确认输入、提交反馈及成功后字段清理。
- * 关键边界：密码只保留在组件内存；由服务端验证并撤销其他会话，不保存明文凭据。
+/** 提供当前账户密码修改表单。
+ * 密码只保留在组件内存；由服务端验证并撤销其他会话，不保存明文凭据。
  */
 import { useState } from 'react'
 import type { FormEvent } from 'react'
@@ -18,43 +16,149 @@ export function PasswordForm({ copy, locale }: Pick<LanguageProps, 'copy' | 'loc
   const [field, setField] = useState('')
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
-  function clear() { setCurrent(''); setNext(''); setConfirmation(''); setError(''); setField('') }
+  function clear() {
+    setCurrent('')
+    setNext('')
+    setConfirmation('')
+    setError('')
+    setField('')
+  }
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (busy) return
-    setError(''); setField(''); setSaved(false)
-    if (next !== confirmation) { setField('confirmation'); setError(copy.passwordMismatch); return }
+    setError('')
+    setField('')
+    setSaved(false)
+    if (next !== confirmation) {
+      setField('confirmation')
+      setError(copy.passwordMismatch)
+      return
+    }
     setBusy(true)
     try {
       await api.changePassword(current, next)
-      clear(); setOpen(false); setSaved(true)
+      clear()
+      setOpen(false)
+      setSaved(true)
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'current_password_invalid') {
-        setField('current'); setError(en ? 'Current password is incorrect.' : '当前密码不正确。')
+        setField('current')
+        setError(en ? 'Current password is incorrect.' : '当前密码不正确。')
       } else if (cause instanceof ApiError && cause.code === 'password_unchanged') {
-        setField('next'); setError(en ? 'Choose a different new password.' : '新密码不能与当前密码相同。')
+        setField('next')
+        setError(en ? 'Choose a different new password.' : '新密码不能与当前密码相同。')
       } else if (cause instanceof ApiError && cause.status === 401) {
         setError(en ? 'Session expired. Sign in again.' : '登录已过期，请重新登录。')
       } else if (cause instanceof ApiError && cause.status === 429) {
         setError(en ? 'Too many attempts. Try again later.' : '操作过于频繁，请稍后重试。')
       } else if (cause instanceof ApiError && cause.status === 422) {
-        setField('next'); setError(copy.passwordRequirement)
+        setField('next')
+        setError(copy.passwordRequirement)
       } else {
-        setError(en ? 'Unable to confirm the change. Check your connection; the server may have saved it.' : '无法确认修改结果，请检查网络；服务端可能已保存，请勿反复提交。')
+        setError(
+          en
+            ? 'Unable to confirm the change. Check your connection; the server may have saved it.'
+            : '无法确认修改结果，请检查网络；服务端可能已保存，请勿反复提交。',
+        )
       }
-    } finally { setBusy(false) }
+    } finally {
+      setBusy(false)
+    }
   }
-  return <section className="settings-card">
-    <h2>{en ? 'Password' : '密码'}</h2>
-    {saved && <p role="status">{en ? 'Password changed. Other sessions have been signed out.' : '密码已修改，其他设备已退出登录。'}</p>}
-    {!open ? <button onClick={() => { clear(); setSaved(false); setOpen(true) }}>{en ? 'Change password' : '更改密码'}</button> : <form className="password-form" onSubmit={submit} aria-busy={busy}>
-      <label>{en ? 'Current password' : '当前密码'}<input type="password" autoComplete="current-password" required maxLength={128} disabled={busy} value={current} onChange={e => setCurrent(e.target.value)} aria-invalid={field === 'current'} aria-describedby={field === 'current' ? 'password-change-error' : undefined} /></label>
-      <label>{en ? 'New password' : '新密码'}<input type="password" autoComplete="new-password" required minLength={8} maxLength={128} pattern={'(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,128}'} disabled={busy} value={next} onChange={e => setNext(e.target.value)} aria-invalid={field === 'next'} aria-describedby="password-requirement" /></label>
-      <small id="password-requirement">{copy.passwordRequirement}</small>
-      <label>{en ? 'Confirm new password' : '确认新密码'}<input type="password" autoComplete="new-password" required maxLength={128} disabled={busy} value={confirmation} onChange={e => setConfirmation(e.target.value)} aria-invalid={field === 'confirmation'} aria-describedby={field === 'confirmation' ? 'password-change-error' : undefined} /></label>
-      <p>{en ? 'Changing your password signs out other devices. This session stays signed in.' : '修改后其他设备将退出登录，当前登录保留。'}</p>
-      {error && <p className="error" id="password-change-error" role="alert">{error}</p>}
-      <div className="settings-row"><button className="primary" disabled={busy}>{busy ? (en ? 'Saving…' : '保存中…') : (en ? 'Confirm change' : '确认修改')}</button><button type="button" disabled={busy} onClick={() => { clear(); setOpen(false) }}>{en ? 'Cancel' : '取消'}</button></div>
-    </form>}
-  </section>
+  return (
+    <section className="settings-card">
+      <h2>{en ? 'Password' : '密码'}</h2>
+      {saved && (
+        <p role="status">
+          {en
+            ? 'Password changed. Other sessions have been signed out and Feishu unlinked.'
+            : '密码已修改，其他设备已退出登录，飞书绑定已解除。'}
+        </p>
+      )}
+      {!open ? (
+        <button
+          onClick={() => {
+            clear()
+            setSaved(false)
+            setOpen(true)
+          }}
+        >
+          {en ? 'Change password' : '更改密码'}
+        </button>
+      ) : (
+        <form className="password-form" onSubmit={submit} aria-busy={busy}>
+          <label>
+            {en ? 'Current password' : '当前密码'}
+            <input
+              type="password"
+              autoComplete="current-password"
+              required
+              maxLength={128}
+              disabled={busy}
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              aria-invalid={field === 'current'}
+              aria-describedby={field === 'current' ? 'password-change-error' : undefined}
+            />
+          </label>
+          <label>
+            {en ? 'New password' : '新密码'}
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={8}
+              maxLength={128}
+              pattern={'(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,128}'}
+              disabled={busy}
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              aria-invalid={field === 'next'}
+              aria-describedby="password-requirement"
+            />
+          </label>
+          <small id="password-requirement">{copy.passwordRequirement}</small>
+          <label>
+            {en ? 'Confirm new password' : '确认新密码'}
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              maxLength={128}
+              disabled={busy}
+              value={confirmation}
+              onChange={(e) => setConfirmation(e.target.value)}
+              aria-invalid={field === 'confirmation'}
+              aria-describedby={field === 'confirmation' ? 'password-change-error' : undefined}
+            />
+          </label>
+          <p>
+            {en
+              ? 'Changing your password signs out other devices and unlinks Feishu. This session stays signed in.'
+              : '修改后其他设备将退出登录并解除飞书绑定，当前登录保留。'}
+          </p>
+          {error && (
+            <p className="error" id="password-change-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="settings-row">
+            <button className="primary" disabled={busy}>
+              {busy ? (en ? 'Saving…' : '保存中…') : en ? 'Confirm change' : '确认修改'}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                clear()
+                setOpen(false)
+              }}
+            >
+              {en ? 'Cancel' : '取消'}
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  )
 }
